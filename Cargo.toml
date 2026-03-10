@@ -1,0 +1,31 @@
+[package]
+name = "numerical"
+version = "0.1.0"
+edition = "2024"
+authors = ["James Logan <jlogan03@gmail.com>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jlogan03/numerical/"
+homepage = "https://github.com/jlogan03/numerical"
+description = ""
+readme = "README.md"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+crunchy = "^0.2.4"
+num-traits = { version = "^0.2.19", default-features = false, features = ["libm"] }
+
+[features]
+default = ["std"]
+std = []
+fma = []
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[dev-dependencies]
+criterion = "0.8.2"
+
+[[bench]]
+name = "bench"
+harness = false
