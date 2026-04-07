@@ -3,6 +3,7 @@ use num_traits::Float;
 
 const PAIRWISE_LEVELS: usize = 64;
 const PAIRWISE_NODE_CAPACITY: usize = 3;
+const PAIRWISE_FINISH_STEPS: usize = PAIRWISE_NODE_CAPACITY - 1;
 
 /// Sums an iterator of values with the `Pairwise` accumulator.
 #[inline]
@@ -63,7 +64,11 @@ impl<T: Float> Pairwise<T> {
     #[must_use]
     pub fn finish(mut self) -> T {
         for level in 0..PAIRWISE_LEVELS - 1 {
-            while self.counts[level] > 0 {
+            for _ in 0..PAIRWISE_FINISH_STEPS {
+                if self.counts[level] == 0 {
+                    break;
+                }
+
                 let carry = match self.counts[level] {
                     1 => {
                         self.counts[level] = 0;
@@ -82,12 +87,16 @@ impl<T: Float> Pairwise<T> {
                     _ => unreachable!("pairwise levels store at most three nodes"),
                 };
 
-                self.append_node(level + 1, carry);
+                self.promote_finished(level + 1, carry);
             }
         }
 
         let top = PAIRWISE_LEVELS - 1;
-        while self.counts[top] > 1 {
+        for _ in 0..PAIRWISE_FINISH_STEPS {
+            if self.counts[top] <= 1 {
+                break;
+            }
+
             match self.counts[top] {
                 2 => {
                     self.nodes[top][0] = self.nodes[top][0] + self.nodes[top][1];
@@ -128,6 +137,27 @@ impl<T: Float> Pairwise<T> {
         debug_assert!(count < PAIRWISE_NODE_CAPACITY);
         self.nodes[level][count] = value;
         self.counts[level] += 1;
+    }
+
+    #[inline]
+    fn promote_finished(&mut self, level: usize, value: T) {
+        self.append_node(level, value);
+
+        if self.counts[level] < PAIRWISE_NODE_CAPACITY as u8 {
+            return;
+        }
+
+        if level + 1 == PAIRWISE_LEVELS {
+            self.nodes[level][0] = self.nodes[level][0] + self.nodes[level][1];
+            self.nodes[level][1] = self.nodes[level][2];
+            self.counts[level] = 2;
+            return;
+        }
+
+        let carry = self.nodes[level][0] + self.nodes[level][1];
+        self.nodes[level][0] = self.nodes[level][2];
+        self.counts[level] = 1;
+        self.promote_finished(level + 1, carry);
     }
 }
 
@@ -181,6 +211,14 @@ mod test {
         let sum = pairwise_sum(&values);
 
         assert_eq!(sum, 45.0);
+    }
+
+    #[test]
+    fn accumulator_handles_longer_sequences_without_overflowing_tree_storage() {
+        let values = [1.0f64; 100];
+        let sum = sum::<_, f64>(values.iter());
+
+        assert_eq!(sum, 100.0);
     }
 
     #[test]
