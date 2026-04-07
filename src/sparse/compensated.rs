@@ -65,6 +65,23 @@ impl<T: Field> CompensatedSum<T> {
 }
 
 #[inline]
+pub fn sum2<T: Field>(lhs: T, rhs: T) -> T {
+    let mut acc = CompensatedSum::<T>::default();
+    acc.add(lhs);
+    acc.add(rhs);
+    acc.finish()
+}
+
+#[inline]
+pub fn sum3<T: Field>(lhs: T, mid: T, rhs: T) -> T {
+    let mut acc = CompensatedSum::<T>::default();
+    acc.add(lhs);
+    acc.add(mid);
+    acc.add(rhs);
+    acc.finish()
+}
+
+#[inline]
 pub fn dotc<T: Field>(lhs: &[T], rhs: &[T]) -> T {
     assert_eq!(lhs.len(), rhs.len());
 
@@ -93,7 +110,7 @@ pub fn norm2<T: Field>(values: &[T]) -> T::Real {
 
 #[cfg(test)]
 mod test {
-    use super::dotc;
+    use super::{dotc, sum2, sum3};
     use faer::c64;
 
     #[test]
@@ -112,5 +129,16 @@ mod test {
 
         let expected = lhs[0].conj() * rhs[0] + lhs[1].conj() * rhs[1];
         assert_eq!(dot, expected);
+    }
+
+    #[test]
+    fn sum2_handles_real_cancellation() {
+        assert_eq!(sum2(1.0e16f64, -1.0e16f64), 0.0);
+        assert_eq!(sum2(1.0e16f64, 1.0), 1.0e16f64 + 1.0);
+    }
+
+    #[test]
+    fn sum3_handles_real_cancellation() {
+        assert_eq!(sum3(1.0e16f64, 1.0, -1.0e16f64), 1.0);
     }
 }

@@ -1,5 +1,5 @@
 use super::col::{col_from_slice, col_slice, col_slice_mut, copy_col, zero_col};
-use super::compensated::{dotc, norm2, norm2_sq};
+use super::compensated::{dotc, norm2, norm2_sq, sum2, sum3};
 use super::field::Field;
 use super::matvec::SparseMatVec;
 use faer::Col;
@@ -47,7 +47,7 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             .zip(col_slice(&b_col).iter())
             .zip(col_slice(&scratch).iter())
         {
-            *r = b - ax;
+            *r = sum2(b, T::zero_value() - ax);
         }
 
         let err = norm2::<T>(col_slice(&r));
@@ -117,7 +117,7 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             .zip(col_slice(&self.b).iter())
             .zip(col_slice(&self.scratch).iter())
         {
-            *r = b - ax;
+            *r = sum2(b, T::zero_value() - ax);
         }
 
         self.err = norm2::<T>(col_slice(&self.r));
@@ -129,7 +129,8 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
     pub fn step(&mut self) -> T::Real {
         self.iteration_count += 1;
 
-        self.a.apply(col_slice_mut(&mut self.v), col_slice(&self.p));
+        self.a
+            .apply_compensated(col_slice_mut(&mut self.v), col_slice(&self.p));
 
         let denom = dotc::<T>(col_slice(&self.rhat), col_slice(&self.v));
         if denom.abs_value() <= T::real_epsilon() {
@@ -144,7 +145,7 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             .zip(col_slice(&self.x).iter())
             .zip(col_slice(&self.p).iter())
         {
-            *h = x + p * alpha;
+            *h = sum2(x, p * alpha);
         }
 
         for ((s, &r), &v) in col_slice_mut(&mut self.s)
@@ -152,7 +153,7 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             .zip(col_slice(&self.r).iter())
             .zip(col_slice(&self.v).iter())
         {
-            *s = r - v * alpha;
+            *s = sum2(r, T::zero_value() - v * alpha);
         }
 
         let s_norm_sq = norm2_sq::<T>(col_slice(&self.s));
@@ -164,7 +165,8 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             return self.err;
         }
 
-        self.a.apply(col_slice_mut(&mut self.t), col_slice(&self.s));
+        self.a
+            .apply_compensated(col_slice_mut(&mut self.t), col_slice(&self.s));
 
         let t_norm_sq = norm2_sq::<T>(col_slice(&self.t));
         if t_norm_sq <= T::real_epsilon() {
@@ -182,7 +184,7 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             .zip(col_slice(&self.scratch).iter())
             .zip(col_slice(&self.s).iter())
         {
-            *x = h + s * omega;
+            *x = sum2(h, s * omega);
         }
 
         for ((r, &s), &t) in col_slice_mut(&mut self.r)
@@ -190,7 +192,7 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             .zip(col_slice(&self.s).iter())
             .zip(col_slice(&self.t).iter())
         {
-            *r = s - t * omega;
+            *r = sum2(s, T::zero_value() - t * omega);
         }
 
         let err_sq = norm2_sq::<T>(col_slice(&self.r));
@@ -215,7 +217,7 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
                 .zip(col_slice(&self.p).iter())
                 .zip(col_slice(&self.v).iter())
             {
-                *p_new = r + (p_old - v * omega) * beta;
+                *p_new = sum3(r, p_old * beta, T::zero_value() - (v * omega) * beta);
             }
 
             copy_col(&mut self.p, &self.scratch);
