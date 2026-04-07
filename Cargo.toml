@@ -14,10 +14,11 @@ readme = "README.md"
 [dependencies]
 crunchy = "^0.2.4"
 num-traits = { version = "^0.2.19", default-features = false, features = ["libm"] }
+faer = { version = "^0.24.0", optional = true }
 
 [features]
 default = ["std"]
-std = []
+std = ["faer"]
 fma = []
 
 [lints.rust]
