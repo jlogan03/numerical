@@ -1,533 +1,13 @@
-use crate::sum::twosum::TwoSum;
-use faer::sparse::{SparseColMatRef, SparseRowMatRef};
-use faer::{Col, Index, Unbind, c32, c64};
-use faer_traits::Conjugate;
-use num_traits::{Float, Zero};
-use std::fmt::Debug;
-use std::ops::{Add, AddAssign, Div, Mul, Sub};
-
-/// Scalar types supported by this BiCGSTAB implementation.
-pub trait BiCGScalar:
-    Conjugate<Canonical = Self>
-    + Copy
-    + Debug
-    + Add<Output = Self>
-    + AddAssign
-    + Div<Output = Self>
-    + Mul<Output = Self>
-    + Sub<Output = Self>
-{
-    /// Underlying real scalar type used for norms and tolerances.
-    type Real: Float + Debug;
-
-    /// The additive identity.
-    fn zero_value() -> Self;
-
-    /// Builds a scalar from real and imaginary parts.
-    fn from_parts(real: Self::Real, imag: Self::Real) -> Self;
-
-    /// Returns the real part.
-    fn real_part(self) -> Self::Real;
-
-    /// Returns the imaginary part.
-    fn imag_part(self) -> Self::Real;
-
-    /// Returns the complex conjugate, or `self` for real scalars.
-    fn conj_value(self) -> Self;
-
-    /// Returns the magnitude.
-    fn abs_value(self) -> Self::Real;
-
-    /// Returns the squared magnitude.
-    fn abs2_value(self) -> Self::Real;
-
-    /// Multiplies by a real scalar.
-    fn scale_real(self, rhs: Self::Real) -> Self;
-
-    #[inline]
-    fn real_zero() -> Self::Real {
-        <Self::Real as Zero>::zero()
-    }
-
-    #[inline]
-    fn real_epsilon() -> Self::Real {
-        <Self::Real as Float>::epsilon()
-    }
-
-    /// Builds a real scalar from an `f64` literal used in configuration.
-    fn real_from_f64(value: f64) -> Self::Real;
-}
-
-impl BiCGScalar for f32 {
-    type Real = f32;
-
-    #[inline]
-    fn zero_value() -> Self {
-        0.0
-    }
-
-    #[inline]
-    fn from_parts(real: Self::Real, _imag: Self::Real) -> Self {
-        real
-    }
-
-    #[inline]
-    fn real_part(self) -> Self::Real {
-        self
-    }
-
-    #[inline]
-    fn imag_part(self) -> Self::Real {
-        0.0
-    }
-
-    #[inline]
-    fn conj_value(self) -> Self {
-        self
-    }
-
-    #[inline]
-    fn abs_value(self) -> Self::Real {
-        self.abs()
-    }
-
-    #[inline]
-    fn abs2_value(self) -> Self::Real {
-        self * self
-    }
-
-    #[inline]
-    fn scale_real(self, rhs: Self::Real) -> Self {
-        self * rhs
-    }
-
-    #[inline]
-    fn real_from_f64(value: f64) -> Self::Real {
-        value as f32
-    }
-}
-
-impl BiCGScalar for f64 {
-    type Real = f64;
-
-    #[inline]
-    fn zero_value() -> Self {
-        0.0
-    }
-
-    #[inline]
-    fn from_parts(real: Self::Real, _imag: Self::Real) -> Self {
-        real
-    }
-
-    #[inline]
-    fn real_part(self) -> Self::Real {
-        self
-    }
-
-    #[inline]
-    fn imag_part(self) -> Self::Real {
-        0.0
-    }
-
-    #[inline]
-    fn conj_value(self) -> Self {
-        self
-    }
-
-    #[inline]
-    fn abs_value(self) -> Self::Real {
-        self.abs()
-    }
-
-    #[inline]
-    fn abs2_value(self) -> Self::Real {
-        self * self
-    }
-
-    #[inline]
-    fn scale_real(self, rhs: Self::Real) -> Self {
-        self * rhs
-    }
-
-    #[inline]
-    fn real_from_f64(value: f64) -> Self::Real {
-        value
-    }
-}
-
-impl BiCGScalar for c32 {
-    type Real = f32;
-
-    #[inline]
-    fn zero_value() -> Self {
-        Self::new(0.0, 0.0)
-    }
-
-    #[inline]
-    fn from_parts(real: Self::Real, imag: Self::Real) -> Self {
-        Self::new(real, imag)
-    }
-
-    #[inline]
-    fn real_part(self) -> Self::Real {
-        self.re
-    }
-
-    #[inline]
-    fn imag_part(self) -> Self::Real {
-        self.im
-    }
-
-    #[inline]
-    fn conj_value(self) -> Self {
-        self.conj()
-    }
-
-    #[inline]
-    fn abs_value(self) -> Self::Real {
-        self.re.hypot(self.im)
-    }
-
-    #[inline]
-    fn abs2_value(self) -> Self::Real {
-        self.re * self.re + self.im * self.im
-    }
-
-    #[inline]
-    fn scale_real(self, rhs: Self::Real) -> Self {
-        self * Self::new(rhs, 0.0)
-    }
-
-    #[inline]
-    fn real_from_f64(value: f64) -> Self::Real {
-        value as f32
-    }
-}
-
-impl BiCGScalar for c64 {
-    type Real = f64;
-
-    #[inline]
-    fn zero_value() -> Self {
-        Self::new(0.0, 0.0)
-    }
-
-    #[inline]
-    fn from_parts(real: Self::Real, imag: Self::Real) -> Self {
-        Self::new(real, imag)
-    }
-
-    #[inline]
-    fn real_part(self) -> Self::Real {
-        self.re
-    }
-
-    #[inline]
-    fn imag_part(self) -> Self::Real {
-        self.im
-    }
-
-    #[inline]
-    fn conj_value(self) -> Self {
-        self.conj()
-    }
-
-    #[inline]
-    fn abs_value(self) -> Self::Real {
-        self.re.hypot(self.im)
-    }
-
-    #[inline]
-    fn abs2_value(self) -> Self::Real {
-        self.re * self.re + self.im * self.im
-    }
-
-    #[inline]
-    fn scale_real(self, rhs: Self::Real) -> Self {
-        self * Self::new(rhs, 0.0)
-    }
-
-    #[inline]
-    fn real_from_f64(value: f64) -> Self::Real {
-        value
-    }
-}
-
-/// Sparse matrix-vector product interface used by `BiCGSTAB`.
-pub trait SparseMatVec<T: BiCGScalar>: Copy + Debug {
-    /// Number of rows.
-    fn nrows(&self) -> usize;
-
-    /// Number of columns.
-    fn ncols(&self) -> usize;
-
-    /// Computes `out = self * rhs`.
-    fn apply(&self, out: &mut [T], rhs: &[T]);
-
-    /// Computes `out = self * rhs` with compensated accumulation.
-    fn apply_compensated(&self, out: &mut [T], rhs: &[T]);
-}
-
-impl<T, I, ViewT> SparseMatVec<T> for SparseRowMatRef<'_, I, ViewT>
-where
-    T: BiCGScalar,
-    I: Index,
-    ViewT: Conjugate<Canonical = T>,
-{
-    #[inline]
-    fn nrows(&self) -> usize {
-        self.symbolic().nrows().unbound()
-    }
-
-    #[inline]
-    fn ncols(&self) -> usize {
-        self.symbolic().ncols().unbound()
-    }
-
-    #[inline]
-    fn apply(&self, out: &mut [T], rhs: &[T]) {
-        let matrix = self.canonical();
-        let nrows = matrix.nrows().unbound();
-        let ncols = matrix.ncols().unbound();
-
-        assert_eq!(out.len(), nrows);
-        assert_eq!(rhs.len(), ncols);
-
-        let row_ptr = matrix.row_ptr();
-        let col_idx = matrix.col_idx();
-        let values = matrix.val();
-
-        out.fill(T::zero_value());
-        for row in 0..nrows {
-            let start = row_ptr[row].zx();
-            let end = row_ptr[row + 1].zx();
-            let mut sum = T::zero_value();
-
-            for idx in start..end {
-                sum += values[idx] * rhs[col_idx[idx].zx()];
-            }
-
-            out[row] = sum;
-        }
-    }
-
-    #[inline]
-    fn apply_compensated(&self, out: &mut [T], rhs: &[T]) {
-        let matrix = self.canonical();
-        let nrows = matrix.nrows().unbound();
-        let ncols = matrix.ncols().unbound();
-
-        assert_eq!(out.len(), nrows);
-        assert_eq!(rhs.len(), ncols);
-
-        let row_ptr = matrix.row_ptr();
-        let col_idx = matrix.col_idx();
-        let values = matrix.val();
-
-        out.fill(T::zero_value());
-        for row in 0..nrows {
-            let start = row_ptr[row].zx();
-            let end = row_ptr[row + 1].zx();
-            let mut acc = CompensatedSum::<T>::default();
-
-            for idx in start..end {
-                acc.add(values[idx] * rhs[col_idx[idx].zx()]);
-            }
-
-            out[row] = acc.finish();
-        }
-    }
-}
-
-impl<T, I, ViewT> SparseMatVec<T> for SparseColMatRef<'_, I, ViewT>
-where
-    T: BiCGScalar,
-    I: Index,
-    ViewT: Conjugate<Canonical = T>,
-{
-    #[inline]
-    fn nrows(&self) -> usize {
-        self.symbolic().nrows().unbound()
-    }
-
-    #[inline]
-    fn ncols(&self) -> usize {
-        self.symbolic().ncols().unbound()
-    }
-
-    #[inline]
-    fn apply(&self, out: &mut [T], rhs: &[T]) {
-        let matrix = self.canonical();
-        let nrows = matrix.nrows().unbound();
-        let ncols = matrix.ncols().unbound();
-
-        assert_eq!(out.len(), nrows);
-        assert_eq!(rhs.len(), ncols);
-
-        let col_ptr = matrix.col_ptr();
-        let row_idx = matrix.row_idx();
-        let values = matrix.val();
-
-        out.fill(T::zero_value());
-        for col in 0..ncols {
-            let rhs_value = rhs[col];
-            let start = col_ptr[col].zx();
-            let end = col_ptr[col + 1].zx();
-
-            for idx in start..end {
-                out[row_idx[idx].zx()] += values[idx] * rhs_value;
-            }
-        }
-    }
-
-    #[inline]
-    fn apply_compensated(&self, out: &mut [T], rhs: &[T]) {
-        let matrix = self.canonical();
-        let nrows = matrix.nrows().unbound();
-        let ncols = matrix.ncols().unbound();
-
-        assert_eq!(out.len(), nrows);
-        assert_eq!(rhs.len(), ncols);
-
-        let col_ptr = matrix.col_ptr();
-        let row_idx = matrix.row_idx();
-        let values = matrix.val();
-        let mut acc = vec![CompensatedSum::<T>::default(); nrows];
-
-        for col in 0..ncols {
-            let rhs_value = rhs[col];
-            let start = col_ptr[col].zx();
-            let end = col_ptr[col + 1].zx();
-
-            for idx in start..end {
-                acc[row_idx[idx].zx()].add(values[idx] * rhs_value);
-            }
-        }
-
-        for (dst, acc) in out.iter_mut().zip(acc.into_iter()) {
-            *dst = acc.finish();
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct RealCompensatedSum<R: Float> {
-    acc: Option<TwoSum<R>>,
-}
-
-impl<R: Float> Default for RealCompensatedSum<R> {
-    #[inline]
-    fn default() -> Self {
-        Self { acc: None }
-    }
-}
-
-impl<R: Float> RealCompensatedSum<R> {
-    #[inline]
-    fn add(&mut self, value: R) {
-        match self.acc.as_mut() {
-            Some(acc) => acc.add(value),
-            None => self.acc = Some(TwoSum::new(value)),
-        }
-    }
-
-    #[inline]
-    fn finish(self) -> R {
-        match self.acc {
-            Some(acc) => {
-                let (sum, residual) = acc.finish();
-                sum + residual
-            }
-            None => R::zero(),
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug)]
-struct CompensatedSum<T: BiCGScalar> {
-    real: RealCompensatedSum<T::Real>,
-    imag: RealCompensatedSum<T::Real>,
-}
-
-impl<T: BiCGScalar> Default for CompensatedSum<T> {
-    #[inline]
-    fn default() -> Self {
-        Self {
-            real: RealCompensatedSum::default(),
-            imag: RealCompensatedSum::default(),
-        }
-    }
-}
-
-impl<T: BiCGScalar> CompensatedSum<T> {
-    #[inline]
-    fn add(&mut self, value: T) {
-        self.real.add(value.real_part());
-        self.imag.add(value.imag_part());
-    }
-
-    #[inline]
-    fn finish(self) -> T {
-        T::from_parts(self.real.finish(), self.imag.finish())
-    }
-}
-
-#[inline]
-fn col_from_slice<T: BiCGScalar>(values: &[T]) -> Col<T> {
-    Col::from_fn(values.len(), |i| values[i.unbound()])
-}
-
-#[inline]
-fn zero_col<T: BiCGScalar>(len: usize) -> Col<T> {
-    Col::from_fn(len, |_| T::zero_value())
-}
-
-#[inline]
-fn col_slice<T>(col: &Col<T>) -> &[T] {
-    col.try_as_col_major().unwrap().as_slice()
-}
-
-#[inline]
-fn col_slice_mut<T>(col: &mut Col<T>) -> &mut [T] {
-    col.try_as_col_major_mut().unwrap().as_slice_mut()
-}
-
-#[inline]
-fn copy_col<T: BiCGScalar>(dst: &mut Col<T>, src: &Col<T>) {
-    col_slice_mut(dst).copy_from_slice(col_slice(src));
-}
-
-#[inline]
-fn dotc<T: BiCGScalar>(lhs: &[T], rhs: &[T]) -> T {
-    assert_eq!(lhs.len(), rhs.len());
-
-    let mut acc = CompensatedSum::<T>::default();
-    for (&lhs, &rhs) in lhs.iter().zip(rhs.iter()) {
-        acc.add(lhs.conj_value() * rhs);
-    }
-
-    acc.finish()
-}
-
-#[inline]
-fn norm2_sq<T: BiCGScalar>(values: &[T]) -> T::Real {
-    let mut acc = RealCompensatedSum::<T::Real>::default();
-    for &value in values {
-        acc.add(value.abs2_value());
-    }
-
-    acc.finish()
-}
-
-#[inline]
-fn norm2<T: BiCGScalar>(values: &[T]) -> T::Real {
-    norm2_sq::<T>(values).sqrt()
-}
+use super::col::{col_from_slice, col_slice, col_slice_mut, copy_col, zero_col};
+use super::compensated::{dotc, norm2, norm2_sq};
+use super::field::Field;
+use super::matvec::SparseMatVec;
+use faer::Col;
+use num_traits::Float;
 
 /// Stabilized bi-conjugate gradient solver.
 #[derive(Debug)]
-pub struct BiCGSTAB<T: BiCGScalar, A: SparseMatVec<T>> {
+pub struct BiCGSTAB<T: Field, A: SparseMatVec<T>> {
     iteration_count: usize,
     soft_restart_threshold: T::Real,
     soft_restart_count: usize,
@@ -546,7 +26,7 @@ pub struct BiCGSTAB<T: BiCGScalar, A: SparseMatVec<T>> {
     rho: T,
 }
 
-impl<T: BiCGScalar, A: SparseMatVec<T>> BiCGSTAB<T, A> {
+impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
     /// Initializes a solver with a fresh residual estimate.
     #[inline]
     #[must_use]
@@ -824,32 +304,36 @@ mod test {
 #[cfg(feature = "std")]
 #[cfg(test)]
 mod test {
-    use super::{BiCGSTAB, BiCGScalar, SparseMatVec, dotc, norm2};
+    use super::BiCGSTAB;
+    use crate::sparse::col::{col_slice, col_slice_mut};
+    use crate::sparse::compensated::norm2;
+    use crate::sparse::field::Field;
+    use crate::sparse::matvec::SparseMatVec;
     use faer::sparse::{SparseColMat, SparseRowMat, Triplet};
     use faer::{Col, c32, c64};
     use num_traits::Float;
 
     fn apply_to_col<T, A>(a: A, x: &[T]) -> Col<T>
     where
-        T: BiCGScalar,
+        T: Field,
         A: SparseMatVec<T>,
     {
-        let mut out = super::zero_col::<T>(a.nrows());
-        a.apply_compensated(super::col_slice_mut(&mut out), x);
+        let mut out = crate::sparse::col::zero_col::<T>(a.nrows());
+        a.apply_compensated(col_slice_mut(&mut out), x);
         out
     }
 
     fn assert_solution_close<T, A>(a: A, x_true: &[T], x0: &[T], tol: T::Real)
     where
-        T: BiCGScalar,
+        T: Field,
         A: SparseMatVec<T>,
     {
         let b = apply_to_col(a, x_true);
-        let solver = BiCGSTAB::solve(a, x0, super::col_slice(&b), tol, 50).unwrap();
+        let solver = BiCGSTAB::solve(a, x0, col_slice(&b), tol, 50).unwrap();
 
-        let x = super::col_slice(solver.x());
-        let mut diff = super::zero_col::<T>(x.len());
-        for ((dst, &lhs), &rhs) in super::col_slice_mut(&mut diff)
+        let x = col_slice(solver.x());
+        let mut diff = crate::sparse::col::zero_col::<T>(x.len());
+        for ((dst, &lhs), &rhs) in col_slice_mut(&mut diff)
             .iter_mut()
             .zip(x.iter())
             .zip(x_true.iter())
@@ -858,25 +342,7 @@ mod test {
         }
 
         assert!(solver.err() < tol);
-        assert!(norm2::<T>(super::col_slice(&diff)) < tol.sqrt());
-    }
-
-    #[test]
-    fn compensated_dotc_handles_real_cancellation() {
-        let lhs = [1.0e16f64, 1.0, -1.0e16];
-        let rhs = [1.0f64, 1.0, 1.0];
-
-        assert_eq!(dotc(&lhs, &rhs), 1.0);
-    }
-
-    #[test]
-    fn compensated_dotc_uses_conjugation_for_complex_inputs() {
-        let lhs = [c64::new(1.0, 2.0), c64::new(-3.0, 4.0)];
-        let rhs = [c64::new(5.0, -1.0), c64::new(2.0, 3.0)];
-        let dot = dotc(&lhs, &rhs);
-
-        let expected = lhs[0].conj() * rhs[0] + lhs[1].conj() * rhs[1];
-        assert_eq!(dot, expected);
+        assert!(norm2::<T>(col_slice(&diff)) < tol.sqrt());
     }
 
     #[test]
@@ -1003,7 +469,7 @@ mod test {
 
         let x_true = [1.0, -2.0, 0.5, 3.0];
         let b = apply_to_col(a.as_ref(), &x_true);
-        let result = BiCGSTAB::solve(a.as_ref(), &[0.0; 4], super::col_slice(&b), 1.0e-12, 1);
+        let result = BiCGSTAB::solve(a.as_ref(), &[0.0; 4], col_slice(&b), 1.0e-12, 1);
 
         assert!(result.is_err());
     }
