@@ -2,8 +2,6 @@ use core::borrow::Borrow;
 use num_traits::Float;
 
 const PAIRWISE_LEVELS: usize = 64;
-const PAIRWISE_NODE_CAPACITY: usize = 3;
-const PAIRWISE_FINISH_STEPS: usize = PAIRWISE_NODE_CAPACITY - 1;
 
 /// Sums an iterator of values with the `Pairwise` accumulator.
 #[inline]
@@ -29,14 +27,14 @@ where
 
 /// Accumulates values with a fixed-storage pairwise summation tree.
 ///
-/// Values are inserted as leaves into an unrealized binary tree. Each tree
-/// level stores up to three nodes: two nodes to combine and one carry when the
-/// level has an odd node count. This keeps the implementation allocation-free
-/// while preserving pairwise grouping.
+/// Values are inserted as leaves into an unrealized binary tree. Internally,
+/// this stores the active frontier of that tree: one realized partial sum per
+/// level, plus a bitmask tracking which levels are occupied. This keeps the
+/// implementation allocation-free while preserving pairwise grouping.
 #[derive(Clone, Copy, Debug)]
 pub struct Pairwise<T: Float> {
-    nodes: [[T; PAIRWISE_NODE_CAPACITY]; PAIRWISE_LEVELS],
-    counts: [u8; PAIRWISE_LEVELS],
+    partials: [T; PAIRWISE_LEVELS],
+    occupied: u64,
 }
 
 impl<T: Float> Pairwise<T> {
@@ -44,120 +42,58 @@ impl<T: Float> Pairwise<T> {
     #[inline]
     #[must_use]
     pub fn new(value: T) -> Self {
-        let mut nodes = [[T::zero(); PAIRWISE_NODE_CAPACITY]; PAIRWISE_LEVELS];
-        let mut counts = [0; PAIRWISE_LEVELS];
+        let mut partials = [T::zero(); PAIRWISE_LEVELS];
+        partials[0] = value;
 
-        nodes[0][0] = value;
-        counts[0] = 1;
-
-        Self { nodes, counts }
+        Self {
+            partials,
+            occupied: 1,
+        }
     }
 
     /// Adds a value into the pairwise tree.
     #[inline]
     pub fn add(&mut self, value: T) {
-        self.push_node(0, value);
+        let mut carry = value;
+
+        for level in 0..PAIRWISE_LEVELS {
+            let bit = 1_u64 << level;
+
+            if (self.occupied & bit) == 0 {
+                self.partials[level] = carry;
+                self.occupied |= bit;
+                return;
+            }
+
+            carry = self.partials[level] + carry;
+            self.occupied &= !bit;
+        }
+
+        panic!("Pairwise overflowed its fixed tree storage");
     }
 
     /// Finishes the accumulation and returns the final value.
     #[inline]
     #[must_use]
-    pub fn finish(mut self) -> T {
-        for level in 0..PAIRWISE_LEVELS - 1 {
-            for _ in 0..PAIRWISE_FINISH_STEPS {
-                if self.counts[level] == 0 {
-                    break;
-                }
+    pub fn finish(self) -> T {
+        let mut acc = T::zero();
+        let mut started = false;
 
-                let carry = match self.counts[level] {
-                    1 => {
-                        self.counts[level] = 0;
-                        self.nodes[level][0]
-                    }
-                    2 => {
-                        self.counts[level] = 0;
-                        self.nodes[level][0] + self.nodes[level][1]
-                    }
-                    3 => {
-                        let carry = self.nodes[level][0] + self.nodes[level][1];
-                        self.nodes[level][0] = self.nodes[level][2];
-                        self.counts[level] = 1;
-                        carry
-                    }
-                    _ => unreachable!("pairwise levels store at most three nodes"),
-                };
+        for level in (0..PAIRWISE_LEVELS).rev() {
+            let bit = 1_u64 << level;
+            if (self.occupied & bit) == 0 {
+                continue;
+            }
 
-                self.promote_finished(level + 1, carry);
+            if started {
+                acc = acc + self.partials[level];
+            } else {
+                acc = self.partials[level];
+                started = true;
             }
         }
 
-        let top = PAIRWISE_LEVELS - 1;
-        for _ in 0..PAIRWISE_FINISH_STEPS {
-            if self.counts[top] <= 1 {
-                break;
-            }
-
-            match self.counts[top] {
-                2 => {
-                    self.nodes[top][0] = self.nodes[top][0] + self.nodes[top][1];
-                    self.counts[top] = 1;
-                }
-                3 => {
-                    self.nodes[top][0] = self.nodes[top][0] + self.nodes[top][1];
-                    self.nodes[top][1] = self.nodes[top][2];
-                    self.counts[top] = 2;
-                }
-                _ => unreachable!("pairwise levels store at most three nodes"),
-            }
-        }
-
-        self.nodes[top][0]
-    }
-
-    #[inline]
-    fn push_node(&mut self, level: usize, value: T) {
-        self.append_node(level, value);
-
-        if self.counts[level] == PAIRWISE_NODE_CAPACITY as u8 {
-            let carry = self.nodes[level][0] + self.nodes[level][1];
-            self.nodes[level][0] = self.nodes[level][2];
-            self.counts[level] = 1;
-            self.push_node(level + 1, carry);
-        }
-    }
-
-    #[inline]
-    fn append_node(&mut self, level: usize, value: T) {
-        assert!(
-            level < PAIRWISE_LEVELS,
-            "Pairwise overflowed its fixed tree storage"
-        );
-
-        let count = self.counts[level] as usize;
-        debug_assert!(count < PAIRWISE_NODE_CAPACITY);
-        self.nodes[level][count] = value;
-        self.counts[level] += 1;
-    }
-
-    #[inline]
-    fn promote_finished(&mut self, level: usize, value: T) {
-        self.append_node(level, value);
-
-        if self.counts[level] < PAIRWISE_NODE_CAPACITY as u8 {
-            return;
-        }
-
-        if level + 1 == PAIRWISE_LEVELS {
-            self.nodes[level][0] = self.nodes[level][0] + self.nodes[level][1];
-            self.nodes[level][1] = self.nodes[level][2];
-            self.counts[level] = 2;
-            return;
-        }
-
-        let carry = self.nodes[level][0] + self.nodes[level][1];
-        self.nodes[level][0] = self.nodes[level][2];
-        self.counts[level] = 1;
-        self.promote_finished(level + 1, carry);
+        acc
     }
 }
 
