@@ -29,23 +29,15 @@ fn throughput_benchmark(c: &mut Criterion) {
             b.iter(|| black_box(twosum::sum::<_, f32>(black_box(input).iter())))
         });
 
-        group.bench_with_input(BenchmarkId::new("pairwise", size), &input, |b, input| {
-            b.iter(|| black_box(pairwise::sum::<_, f32>(black_box(input).iter())))
-        });
-
         let mut scratch = vec![0.0f32; size];
-        group.bench_with_input(
-            BenchmarkId::new("pairwise_slice", size),
-            &input,
-            |b, input| {
-                b.iter(|| {
-                    black_box(pairwise::sum_slice(
-                        black_box(input),
-                        black_box(scratch.as_mut_slice()),
-                    ))
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("pairwise", size), &input, |b, input| {
+            b.iter(|| {
+                black_box(pairwise::sum(
+                    black_box(input),
+                    black_box(scratch.as_mut_slice()),
+                ))
+            })
+        });
     }
 
     group.finish();
