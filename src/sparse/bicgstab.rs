@@ -309,8 +309,12 @@ mod test {
     use crate::sparse::compensated::norm2;
     use crate::sparse::field::Field;
     use crate::sparse::matvec::SparseMatVec;
+    use faer::dyn_stack::{MemBuffer, MemStack};
+    use faer::mat::AsMatRef;
+    use faer::matrix_free::bicgstab::{BicgParams, bicgstab as faer_bicgstab, bicgstab_scratch};
+    use faer::matrix_free::{IdentityPrecond, InitialGuessStatus};
     use faer::sparse::{SparseColMat, SparseRowMat, Triplet};
-    use faer::{Col, c32, c64};
+    use faer::{Col, Mat, Par, c32, c64};
     use num_traits::Float;
 
     fn apply_to_col<T, A>(a: A, x: &[T]) -> Col<T>
@@ -343,6 +347,24 @@ mod test {
 
         assert!(solver.err() < tol);
         assert!(norm2::<T>(col_slice(&diff)) < tol.sqrt());
+    }
+
+    fn residual_norm<T, A>(a: A, x: &[T], b: &[T]) -> T::Real
+    where
+        T: Field,
+        A: SparseMatVec<T>,
+    {
+        let ax = apply_to_col(a, x);
+        let mut residual = crate::sparse::col::zero_col::<T>(b.len());
+        for ((dst, &lhs), &rhs) in col_slice_mut(&mut residual)
+            .iter_mut()
+            .zip(col_slice(&ax).iter())
+            .zip(b.iter())
+        {
+            *dst = rhs - lhs;
+        }
+
+        norm2::<T>(col_slice(&residual))
     }
 
     #[test]
@@ -472,5 +494,88 @@ mod test {
         let result = BiCGSTAB::solve(a.as_ref(), &[0.0; 4], col_slice(&b), 1.0e-12, 1);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn compensated_bicgstab_matches_or_beats_faer_on_poorly_conditioned_system() {
+        let n = 12usize;
+        let mut triplets = Vec::with_capacity(n * n);
+        for row in 0..n {
+            for col in 0..n {
+                let hilbert = 1.0 / (row + col + 1) as f64;
+                let skew = if row > col {
+                    (row - col) as f64 * 1.0e-14
+                } else {
+                    -((col - row) as f64) * 1.0e-14
+                };
+                let diag_shift = if row == col {
+                    (row + 1) as f64 * 1.0e-12
+                } else {
+                    0.0
+                };
+                triplets.push(Triplet::new(row, col, hilbert + skew + diag_shift));
+            }
+        }
+
+        let a = SparseRowMat::<usize, f64>::try_new_from_triplets(n, n, &triplets).unwrap();
+        let x_true: Vec<f64> = (0..n)
+            .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+            .collect();
+        let x0 = vec![0.0; n];
+        let b = apply_to_col(a.as_ref(), &x_true);
+        let tol = 1.0e-8;
+
+        let ours = match BiCGSTAB::solve(a.as_ref(), &x0, col_slice(&b), tol, 400) {
+            Ok(solver) | Err(solver) => solver,
+        };
+        let ours_residual = residual_norm(a.as_ref(), col_slice(ours.x()), col_slice(&b));
+        let ours_error = norm2::<f64>(
+            &col_slice(ours.x())
+                .iter()
+                .zip(x_true.iter())
+                .map(|(&lhs, &rhs)| lhs - rhs)
+                .collect::<Vec<_>>(),
+        );
+
+        let mut faer_out = Mat::<f64>::zeros(n, 1);
+        let identity = IdentityPrecond { dim: n };
+        let mut params = BicgParams::default();
+        params.initial_guess = InitialGuessStatus::Zero;
+        params.rel_tolerance = tol;
+        params.max_iters = 400;
+
+        let faer_result = faer_bicgstab(
+            faer_out.as_mut(),
+            identity,
+            identity,
+            a.as_ref(),
+            b.as_mat_ref().as_dyn(),
+            params,
+            |_| {},
+            Par::Seq,
+            MemStack::new(&mut MemBuffer::new(bicgstab_scratch(
+                identity,
+                identity,
+                a.as_ref(),
+                1,
+                Par::Seq,
+            ))),
+        );
+
+        let faer_x: Vec<f64> = (0..n).map(|i| faer_out[(i, 0)]).collect();
+        let faer_residual = residual_norm(a.as_ref(), &faer_x, col_slice(&b));
+        let faer_error = norm2::<f64>(
+            &faer_x
+                .iter()
+                .zip(x_true.iter())
+                .map(|(&lhs, &rhs)| lhs - rhs)
+                .collect::<Vec<_>>(),
+        );
+
+        assert!(ours_residual.is_finite());
+        assert!(ours_error.is_finite());
+        assert!(faer_result.is_err() || (faer_residual.is_finite() && faer_error.is_finite()));
+        assert!(faer_residual.is_nan() || ours_residual <= faer_residual);
+        assert!(faer_error.is_nan() || ours_error <= faer_error);
     }
 }
