@@ -1,7 +1,51 @@
 use core::borrow::Borrow;
 use num_traits::Float;
 
-const PAIRWISE_LEVELS: usize = 64;
+const PAIRWISE_STORAGE: usize = 8;
+
+/// Sums a mutable slice in place with a simple looping pairwise reduction.
+#[inline]
+#[must_use]
+pub fn sum_inplace<T: Float>(values: &mut [T]) -> T {
+    if values.is_empty() {
+        return T::zero();
+    }
+
+    let mut len = values.len();
+    while len > 1 {
+        let pairs = len / 2;
+
+        for i in 0..pairs {
+            values[i] = values[2 * i] + values[(2 * i) + 1];
+        }
+
+        if len % 2 == 1 {
+            values[pairs] = values[len - 1];
+            len = pairs + 1;
+        } else {
+            len = pairs;
+        }
+    }
+
+    values[0]
+}
+
+/// Sums a slice with a simple looping pairwise reduction using caller storage.
+#[inline]
+#[must_use]
+pub fn sum_slice<T: Float>(values: &[T], storage: &mut [T]) -> T {
+    if values.is_empty() {
+        return T::zero();
+    }
+
+    assert!(
+        storage.len() >= values.len(),
+        "Pairwise sum_slice storage is smaller than the input slice"
+    );
+
+    storage[..values.len()].copy_from_slice(values);
+    sum_inplace(&mut storage[..values.len()])
+}
 
 /// Sums an iterator of values with the `Pairwise` accumulator.
 #[inline]
@@ -27,14 +71,17 @@ where
 
 /// Accumulates values with a fixed-storage pairwise summation tree.
 ///
-/// Values are inserted as leaves into an unrealized binary tree. Internally,
-/// this stores the active frontier of that tree: one realized partial sum per
-/// level, plus a bitmask tracking which levels are occupied. This keeps the
-/// implementation allocation-free while preserving pairwise grouping.
+/// Values are first buffered in a small fresh-value storage. When that storage
+/// fills, it is pairwise-reduced to one chunk sum and pushed into a second
+/// storage reserved for accumulated values. When the accumulated-value storage
+/// fills, it is pairwise-reduced in place and starts over with that reduced
+/// chunk as its first element.
 #[derive(Clone, Copy, Debug)]
 pub struct Pairwise<T: Float> {
-    partials: [T; PAIRWISE_LEVELS],
-    occupied: u64,
+    fresh: [T; PAIRWISE_STORAGE],
+    fresh_len: usize,
+    accum: [T; PAIRWISE_STORAGE],
+    accum_len: usize,
 }
 
 impl<T: Float> Pairwise<T> {
@@ -42,58 +89,65 @@ impl<T: Float> Pairwise<T> {
     #[inline]
     #[must_use]
     pub fn new(value: T) -> Self {
-        let mut partials = [T::zero(); PAIRWISE_LEVELS];
-        partials[0] = value;
+        let mut fresh = [T::zero(); PAIRWISE_STORAGE];
+        fresh[0] = value;
 
         Self {
-            partials,
-            occupied: 1,
+            fresh,
+            fresh_len: 1,
+            accum: [T::zero(); PAIRWISE_STORAGE],
+            accum_len: 0,
         }
     }
 
     /// Adds a value into the pairwise tree.
     #[inline]
     pub fn add(&mut self, value: T) {
-        let mut carry = value;
+        self.fresh[self.fresh_len] = value;
+        self.fresh_len += 1;
 
-        for level in 0..PAIRWISE_LEVELS {
-            let bit = 1_u64 << level;
-
-            if (self.occupied & bit) == 0 {
-                self.partials[level] = carry;
-                self.occupied |= bit;
-                return;
-            }
-
-            carry = self.partials[level] + carry;
-            self.occupied &= !bit;
+        if self.fresh_len == PAIRWISE_STORAGE {
+            self.flush_fresh();
         }
-
-        panic!("Pairwise overflowed its fixed tree storage");
     }
 
     /// Finishes the accumulation and returns the final value.
     #[inline]
     #[must_use]
-    pub fn finish(self) -> T {
-        let mut acc = T::zero();
-        let mut started = false;
-
-        for level in (0..PAIRWISE_LEVELS).rev() {
-            let bit = 1_u64 << level;
-            if (self.occupied & bit) == 0 {
-                continue;
+    pub fn finish(mut self) -> T {
+        if self.fresh_len > 0 {
+            if self.fresh_len == 1 && self.accum_len == 0 {
+                return self.fresh[0];
             }
 
-            if started {
-                acc = acc + self.partials[level];
-            } else {
-                acc = self.partials[level];
-                started = true;
-            }
+            let reduced = sum_inplace(&mut self.fresh[..self.fresh_len]);
+            self.push_accum(reduced);
+            self.fresh_len = 0;
         }
 
-        acc
+        if self.accum_len == 0 {
+            T::zero()
+        } else {
+            sum_inplace(&mut self.accum[..self.accum_len])
+        }
+    }
+
+    #[inline]
+    fn flush_fresh(&mut self) {
+        let reduced = sum_inplace(&mut self.fresh);
+        self.fresh_len = 0;
+        self.push_accum(reduced);
+    }
+
+    #[inline]
+    fn push_accum(&mut self, value: T) {
+        self.accum[self.accum_len] = value;
+        self.accum_len += 1;
+
+        if self.accum_len == PAIRWISE_STORAGE {
+            self.accum[0] = sum_inplace(&mut self.accum);
+            self.accum_len = 1;
+        }
     }
 }
 
@@ -113,7 +167,7 @@ mod test {
 #[cfg(feature = "std")]
 #[cfg(test)]
 mod test {
-    use super::{Pairwise, sum};
+    use super::{Pairwise, sum, sum_inplace, sum_slice};
 
     fn pairwise_sum(values: &[f64]) -> f64 {
         let mut acc = Pairwise::new(values[0]);
@@ -175,6 +229,31 @@ mod test {
     #[test]
     fn top_level_sum_handles_empty_input() {
         let sum = sum(core::iter::empty::<f64>());
+
+        assert_eq!(sum, 0.0);
+    }
+
+    #[test]
+    fn sum_inplace_handles_odd_lengths() {
+        let mut values = [1.0e16, 1.0, -1.0e16, 1.0, 1.0];
+        let sum = sum_inplace(&mut values);
+
+        assert_eq!(sum, 1.0);
+    }
+
+    #[test]
+    fn sum_slice_uses_caller_storage() {
+        let values = [1.0f64, 2.0, 3.0, 4.0, 5.0];
+        let mut storage = [0.0; 5];
+        let sum = sum_slice(&values, &mut storage);
+
+        assert_eq!(sum, 15.0);
+    }
+
+    #[test]
+    fn sum_slice_handles_empty_input() {
+        let mut storage = [0.0f64; 1];
+        let sum = sum_slice(&[], &mut storage);
 
         assert_eq!(sum, 0.0);
     }
