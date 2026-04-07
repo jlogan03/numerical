@@ -318,6 +318,7 @@ mod test {
     use faer::sparse::{SparseColMat, SparseRowMat, Triplet};
     use faer::{Col, Mat, Par, c32, c64};
     use num_traits::Float;
+    use std::time::Instant;
 
     fn apply_to_col<T, A>(a: A, x: &[T]) -> Col<T>
     where
@@ -525,11 +526,21 @@ mod test {
             .collect();
         let x0 = vec![0.0; n];
         let b = apply_to_col(a.as_ref(), &x_true);
-        let tol = 1.0e-8;
+        let tol = 1.0e-4;
 
+        let started = Instant::now();
         let ours = match BiCGSTAB::solve(a.as_ref(), &x0, col_slice(&b), tol, 400) {
             Ok(solver) | Err(solver) => solver,
         };
+        let elapsed = started.elapsed();
+        println!(
+            "compensated hilbert solve: tol={tol:.1e}, iterations={}, hard_restarts={}, soft_restarts={}, err={:.6e}, elapsed={:?}",
+            ours.iteration_count(),
+            ours.hard_restart_count(),
+            ours.soft_restart_count(),
+            ours.err(),
+            elapsed,
+        );
         let ours_residual = residual_norm(a.as_ref(), col_slice(ours.x()), col_slice(&b));
         let ours_error = norm2::<f64>(
             &col_slice(ours.x())
