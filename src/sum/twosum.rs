@@ -1,3 +1,4 @@
+use core::borrow::Borrow;
 use num_traits::Float;
 
 /// Computes an error-free addition `a + b`.
@@ -16,13 +17,35 @@ pub fn twosum<T: Float>(a: T, b: T) -> (T, T) {
     (sum, err)
 }
 
+/// Sums an iterator of values with the `TwoSum` accumulator.
+#[inline]
+#[must_use]
+pub fn sum<I, T>(values: I) -> (T, T)
+where
+    I: IntoIterator,
+    I::Item: Borrow<T>,
+    T: Float,
+{
+    let mut values = values.into_iter();
+    let Some(value) = values.next() else {
+        return (T::zero(), T::zero());
+    };
+
+    let mut acc = TwoSum::<T>::new(*value.borrow());
+    for value in values {
+        acc.add(*value.borrow());
+    }
+
+    acc.finish()
+}
+
 /// Accumulates values with scalar `twosum` across a fixed number of lanes.
 ///
 /// Incoming values are staged until all lanes are full. At that point, each
 /// lane performs its own scalar `twosum` update, which gives the optimizer a
 /// fixed-width loop it can vectorize with SLP.
 #[derive(Clone, Copy, Debug)]
-pub struct TwoSum<T: Float, const NLANES: usize> {
+pub struct TwoSum<T: Float, const NLANES: usize = 8> {
     values: [T; NLANES],
     residuals: [T; NLANES],
     staged: [T; NLANES],
@@ -129,7 +152,7 @@ mod test {
 #[cfg(feature = "std")]
 #[cfg(test)]
 mod test {
-    use super::{TwoSum, twosum};
+    use super::{TwoSum, sum, twosum};
     use num_traits::Float;
 
     fn assert_twosum_residual<T: Float + core::fmt::Debug>() {
@@ -176,6 +199,32 @@ mod test {
 
         assert_eq!(sum, 1.0);
         assert_eq!(err, residual);
+    }
+
+    #[test]
+    fn top_level_sum_accepts_owned_items() {
+        let tiny = f64::EPSILON * 0.25;
+        let (sum, err) = sum([1.0f64, tiny]);
+
+        assert_eq!(sum, 1.0);
+        assert_eq!(err, tiny);
+    }
+
+    #[test]
+    fn top_level_sum_accepts_borrowed_items() {
+        let values = [1.0f64, 2.0, 3.0];
+        let (sum, err) = sum::<_, f64>(values.iter());
+
+        assert_eq!(sum, 6.0);
+        assert_eq!(err, 0.0);
+    }
+
+    #[test]
+    fn top_level_sum_handles_empty_input() {
+        let (sum, err) = sum(core::iter::empty::<f64>());
+
+        assert_eq!(sum, 0.0);
+        assert_eq!(err, 0.0);
     }
 
     #[test]

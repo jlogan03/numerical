@@ -1,7 +1,30 @@
+use core::borrow::Borrow;
 use num_traits::Float;
 
 const PAIRWISE_LEVELS: usize = 64;
 const PAIRWISE_NODE_CAPACITY: usize = 3;
+
+/// Sums an iterator of values with the `Pairwise` accumulator.
+#[inline]
+#[must_use]
+pub fn sum<I, T>(values: I) -> T
+where
+    I: IntoIterator,
+    I::Item: Borrow<T>,
+    T: Float,
+{
+    let mut values = values.into_iter();
+    let Some(value) = values.next() else {
+        return T::zero();
+    };
+
+    let mut acc = Pairwise::new(*value.borrow());
+    for value in values {
+        acc.add(*value.borrow());
+    }
+
+    acc.finish()
+}
 
 /// Accumulates values with a fixed-storage pairwise summation tree.
 ///
@@ -124,7 +147,7 @@ mod test {
 #[cfg(feature = "std")]
 #[cfg(test)]
 mod test {
-    use super::Pairwise;
+    use super::{Pairwise, sum};
 
     fn pairwise_sum(values: &[f64]) -> f64 {
         let mut acc = Pairwise::new(values[0]);
@@ -158,5 +181,27 @@ mod test {
         let sum = pairwise_sum(&values);
 
         assert_eq!(sum, 45.0);
+    }
+
+    #[test]
+    fn top_level_sum_accepts_owned_items() {
+        let sum = sum([1.0f64, 2.0, 3.0]);
+
+        assert_eq!(sum, 6.0);
+    }
+
+    #[test]
+    fn top_level_sum_accepts_borrowed_items() {
+        let values = [1.0f64, 2.0, 3.0];
+        let sum = sum::<_, f64>(values.iter());
+
+        assert_eq!(sum, 6.0);
+    }
+
+    #[test]
+    fn top_level_sum_handles_empty_input() {
+        let sum = sum(core::iter::empty::<f64>());
+
+        assert_eq!(sum, 0.0);
     }
 }
