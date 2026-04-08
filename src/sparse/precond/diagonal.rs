@@ -1,20 +1,6 @@
-//! Preconditioner adapters and simple concrete preconditioners for sparse solvers.
-//!
-//! The main concrete type here is [`DiagonalPrecond`], which approximates a
-//! matrix `A` by keeping only its diagonal and applying the inverse of that
-//! diagonal during the solve. This is the standard diagonal, or "Jacobi",
-//! preconditioner.
-//!
-//! Intuitively, it rescales quantities so that components associated with very
-//! small or very large diagonal entries do not dominate the iteration as much.
-//! If a solver applies it from the left, it rescales equations (rows) in
-//! `A x = b`. If a solver applies it from the right, it rescales the unknowns
-//! or search directions instead, which is equivalent to balancing columns. Our
-//! current `BiCGSTAB` path uses the preconditioner on the right.
-
-use super::col::{col_slice, copy_col};
+use crate::sparse::col::col_slice;
 use faer::Par;
-use faer::dyn_stack::{MemBuffer, MemStack, StackReq};
+use faer::dyn_stack::{MemStack, StackReq};
 use faer::matrix_free::LinOp;
 use faer::sparse::{SparseColMatRef, SparseRowMatRef};
 use faer::{Col, Index, MatMut, MatRef, Unbind};
@@ -23,7 +9,7 @@ use faer_traits::Conjugate;
 use faer_traits::ext::ComplexFieldExt;
 use faer_traits::math_utils::zero;
 
-pub use faer::matrix_free::{BiPrecond, IdentityPrecond, Precond};
+use super::Precond;
 
 /// Diagonal sparse preconditioner.
 ///
@@ -301,36 +287,11 @@ impl<T: ComplexField + Copy> Precond<T> for DiagonalPrecond<T> {
     }
 }
 
-#[inline]
-pub(crate) fn precond_buffer<T, P>(precond: &P) -> MemBuffer
-where
-    T: ComplexField,
-    P: Precond<T>,
-{
-    MemBuffer::new(precond.apply_in_place_scratch(1, Par::Seq))
-}
-
-#[inline]
-pub(crate) fn apply_precond_to_col<T, P>(
-    precond: &P,
-    out: &mut Col<T>,
-    rhs: &Col<T>,
-    buffer: &mut MemBuffer,
-) where
-    T: ComplexField + Copy,
-    P: Precond<T>,
-{
-    // The solver owns the buffer so that repeated preconditioner application
-    // inside the iteration does not allocate.
-    copy_col(out, rhs);
-    let mut stack = MemStack::new(buffer);
-    precond.apply_in_place(out.as_mat_mut(), Par::Seq, &mut stack);
-}
-
 #[cfg(test)]
 mod test {
-    use super::{DiagonalPrecond, DiagonalPrecondError, apply_precond_to_col, precond_buffer};
+    use super::{DiagonalPrecond, DiagonalPrecondError};
     use crate::sparse::col::{col_slice, zero_col};
+    use crate::sparse::precond::{apply_precond_to_col, precond_buffer};
     use faer::c64;
     use faer::sparse::{SparseColMat, SparseRowMat, Triplet};
 
