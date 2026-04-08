@@ -7,6 +7,7 @@
 
 mod block;
 mod diagonal;
+mod schur;
 
 use super::col::copy_col;
 use faer::Col;
@@ -19,6 +20,7 @@ pub use block::{
 };
 pub use diagonal::{DiagonalPrecond, DiagonalPrecondError};
 pub use faer::matrix_free::{BiPrecond, IdentityPrecond, Precond};
+pub use schur::SchurPrecond2;
 
 #[inline]
 pub(crate) fn precond_buffer<T, P>(precond: &P) -> MemBuffer

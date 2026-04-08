@@ -16,6 +16,6 @@ pub use lu::{LuRefinementParams, RefinedLuSolve, SparseLu, SparseLuError};
 pub use matvec::SparseMatVec;
 pub use precond::{
     BiPrecond, BlockDiagonalPrecond2, BlockPrecondError, BlockSplit2, BlockUpperTriangularPrecond2,
-    DiagonalPrecond, DiagonalPrecondError, IdentityPrecond, Precond,
+    DiagonalPrecond, DiagonalPrecondError, IdentityPrecond, Precond, SchurPrecond2,
 };
 pub use schur::{SchurComplement2, SchurComplementError};
