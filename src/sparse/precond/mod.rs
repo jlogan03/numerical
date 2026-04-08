@@ -22,6 +22,9 @@ where
     T: ComplexField,
     P: Precond<T>,
 {
+    // Preconditioners advertise their scratch needs through faer's interface.
+    // We allocate that storage once per solver and then reuse it across all
+    // preconditioner applications inside the iteration.
     MemBuffer::new(precond.apply_in_place_scratch(1, Par::Seq))
 }
 

@@ -1,3 +1,9 @@
+//! Diagonal sparse preconditioner.
+//!
+//! This is the standard Jacobi-style preconditioner for sparse linear solves:
+//! keep only the diagonal of the matrix and apply its inverse during the
+//! iteration.
+
 use crate::sparse::col::col_slice;
 use faer::Par;
 use faer::dyn_stack::{MemStack, StackReq};

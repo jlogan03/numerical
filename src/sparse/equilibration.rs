@@ -92,6 +92,13 @@ pub enum EquilibrationError {
 /// `A_eq = D_r A D_c`
 ///
 /// with `D_r = diag(row_scale)` and `D_c = diag(col_scale)`.
+///
+/// These scales are the cumulative result of several balancing iterations. At
+/// each iteration we look at the current row and column infinity norms,
+/// compute square-root inverse corrections, and multiply them into the stored
+/// scales. Keeping only the final real scale vectors is enough to reconstruct
+/// the balanced matrix and to map vectors between the original and balanced
+/// coordinate systems.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Equilibration<T: ComplexField> {
     row_scale: Vec<T::Real>,
@@ -103,6 +110,18 @@ impl<T: ComplexField> Equilibration<T> {
     ///
     /// The matrix may be unsymmetric; the algorithm updates row and column
     /// scales simultaneously from the same current matrix state.
+    ///
+    /// Technically, this runs a Ruiz-style infinity-norm iteration over a
+    /// mutable working copy of the numeric values. The sparse pattern is read
+    /// once up front and reused throughout the iteration.
+    ///
+    /// Intuitively, this asks two questions about the current scaled matrix:
+    ///
+    /// - which rows still have entries that are much too large or too small?
+    /// - which columns still have entries that are much too large or too small?
+    ///
+    /// The square-root update splits the correction evenly between left and
+    /// right scaling so that we do not over-correct in one step.
     pub fn compute_from_csc<I, ViewT>(
         matrix: SparseColMatRef<'_, I, ViewT>,
         params: EquilibrationParams<T::Real>,
@@ -118,6 +137,9 @@ impl<T: ComplexField> Equilibration<T> {
         let ncols = matrix.ncols().unbound();
         let col_ptr = matrix.col_ptr();
         let row_idx = matrix.row_idx();
+        // The original matrix is left untouched during analysis. We instead
+        // rebalance a scratch copy of the values so each iteration measures the
+        // same sparse pattern under progressively better scaling.
         let mut working = matrix.val().to_vec();
         let one = real_one::<T::Real>();
         let zero = real_zero::<T::Real>();
@@ -135,6 +157,10 @@ impl<T: ComplexField> Equilibration<T> {
             row_norm.fill(zero);
             col_norm.fill(zero);
 
+            // Row and column norms are measured from the same current matrix
+            // state before either side is updated. That is what makes the
+            // asymmetric implementation naturally collapse to the symmetric one
+            // on exactly symmetric or Hermitian inputs.
             for col in 0..ncols {
                 let mut max_in_col = zero;
                 for idx in col_ptr[col].zx()..col_ptr[col + 1].zx() {
@@ -170,6 +196,8 @@ impl<T: ComplexField> Equilibration<T> {
                 params.norm_ceil,
             );
 
+            // Apply the freshly computed row and column corrections together so
+            // the next iteration sees the next balanced matrix `D_r A D_c`.
             for col in 0..ncols {
                 let col_factor = col_update[col];
                 for idx in col_ptr[col].zx()..col_ptr[col + 1].zx() {
@@ -186,6 +214,11 @@ impl<T: ComplexField> Equilibration<T> {
     }
 
     /// Builds row and column scales from a CSR matrix.
+    ///
+    /// This is the same simultaneous two-sided balancing iteration as
+    /// [`compute_from_csc`](Self::compute_from_csc), but written against CSR
+    /// traversal so callers can avoid format conversion when their solver path
+    /// is already row-oriented.
     pub fn compute_from_csr<I, ViewT>(
         matrix: SparseRowMatRef<'_, I, ViewT>,
         params: EquilibrationParams<T::Real>,
@@ -201,6 +234,9 @@ impl<T: ComplexField> Equilibration<T> {
         let ncols = matrix.ncols().unbound();
         let row_ptr = matrix.row_ptr();
         let col_idx = matrix.col_idx();
+        // Just like the CSC path, the iteration operates on scratch values so
+        // callers can reuse the original matrix for an unscaled solve or for
+        // constructing a separately scaled copy later.
         let mut working = matrix.val().to_vec();
         let one = real_one::<T::Real>();
         let zero = real_zero::<T::Real>();
@@ -253,6 +289,8 @@ impl<T: ComplexField> Equilibration<T> {
                 params.norm_ceil,
             );
 
+            // Update the working values with the new left/right factors so the
+            // next pass measures the newly equilibrated operator.
             for row in 0..nrows {
                 let row_factor = row_update[row];
                 for idx in row_ptr[row].zx()..row_ptr[row + 1].zx() {
@@ -269,6 +307,9 @@ impl<T: ComplexField> Equilibration<T> {
     }
 
     /// Number of rows covered by the equilibration.
+    ///
+    /// This is the dimension of vectors that can be scaled on the left, such
+    /// as residuals and right-hand sides.
     #[inline]
     #[must_use]
     pub fn nrows(&self) -> usize {
@@ -276,6 +317,9 @@ impl<T: ComplexField> Equilibration<T> {
     }
 
     /// Number of columns covered by the equilibration.
+    ///
+    /// This is the dimension of vectors that live in the unknown space, such as
+    /// initial guesses and recovered solutions.
     #[inline]
     #[must_use]
     pub fn ncols(&self) -> usize {
@@ -283,6 +327,9 @@ impl<T: ComplexField> Equilibration<T> {
     }
 
     /// Positive row scaling factors.
+    ///
+    /// Multiplying row `i` by `row_scale[i]` is equivalent to left-multiplying
+    /// by `D_r`.
     #[inline]
     #[must_use]
     pub fn row_scale(&self) -> &[T::Real] {
@@ -290,6 +337,9 @@ impl<T: ComplexField> Equilibration<T> {
     }
 
     /// Positive column scaling factors.
+    ///
+    /// Multiplying column `j` by `col_scale[j]` is equivalent to
+    /// right-multiplying by `D_c`.
     #[inline]
     #[must_use]
     pub fn col_scale(&self) -> &[T::Real] {
@@ -300,6 +350,9 @@ impl<T: ComplexField> Equilibration<T> {
     ///
     /// This transforms the numeric values for a matrix with the supplied
     /// symbolic structure into the values of `D_r A D_c`.
+    ///
+    /// The sparsity pattern is unchanged. Only the stored numeric values are
+    /// rescaled.
     pub fn scale_csc_values_in_place<I>(
         &self,
         symbolic: SymbolicSparseColMatRef<'_, I>,
@@ -329,6 +382,9 @@ impl<T: ComplexField> Equilibration<T> {
     }
 
     /// Applies the stored row and column scaling to CSR values in place.
+    ///
+    /// Like [`scale_csc_values_in_place`](Self::scale_csc_values_in_place), this
+    /// leaves the sparsity pattern alone and only rescales the numeric values.
     pub fn scale_csr_values_in_place<I>(
         &self,
         symbolic: SymbolicSparseRowMatRef<'_, I>,
@@ -358,6 +414,9 @@ impl<T: ComplexField> Equilibration<T> {
     }
 
     /// Applies the stored scaling to an owned CSC matrix in place.
+    ///
+    /// This is the convenient owned-matrix variant of
+    /// [`scale_csc_values_in_place`](Self::scale_csc_values_in_place).
     pub fn scale_csc_matrix_in_place<I>(&self, matrix: &mut SparseColMat<I, T>)
     where
         T: Copy,
@@ -368,6 +427,9 @@ impl<T: ComplexField> Equilibration<T> {
     }
 
     /// Applies the stored scaling to an owned CSR matrix in place.
+    ///
+    /// This is the convenient owned-matrix variant of
+    /// [`scale_csr_values_in_place`](Self::scale_csr_values_in_place).
     pub fn scale_csr_matrix_in_place<I>(&self, matrix: &mut SparseRowMat<I, T>)
     where
         T: Copy,
@@ -381,6 +443,9 @@ impl<T: ComplexField> Equilibration<T> {
     ///
     /// If the original system is `A x = b`, the balanced system uses
     /// `b_eq = D_r b`.
+    ///
+    /// Intuitively, this rescales each equation by the same factor used on the
+    /// corresponding row of the matrix.
     pub fn scale_rhs_in_place(&self, rhs: &mut [T])
     where
         T: Copy,
@@ -395,6 +460,10 @@ impl<T: ComplexField> Equilibration<T> {
     ///
     /// Since `x = D_c y`, a guess in the original coordinates must be mapped to
     /// `y = D_c^{-1} x` before solving the balanced system.
+    ///
+    /// This is the easy step to miss when swapping between original and
+    /// equilibrated systems: row scaling changes the equations, but column
+    /// scaling changes the coordinates of the unknown itself.
     pub fn scale_initial_guess_in_place(&self, x: &mut [T])
     where
         T: Copy,
@@ -410,6 +479,9 @@ impl<T: ComplexField> Equilibration<T> {
     ///
     /// If `y` solves `D_r A D_c y = D_r b`, then the original solution is
     /// `x = D_c y`.
+    ///
+    /// This undoes the coordinate change introduced by
+    /// [`scale_initial_guess_in_place`](Self::scale_initial_guess_in_place).
     pub fn unscale_solution_in_place(&self, y: &mut [T])
     where
         T: Copy,
@@ -423,6 +495,8 @@ impl<T: ComplexField> Equilibration<T> {
 
 #[inline]
 fn real_zero<R: Float>() -> R {
+    // Keeping these tiny helpers local avoids depending on a particular
+    // extension-trait path for `zero()` / `one()` across real scalar types.
     R::from(0.0).unwrap()
 }
 
@@ -461,6 +535,8 @@ fn validate_nonzero_norms<R: Float + Copy>(
     row_norm: &[R],
     col_norm: &[R],
 ) -> Result<(), EquilibrationError> {
+    // A zero row or column cannot be balanced to unit norm without an explicit
+    // singular-handling policy, so we surface it immediately.
     for (index, &value) in row_norm.iter().enumerate() {
         if value <= real_zero::<R>() {
             return Err(EquilibrationError::ZeroRow { index });
@@ -491,6 +567,9 @@ fn compute_updates<R: Float + Copy>(
     norm_ceil: R,
 ) {
     for ((&norm, update), scale) in norms.iter().zip(updates.iter_mut()).zip(scales.iter_mut()) {
+        // The sqrt split is the key balancing heuristic: it applies half of the
+        // correction on the left and half on the right, which keeps the
+        // iteration stable and symmetric between rows and columns.
         let clamped = norm.max(norm_floor).min(norm_ceil);
         let value = clamped.sqrt().recip();
         *update = value;
