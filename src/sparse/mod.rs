@@ -6,6 +6,7 @@ pub mod equilibration;
 pub mod lu;
 pub mod matvec;
 pub mod precond;
+pub mod schur;
 
 pub use bicgstab::BiCGSTAB;
 pub use cholesky::{SparseLdlt, SparseLdltError, SparseLlt, SparseLltError};
@@ -17,3 +18,4 @@ pub use precond::{
     BiPrecond, BlockDiagonalPrecond2, BlockPrecondError, BlockSplit2, BlockUpperTriangularPrecond2,
     DiagonalPrecond, DiagonalPrecondError, IdentityPrecond, Precond,
 };
+pub use schur::{SchurComplement2, SchurComplementError};
