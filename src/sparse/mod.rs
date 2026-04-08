@@ -13,4 +13,7 @@ pub use compensated::CompensatedField;
 pub use equilibration::{Equilibration, EquilibrationError, EquilibrationParams};
 pub use lu::{LuRefinementParams, RefinedLuSolve, SparseLu, SparseLuError};
 pub use matvec::SparseMatVec;
-pub use precond::{BiPrecond, DiagonalPrecond, DiagonalPrecondError, IdentityPrecond, Precond};
+pub use precond::{
+    BiPrecond, BlockDiagonalPrecond2, BlockPrecondError, BlockSplit2, BlockUpperTriangularPrecond2,
+    DiagonalPrecond, DiagonalPrecondError, IdentityPrecond, Precond,
+};

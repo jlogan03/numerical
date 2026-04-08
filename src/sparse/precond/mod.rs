@@ -5,6 +5,7 @@
 //! here as well so iterative methods can apply a preconditioner repeatedly
 //! without allocating on every iteration.
 
+mod block;
 mod diagonal;
 
 use super::col::copy_col;
@@ -13,6 +14,9 @@ use faer::Par;
 use faer::dyn_stack::{MemBuffer, MemStack};
 use faer_traits::ComplexField;
 
+pub use block::{
+    BlockDiagonalPrecond2, BlockPrecondError, BlockSplit2, BlockUpperTriangularPrecond2,
+};
 pub use diagonal::{DiagonalPrecond, DiagonalPrecondError};
 pub use faer::matrix_free::{BiPrecond, IdentityPrecond, Precond};
 
