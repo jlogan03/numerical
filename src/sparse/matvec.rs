@@ -1,12 +1,14 @@
-use super::compensated::CompensatedSum;
-use super::field::Field;
+use super::compensated::{CompensatedField, CompensatedSum};
 use faer::sparse::{SparseColMatRef, SparseRowMatRef};
 use faer::{Index, Unbind};
+use faer_traits::ComplexField;
 use faer_traits::Conjugate;
+use faer_traits::math_utils::zero;
+use num_traits::Float;
 use std::fmt::Debug;
 
 /// Sparse matrix-vector product interface used by iterative solvers.
-pub trait SparseMatVec<T: Field>: Copy + Debug {
+pub trait SparseMatVec<T: ComplexField + Copy>: Copy + Debug {
     /// Number of rows.
     fn nrows(&self) -> usize;
 
@@ -22,7 +24,8 @@ pub trait SparseMatVec<T: Field>: Copy + Debug {
 
 impl<T, I, ViewT> SparseMatVec<T> for SparseRowMatRef<'_, I, ViewT>
 where
-    T: Field,
+    T: CompensatedField,
+    T::Real: Float + Copy,
     I: Index,
     ViewT: Conjugate<Canonical = T>,
 {
@@ -49,11 +52,11 @@ where
         let col_idx = matrix.col_idx();
         let values = matrix.val();
 
-        out.fill(T::zero_value());
+        out.fill(zero::<T>());
         for row in 0..nrows {
             let start = row_ptr[row].zx();
             let end = row_ptr[row + 1].zx();
-            let mut sum = T::zero_value();
+            let mut sum = zero::<T>();
 
             for idx in start..end {
                 sum += values[idx] * rhs[col_idx[idx].zx()];
@@ -76,7 +79,7 @@ where
         let col_idx = matrix.col_idx();
         let values = matrix.val();
 
-        out.fill(T::zero_value());
+        out.fill(zero::<T>());
         for row in 0..nrows {
             let start = row_ptr[row].zx();
             let end = row_ptr[row + 1].zx();
@@ -93,7 +96,8 @@ where
 
 impl<T, I, ViewT> SparseMatVec<T> for SparseColMatRef<'_, I, ViewT>
 where
-    T: Field,
+    T: CompensatedField,
+    T::Real: Float + Copy,
     I: Index,
     ViewT: Conjugate<Canonical = T>,
 {
@@ -120,7 +124,7 @@ where
         let row_idx = matrix.row_idx();
         let values = matrix.val();
 
-        out.fill(T::zero_value());
+        out.fill(zero::<T>());
         for col in 0..ncols {
             let rhs_value = rhs[col];
             let start = col_ptr[col].zx();

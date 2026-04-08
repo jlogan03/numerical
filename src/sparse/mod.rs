@@ -1,9 +1,10 @@
 pub mod bicgstab;
 pub(crate) mod col;
 pub mod compensated;
-pub mod field;
 pub mod matvec;
+pub mod precond;
 
 pub use bicgstab::BiCGSTAB;
-pub use field::Field;
+pub use compensated::CompensatedField;
 pub use matvec::SparseMatVec;
+pub use precond::{IdentityPrecond, Precond};

@@ -1,13 +1,17 @@
 use super::col::{col_from_slice, col_slice, col_slice_mut, copy_col, zero_col};
-use super::compensated::{dotc, norm2, norm2_sq, sum2, sum3};
-use super::field::Field;
+use super::compensated::{CompensatedField, dotc, norm2, norm2_sq, sum2, sum3};
 use super::matvec::SparseMatVec;
+use super::precond::{IdentityPrecond, Precond, apply_precond_to_col, precond_buffer};
+use core::fmt;
 use faer::Col;
+use faer::dyn_stack::MemBuffer;
+use faer_traits::ComplexField;
+use faer_traits::ext::ComplexFieldExt;
+use faer_traits::math_utils::{eps, from_f64, zero};
 use num_traits::Float;
 
 /// Stabilized bi-conjugate gradient solver.
-#[derive(Debug)]
-pub struct BiCGSTAB<T: Field, A: SparseMatVec<T>> {
+pub struct BiCGSTAB<T: ComplexField + Copy, A: SparseMatVec<T>, P: Precond<T> = IdentityPrecond> {
     iteration_count: usize,
     soft_restart_threshold: T::Real,
     soft_restart_count: usize,
@@ -23,17 +27,91 @@ pub struct BiCGSTAB<T: Field, A: SparseMatVec<T>> {
     s: Col<T>,
     t: Col<T>,
     scratch: Col<T>,
+    z: Col<T>,
+    preconditioner: P,
+    precond_buffer: MemBuffer,
     rho: T,
 }
 
-impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
+impl<T: ComplexField + Copy, A: SparseMatVec<T>, P: Precond<T>> fmt::Debug for BiCGSTAB<T, A, P> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BiCGSTAB")
+            .field("iteration_count", &self.iteration_count)
+            .field("soft_restart_threshold", &self.soft_restart_threshold)
+            .field("soft_restart_count", &self.soft_restart_count)
+            .field("hard_restart_count", &self.hard_restart_count)
+            .field("err", &self.err)
+            .field("a", &self.a)
+            .field("b", &self.b)
+            .field("x", &self.x)
+            .field("r", &self.r)
+            .field("rhat", &self.rhat)
+            .field("p", &self.p)
+            .field("v", &self.v)
+            .field("s", &self.s)
+            .field("t", &self.t)
+            .field("scratch", &self.scratch)
+            .field("z", &self.z)
+            .field("rho", &self.rho)
+            .field("preconditioner", &self.preconditioner)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<T: ComplexField + CompensatedField, A: SparseMatVec<T>> BiCGSTAB<T, A, IdentityPrecond>
+where
+    T::Real: Float + Copy,
+{
     /// Initializes a solver with a fresh residual estimate.
     #[inline]
     #[must_use]
     pub fn new(a: A, x0: &[T], b: &[T]) -> Self {
+        let dim = a.ncols();
+        Self::new_with_precond(a, IdentityPrecond { dim }, x0, b)
+    }
+
+    /// Attempts to solve the system to the given absolute residual tolerance.
+    pub fn solve(a: A, x0: &[T], b: &[T], tol: T::Real, max_iter: usize) -> Result<Self, Self> {
+        let mut solver = Self::new(a, x0, b);
+        if solver.err() < tol {
+            return Ok(solver);
+        }
+
+        for _ in 0..max_iter {
+            solver.step();
+            if solver.err() < tol {
+                solver.hard_restart();
+                if solver.err() < tol {
+                    return Ok(solver);
+                }
+            }
+        }
+
+        Err(solver)
+    }
+}
+
+impl<T: ComplexField + CompensatedField, A: SparseMatVec<T>, P: Precond<T>> BiCGSTAB<T, A, P>
+where
+    T::Real: Float + Copy,
+{
+    /// Initializes a solver with a fresh residual estimate and preconditioner.
+    #[inline]
+    #[must_use]
+    pub fn new_with_precond(a: A, preconditioner: P, x0: &[T], b: &[T]) -> Self {
         assert_eq!(a.nrows(), a.ncols(), "BiCGSTAB requires a square matrix");
         assert_eq!(x0.len(), a.ncols(), "Initial guess has the wrong length");
         assert_eq!(b.len(), a.nrows(), "Right-hand side has the wrong length");
+        assert_eq!(
+            preconditioner.nrows(),
+            a.ncols(),
+            "Preconditioner output dimension has the wrong length",
+        );
+        assert_eq!(
+            preconditioner.ncols(),
+            a.ncols(),
+            "Preconditioner input dimension has the wrong length",
+        );
 
         let n = a.nrows();
         let b_col = col_from_slice(b);
@@ -47,7 +125,7 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             .zip(col_slice(&b_col).iter())
             .zip(col_slice(&scratch).iter())
         {
-            *r = sum2(b, T::zero_value() - ax);
+            *r = sum2(b, -ax);
         }
 
         let err = norm2::<T>(col_slice(&r));
@@ -57,10 +135,12 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
         let v = zero_col::<T>(n);
         let s = zero_col::<T>(n);
         let t = zero_col::<T>(n);
+        let z = zero_col::<T>(n);
+        let precond_buffer = precond_buffer(&preconditioner);
 
         Self {
             iteration_count: 0,
-            soft_restart_threshold: T::real_from_f64(0.1),
+            soft_restart_threshold: from_f64::<T::Real>(0.1),
             soft_restart_count: 0,
             hard_restart_count: 0,
             err,
@@ -74,13 +154,23 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             s,
             t,
             scratch,
+            z,
+            preconditioner,
+            precond_buffer,
             rho,
         }
     }
 
-    /// Attempts to solve the system to the given absolute residual tolerance.
-    pub fn solve(a: A, x0: &[T], b: &[T], tol: T::Real, max_iter: usize) -> Result<Self, Self> {
-        let mut solver = Self::new(a, x0, b);
+    /// Attempts to solve the system to the given absolute residual tolerance with a preconditioner.
+    pub fn solve_with_precond(
+        a: A,
+        preconditioner: P,
+        x0: &[T],
+        b: &[T],
+        tol: T::Real,
+        max_iter: usize,
+    ) -> Result<Self, Self> {
+        let mut solver = Self::new_with_precond(a, preconditioner, x0, b);
         if solver.err() < tol {
             return Ok(solver);
         }
@@ -117,7 +207,7 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             .zip(col_slice(&self.b).iter())
             .zip(col_slice(&self.scratch).iter())
         {
-            *r = sum2(b, T::zero_value() - ax);
+            *r = sum2(b, -ax);
         }
 
         self.err = norm2::<T>(col_slice(&self.r));
@@ -129,11 +219,17 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
     pub fn step(&mut self) -> T::Real {
         self.iteration_count += 1;
 
+        apply_precond_to_col(
+            &self.preconditioner,
+            &mut self.z,
+            &self.p,
+            &mut self.precond_buffer,
+        );
         self.a
-            .apply_compensated(col_slice_mut(&mut self.v), col_slice(&self.p));
+            .apply_compensated(col_slice_mut(&mut self.v), col_slice(&self.z));
 
         let denom = dotc::<T>(col_slice(&self.rhat), col_slice(&self.v));
-        if denom.abs_value() <= T::real_epsilon() {
+        if denom.abs() <= eps::<T::Real>() {
             self.soft_restart();
             return self.err;
         }
@@ -143,7 +239,7 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
         for ((h, &x), &p) in col_slice_mut(&mut self.scratch)
             .iter_mut()
             .zip(col_slice(&self.x).iter())
-            .zip(col_slice(&self.p).iter())
+            .zip(col_slice(&self.z).iter())
         {
             *h = sum2(x, p * alpha);
         }
@@ -153,11 +249,11 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             .zip(col_slice(&self.r).iter())
             .zip(col_slice(&self.v).iter())
         {
-            *s = sum2(r, T::zero_value() - v * alpha);
+            *s = sum2(r, -(v * alpha));
         }
 
         let s_norm_sq = norm2_sq::<T>(col_slice(&self.s));
-        if s_norm_sq <= T::real_epsilon() {
+        if s_norm_sq <= eps::<T::Real>() {
             copy_col(&mut self.x, &self.scratch);
             copy_col(&mut self.r, &self.s);
             self.err = s_norm_sq.sqrt();
@@ -165,11 +261,17 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             return self.err;
         }
 
+        apply_precond_to_col(
+            &self.preconditioner,
+            &mut self.z,
+            &self.s,
+            &mut self.precond_buffer,
+        );
         self.a
-            .apply_compensated(col_slice_mut(&mut self.t), col_slice(&self.s));
+            .apply_compensated(col_slice_mut(&mut self.t), col_slice(&self.z));
 
         let t_norm_sq = norm2_sq::<T>(col_slice(&self.t));
-        if t_norm_sq <= T::real_epsilon() {
+        if t_norm_sq <= eps::<T::Real>() {
             copy_col(&mut self.x, &self.scratch);
             copy_col(&mut self.r, &self.s);
             self.err = norm2::<T>(col_slice(&self.r));
@@ -177,12 +279,12 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             return self.err;
         }
 
-        let omega = dotc::<T>(col_slice(&self.t), col_slice(&self.s)).scale_real(t_norm_sq.recip());
+        let omega = dotc::<T>(col_slice(&self.t), col_slice(&self.s)).mul_real(t_norm_sq.recip());
 
         for ((x, &h), &s) in col_slice_mut(&mut self.x)
             .iter_mut()
             .zip(col_slice(&self.scratch).iter())
-            .zip(col_slice(&self.s).iter())
+            .zip(col_slice(&self.z).iter())
         {
             *x = sum2(h, s * omega);
         }
@@ -192,7 +294,7 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
             .zip(col_slice(&self.s).iter())
             .zip(col_slice(&self.t).iter())
         {
-            *r = sum2(s, T::zero_value() - t * omega);
+            *r = sum2(s, -(t * omega));
         }
 
         let err_sq = norm2_sq::<T>(col_slice(&self.r));
@@ -202,11 +304,8 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
         self.rho = dotc::<T>(col_slice(&self.rhat), col_slice(&self.r));
 
         let should_restart =
-            err_sq > T::real_zero() && self.rho.abs_value() / err_sq < self.soft_restart_threshold;
-        if should_restart
-            || rho_prev.abs_value() <= T::real_epsilon()
-            || omega.abs_value() <= T::real_epsilon()
-        {
+            err_sq > zero::<T::Real>() && self.rho.abs() / err_sq < self.soft_restart_threshold;
+        if should_restart || rho_prev.abs() <= eps::<T::Real>() || omega.abs() <= eps::<T::Real>() {
             self.soft_restart();
         } else {
             let beta = (self.rho / rho_prev) * (alpha / omega);
@@ -217,7 +316,7 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
                 .zip(col_slice(&self.p).iter())
                 .zip(col_slice(&self.v).iter())
             {
-                *p_new = sum3(r, p_old * beta, T::zero_value() - (v * omega) * beta);
+                *p_new = sum3(r, p_old * beta, -((v * omega) * beta));
             }
 
             copy_col(&mut self.p, &self.scratch);
@@ -268,6 +367,11 @@ impl<T: Field, A: SparseMatVec<T>> BiCGSTAB<T, A> {
         self.a
     }
 
+    /// Preconditioner.
+    pub fn preconditioner(&self) -> &P {
+        &self.preconditioner
+    }
+
     /// Latest solution estimate.
     pub fn x(&self) -> &Col<T> {
         &self.x
@@ -308,8 +412,7 @@ mod test {
 mod test {
     use super::BiCGSTAB;
     use crate::sparse::col::{col_slice, col_slice_mut};
-    use crate::sparse::compensated::norm2;
-    use crate::sparse::field::Field;
+    use crate::sparse::compensated::{CompensatedField, norm2};
     use crate::sparse::matvec::SparseMatVec;
     use faer::dyn_stack::{MemBuffer, MemStack};
     use faer::mat::AsMatRef;
@@ -317,12 +420,14 @@ mod test {
     use faer::matrix_free::{IdentityPrecond, InitialGuessStatus};
     use faer::sparse::{SparseColMat, SparseRowMat, Triplet};
     use faer::{Col, Mat, Par, c32, c64};
+    use faer_traits::ComplexField;
     use num_traits::Float;
     use std::time::Instant;
 
     fn apply_to_col<T, A>(a: A, x: &[T]) -> Col<T>
     where
-        T: Field,
+        T: ComplexField + CompensatedField,
+        T::Real: Float + Copy,
         A: SparseMatVec<T>,
     {
         let mut out = crate::sparse::col::zero_col::<T>(a.nrows());
@@ -332,7 +437,8 @@ mod test {
 
     fn assert_solution_close<T, A>(a: A, x_true: &[T], x0: &[T], tol: T::Real)
     where
-        T: Field,
+        T: ComplexField + CompensatedField,
+        T::Real: Float + Copy,
         A: SparseMatVec<T>,
     {
         let b = apply_to_col(a, x_true);
@@ -354,7 +460,8 @@ mod test {
 
     fn residual_norm<T, A>(a: A, x: &[T], b: &[T]) -> T::Real
     where
-        T: Field,
+        T: ComplexField + CompensatedField,
+        T::Real: Float + Copy,
         A: SparseMatVec<T>,
     {
         let ax = apply_to_col(a, x);
@@ -418,6 +525,41 @@ mod test {
         let x_true = [1.0f32, -2.0, 0.5, 3.0];
         let x0 = [0.1f32, 0.1, 0.1, 0.1];
         assert_solution_close(a.as_ref(), &x_true, &x0, 1.0e-4);
+    }
+
+    #[test]
+    fn solves_with_explicit_identity_preconditioner() {
+        let a = SparseRowMat::<usize, f64>::try_new_from_triplets(
+            4,
+            4,
+            &[
+                Triplet::new(0, 0, 4.0),
+                Triplet::new(0, 1, -1.0),
+                Triplet::new(1, 0, 2.0),
+                Triplet::new(1, 1, 5.0),
+                Triplet::new(1, 2, 1.0),
+                Triplet::new(2, 1, 2.0),
+                Triplet::new(2, 2, 4.0),
+                Triplet::new(2, 3, -1.0),
+                Triplet::new(3, 0, 1.0),
+                Triplet::new(3, 3, 3.0),
+            ],
+        )
+        .unwrap();
+
+        let x_true = [1.0, -2.0, 0.5, 3.0];
+        let b = apply_to_col(a.as_ref(), &x_true);
+        let solver = BiCGSTAB::solve_with_precond(
+            a.as_ref(),
+            crate::sparse::IdentityPrecond { dim: 4 },
+            &[0.0; 4],
+            col_slice(&b),
+            1.0e-12,
+            50,
+        )
+        .unwrap();
+
+        assert!(residual_norm(a.as_ref(), col_slice(solver.x()), col_slice(&b)) < 1.0e-12);
     }
 
     #[test]

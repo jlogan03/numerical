@@ -1,20 +1,22 @@
-use super::field::Field;
 use crate::sum::twosum::TwoSum;
+use faer::{c32, c64};
+use faer_traits::ComplexField;
+use faer_traits::ext::ComplexFieldExt;
 use num_traits::Float;
 
 #[derive(Clone, Copy, Debug)]
-struct RealCompensatedSum<R: Float> {
+struct RealCompensatedSum<R: Float + Copy> {
     acc: Option<TwoSum<R>>,
 }
 
-impl<R: Float> Default for RealCompensatedSum<R> {
+impl<R: Float + Copy> Default for RealCompensatedSum<R> {
     #[inline]
     fn default() -> Self {
         Self { acc: None }
     }
 }
 
-impl<R: Float> RealCompensatedSum<R> {
+impl<R: Float + Copy> RealCompensatedSum<R> {
     #[inline]
     fn add(&mut self, value: R) {
         match self.acc.as_mut() {
@@ -36,12 +38,58 @@ impl<R: Float> RealCompensatedSum<R> {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct CompensatedSum<T: Field> {
+pub(crate) struct CompensatedSum<T: CompensatedField>
+where
+    T::Real: Float + Copy,
+{
     real: RealCompensatedSum<T::Real>,
     imag: RealCompensatedSum<T::Real>,
 }
 
-impl<T: Field> Default for CompensatedSum<T> {
+/// Scalars that support reconstruction from compensated real and imaginary parts.
+///
+/// `faer_traits::ComplexField` does not expose a generic `from_parts` constructor,
+/// so compensated kernels need this small extension trait in order to rebuild the
+/// final scalar after separately accumulating the real and imaginary components.
+pub trait CompensatedField: ComplexField + Copy
+where
+    Self::Real: Float + Copy,
+{
+    fn from_real_imag(real: Self::Real, imag: Self::Real) -> Self;
+}
+
+impl CompensatedField for f32 {
+    #[inline]
+    fn from_real_imag(real: Self::Real, _imag: Self::Real) -> Self {
+        real
+    }
+}
+
+impl CompensatedField for f64 {
+    #[inline]
+    fn from_real_imag(real: Self::Real, _imag: Self::Real) -> Self {
+        real
+    }
+}
+
+impl CompensatedField for c32 {
+    #[inline]
+    fn from_real_imag(real: Self::Real, imag: Self::Real) -> Self {
+        Self::new(real, imag)
+    }
+}
+
+impl CompensatedField for c64 {
+    #[inline]
+    fn from_real_imag(real: Self::Real, imag: Self::Real) -> Self {
+        Self::new(real, imag)
+    }
+}
+
+impl<T: CompensatedField> Default for CompensatedSum<T>
+where
+    T::Real: Float + Copy,
+{
     #[inline]
     fn default() -> Self {
         Self {
@@ -51,21 +99,27 @@ impl<T: Field> Default for CompensatedSum<T> {
     }
 }
 
-impl<T: Field> CompensatedSum<T> {
+impl<T: CompensatedField> CompensatedSum<T>
+where
+    T::Real: Float + Copy,
+{
     #[inline]
     pub(crate) fn add(&mut self, value: T) {
-        self.real.add(value.real_part());
-        self.imag.add(value.imag_part());
+        self.real.add(value.real());
+        self.imag.add(value.imag());
     }
 
     #[inline]
     pub(crate) fn finish(self) -> T {
-        T::from_parts(self.real.finish(), self.imag.finish())
+        T::from_real_imag(self.real.finish(), self.imag.finish())
     }
 }
 
 #[inline]
-pub fn sum2<T: Field>(lhs: T, rhs: T) -> T {
+pub(crate) fn sum2<T: CompensatedField>(lhs: T, rhs: T) -> T
+where
+    T::Real: Float + Copy,
+{
     let mut acc = CompensatedSum::<T>::default();
     acc.add(lhs);
     acc.add(rhs);
@@ -73,7 +127,10 @@ pub fn sum2<T: Field>(lhs: T, rhs: T) -> T {
 }
 
 #[inline]
-pub fn sum3<T: Field>(lhs: T, mid: T, rhs: T) -> T {
+pub(crate) fn sum3<T: CompensatedField>(lhs: T, mid: T, rhs: T) -> T
+where
+    T::Real: Float + Copy,
+{
     let mut acc = CompensatedSum::<T>::default();
     acc.add(lhs);
     acc.add(mid);
@@ -82,29 +139,38 @@ pub fn sum3<T: Field>(lhs: T, mid: T, rhs: T) -> T {
 }
 
 #[inline]
-pub fn dotc<T: Field>(lhs: &[T], rhs: &[T]) -> T {
+pub(crate) fn dotc<T: CompensatedField>(lhs: &[T], rhs: &[T]) -> T
+where
+    T::Real: Float + Copy,
+{
     assert_eq!(lhs.len(), rhs.len());
 
     let mut acc = CompensatedSum::<T>::default();
     for (&lhs, &rhs) in lhs.iter().zip(rhs.iter()) {
-        acc.add(lhs.conj_value() * rhs);
+        acc.add(lhs.conj() * rhs);
     }
 
     acc.finish()
 }
 
 #[inline]
-pub fn norm2_sq<T: Field>(values: &[T]) -> T::Real {
+pub(crate) fn norm2_sq<T: CompensatedField>(values: &[T]) -> T::Real
+where
+    T::Real: Float + Copy,
+{
     let mut acc = RealCompensatedSum::<T::Real>::default();
     for &value in values {
-        acc.add(value.abs2_value());
+        acc.add(value.abs2());
     }
 
     acc.finish()
 }
 
 #[inline]
-pub fn norm2<T: Field>(values: &[T]) -> T::Real {
+pub(crate) fn norm2<T: CompensatedField>(values: &[T]) -> T::Real
+where
+    T::Real: Float + Copy,
+{
     norm2_sq::<T>(values).sqrt()
 }
 

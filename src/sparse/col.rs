@@ -1,5 +1,6 @@
-use super::field::Field;
 use faer::{Col, Unbind};
+use faer_traits::ComplexField;
+use faer_traits::math_utils::zero;
 
 #[inline]
 pub(crate) fn col_from_slice<T: Copy>(values: &[T]) -> Col<T> {
@@ -7,8 +8,8 @@ pub(crate) fn col_from_slice<T: Copy>(values: &[T]) -> Col<T> {
 }
 
 #[inline]
-pub(crate) fn zero_col<T: Field>(len: usize) -> Col<T> {
-    Col::from_fn(len, |_| T::zero_value())
+pub(crate) fn zero_col<T: ComplexField>(len: usize) -> Col<T> {
+    Col::from_fn(len, |_| zero::<T>())
 }
 
 #[inline]
