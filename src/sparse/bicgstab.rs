@@ -414,10 +414,11 @@ mod test {
     use crate::sparse::col::{col_slice, col_slice_mut};
     use crate::sparse::compensated::{CompensatedField, norm2};
     use crate::sparse::matvec::SparseMatVec;
+    use crate::sparse::{DiagonalPrecond, IdentityPrecond};
     use faer::dyn_stack::{MemBuffer, MemStack};
     use faer::mat::AsMatRef;
+    use faer::matrix_free::InitialGuessStatus;
     use faer::matrix_free::bicgstab::{BicgParams, bicgstab as faer_bicgstab, bicgstab_scratch};
-    use faer::matrix_free::{IdentityPrecond, InitialGuessStatus};
     use faer::sparse::{SparseColMat, SparseRowMat, Triplet};
     use faer::{Col, Mat, Par, c32, c64};
     use faer_traits::ComplexField;
@@ -639,6 +640,48 @@ mod test {
         let result = BiCGSTAB::solve(a.as_ref(), &[0.0; 4], col_slice(&b), 1.0e-12, 1);
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn diagonal_preconditioner_reduces_iterations_on_column_scaled_system() {
+        let n = 12usize;
+        let scales: Vec<f64> = (0..n).map(|i| 10.0f64.powi(i as i32 - 6)).collect();
+        let mut triplets = Vec::with_capacity(3 * n - 2);
+        for row in 0..n {
+            triplets.push(Triplet::new(row, row, scales[row]));
+            if row > 0 {
+                triplets.push(Triplet::new(row, row - 1, -0.25 * scales[row - 1]));
+            }
+            if row + 1 < n {
+                triplets.push(Triplet::new(row, row + 1, -0.25 * scales[row + 1]));
+            }
+        }
+
+        let a = SparseRowMat::<usize, f64>::try_new_from_triplets(n, n, &triplets).unwrap();
+        let x_true: Vec<f64> = scales.iter().map(|&scale| scale.recip()).collect();
+        let x0 = vec![0.0; n];
+        let b = apply_to_col(a.as_ref(), &x_true);
+        let tol = 1.0e-10;
+
+        let identity = BiCGSTAB::solve(a.as_ref(), &x0, col_slice(&b), tol, 200);
+        let diagonal = BiCGSTAB::solve_with_precond(
+            a.as_ref(),
+            DiagonalPrecond::try_from(a.as_ref()).unwrap(),
+            &x0,
+            col_slice(&b),
+            tol,
+            200,
+        )
+        .unwrap();
+
+        assert!(diagonal.err() < tol);
+        match identity {
+            Ok(identity) => assert!(diagonal.iteration_count() < identity.iteration_count()),
+            Err(identity) => {
+                assert!(identity.err() >= tol);
+                assert_eq!(identity.iteration_count(), 200);
+            }
+        }
     }
 
     #[test]
