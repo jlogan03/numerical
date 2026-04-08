@@ -1,3 +1,17 @@
+//! Preconditioner adapters and simple concrete preconditioners for sparse solvers.
+//!
+//! The main concrete type here is [`DiagonalPrecond`], which approximates a
+//! matrix `A` by keeping only its diagonal and applying the inverse of that
+//! diagonal during the solve. This is the standard diagonal, or "Jacobi",
+//! preconditioner.
+//!
+//! Intuitively, it rescales quantities so that components associated with very
+//! small or very large diagonal entries do not dominate the iteration as much.
+//! If a solver applies it from the left, it rescales equations (rows) in
+//! `A x = b`. If a solver applies it from the right, it rescales the unknowns
+//! or search directions instead, which is equivalent to balancing columns. Our
+//! current `BiCGSTAB` path uses the preconditioner on the right.
+
 use super::col::{col_slice, copy_col};
 use faer::Par;
 use faer::dyn_stack::{MemBuffer, MemStack, StackReq};
@@ -11,19 +25,46 @@ use faer_traits::math_utils::zero;
 
 pub use faer::matrix_free::{BiPrecond, IdentityPrecond, Precond};
 
+/// Diagonal sparse preconditioner.
+///
+/// This stores `M^{-1}` for the diagonal matrix `M = diag(A)`, with entries
+/// chosen as
+///
+/// `inv_diag[i] = 1 / A[i, i]`.
+///
+/// That is the cheapest useful approximation to `A`: it ignores all coupling
+/// between unknowns, but it preserves the per-variable scale carried by the
+/// diagonal. For real matrices this is the usual Jacobi preconditioner; for
+/// complex matrices the same idea applies using the exact complex reciprocal of
+/// each diagonal entry.
+///
+/// When a solver applies this preconditioner from the left, it forms
+/// `M^{-1} A x = M^{-1} b`, which normalizes equation scales row-by-row. When a
+/// solver applies it from the right, it forms `A M^{-1} y = b` with
+/// `x = M^{-1} y`, which normalizes variable or column scales instead. The
+/// current `BiCGSTAB` implementation uses this preconditioner from the right.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DiagonalPrecond<T: ComplexField + Copy> {
     inv_diag: Col<T>,
 }
 
+/// Errors that can occur while building a [`DiagonalPrecond`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DiagonalPrecondError {
+    /// Diagonal preconditioning only makes sense for square systems.
     NonSquare { nrows: usize, ncols: usize },
+    /// The matrix has no stored entry on the diagonal at `index`.
     MissingDiagonal { index: usize },
+    /// The diagonal entry at `index` is zero, so it cannot be inverted.
     ZeroDiagonal { index: usize },
 }
 
 impl<T: ComplexField + Copy> DiagonalPrecond<T> {
+    /// Builds a preconditioner from an already-inverted diagonal.
+    ///
+    /// Use this when the caller has already decided how the diagonal should be
+    /// regularized or inverted. The values are stored as-is and later applied
+    /// by pointwise multiplication.
     #[inline]
     #[must_use]
     pub fn from_inverse_diagonal(inv_diag: &[T]) -> Self {
@@ -32,6 +73,15 @@ impl<T: ComplexField + Copy> DiagonalPrecond<T> {
         }
     }
 
+    /// Builds a preconditioner from diagonal entries by inverting them.
+    ///
+    /// Technically, this forms `M^{-1}` with `M = diag(diag)`. Intuitively, a
+    /// large diagonal entry means that component is already strongly scaled, so
+    /// its inverse is small; a small diagonal entry means the iteration should
+    /// boost that component more aggressively.
+    ///
+    /// A zero diagonal entry is rejected because there is no meaningful inverse
+    /// to apply without introducing an additional regularization policy.
     pub fn try_from_diagonal(diag: &[T]) -> Result<Self, DiagonalPrecondError> {
         let zero_value = zero::<T>();
         let mut inv_diag = Col::from_fn(diag.len(), |_| zero_value);
@@ -45,12 +95,14 @@ impl<T: ComplexField + Copy> DiagonalPrecond<T> {
         Ok(Self { inv_diag })
     }
 
+    /// Dimension of the preconditioner.
     #[inline]
     #[must_use]
     pub fn dim(&self) -> usize {
         self.inv_diag.nrows()
     }
 
+    /// Returns the stored inverse diagonal values.
     #[inline]
     #[must_use]
     pub fn inverse_diagonal(&self) -> &Col<T> {
@@ -66,6 +118,11 @@ where
 {
     type Error = DiagonalPrecondError;
 
+    /// Extracts the diagonal from a sparse row matrix and inverts it.
+    ///
+    /// Only the diagonal entries are used; all off-diagonal structure is
+    /// ignored. That is exactly what makes diagonal preconditioning cheap to
+    /// construct compared with factorization-based preconditioners.
     fn try_from(matrix: SparseRowMatRef<'a, I, ViewT>) -> Result<Self, Self::Error> {
         let matrix = matrix.canonical();
         let nrows = matrix.nrows().unbound();
@@ -112,6 +169,7 @@ where
 {
     type Error = DiagonalPrecondError;
 
+    /// Extracts the diagonal from a sparse column matrix and inverts it.
     fn try_from(matrix: SparseColMatRef<'a, I, ViewT>) -> Result<Self, Self::Error> {
         let matrix = matrix.canonical();
         let nrows = matrix.nrows().unbound();
@@ -167,6 +225,9 @@ impl<T: ComplexField + Copy> LinOp<T> for DiagonalPrecond<T> {
     }
 
     fn apply(&self, mut out: MatMut<'_, T>, rhs: MatRef<'_, T>, _par: Par, _stack: &mut MemStack) {
+        // Applying the preconditioner is just a row-wise scale by the stored
+        // inverse diagonal. Each row corresponds to one component of the
+        // unknown or residual being rescaled.
         let inv_diag = col_slice(&self.inv_diag);
         let nrows = rhs.nrows().unbound();
         let ncols = rhs.ncols().unbound();
@@ -188,6 +249,8 @@ impl<T: ComplexField + Copy> LinOp<T> for DiagonalPrecond<T> {
         _par: Par,
         _stack: &mut MemStack,
     ) {
+        // For complex scalars, the conjugate application is the same diagonal
+        // scaling with conjugated coefficients.
         let inv_diag = col_slice(&self.inv_diag);
         let nrows = rhs.nrows().unbound();
         let ncols = rhs.ncols().unbound();
@@ -210,6 +273,8 @@ impl<T: ComplexField + Copy> Precond<T> for DiagonalPrecond<T> {
     }
 
     fn apply_in_place(&self, mut rhs: MatMut<'_, T>, _par: Par, _stack: &mut MemStack) {
+        // In-place application is the hot path used by iterative solvers.
+        // Using the diagonal keeps it branch-free and allocation-free.
         let inv_diag = col_slice(&self.inv_diag);
         let nrows = rhs.nrows().unbound();
         let ncols = rhs.ncols().unbound();
@@ -255,6 +320,8 @@ pub(crate) fn apply_precond_to_col<T, P>(
     T: ComplexField + Copy,
     P: Precond<T>,
 {
+    // The solver owns the buffer so that repeated preconditioner application
+    // inside the iteration does not allocate.
     copy_col(out, rhs);
     let mut stack = MemStack::new(buffer);
     precond.apply_in_place(out.as_mat_mut(), Par::Seq, &mut stack);

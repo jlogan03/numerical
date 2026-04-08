@@ -96,6 +96,13 @@ where
     T::Real: Float + Copy,
 {
     /// Initializes a solver with a fresh residual estimate and preconditioner.
+    ///
+    /// The current implementation uses `preconditioner` on the right. In other
+    /// words, the iteration builds directions in an internally rescaled
+    /// variable `y` and maps them back through `x = M^{-1} y` before each
+    /// matrix-vector product. For a diagonal preconditioner, that means the
+    /// search directions are scaled componentwise by the inverse diagonal
+    /// before `A` sees them.
     #[inline]
     #[must_use]
     pub fn new_with_precond(a: A, preconditioner: P, x0: &[T], b: &[T]) -> Self {
@@ -162,6 +169,10 @@ where
     }
 
     /// Attempts to solve the system to the given absolute residual tolerance with a preconditioner.
+    ///
+    /// Intuitively, a good preconditioner changes the geometry of the problem
+    /// so that the Krylov iteration sees components on more comparable scales.
+    /// In this solver that effect is realized through right preconditioning.
     pub fn solve_with_precond(
         a: A,
         preconditioner: P,
@@ -219,6 +230,10 @@ where
     pub fn step(&mut self) -> T::Real {
         self.iteration_count += 1;
 
+        // Right preconditioning rescales the search direction before the
+        // matrix-vector product. With a diagonal preconditioner this is
+        // column-balancing: large columns are damped and small columns are
+        // amplified through the inverse diagonal.
         apply_precond_to_col(
             &self.preconditioner,
             &mut self.z,
@@ -261,6 +276,8 @@ where
             return self.err;
         }
 
+        // The same right-preconditioning is applied to the secondary search
+        // direction before forming `A * z`.
         apply_precond_to_col(
             &self.preconditioner,
             &mut self.z,
