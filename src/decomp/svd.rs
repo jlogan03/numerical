@@ -1,4 +1,9 @@
-//! SVD front-ends.
+//! Singular-value decomposition front-ends.
+//!
+//! The dense path uses `faer`'s dense SVD backend for full decompositions and
+//! may use its partial matrix-free backend for dominant-component requests. The
+//! sparse / matrix-free path is always partial and always requests a fixed
+//! number of leading singular triplets.
 
 use super::{
     DecompError, DecompInfo, DenseDecompParams, PartialSvd, SparseDecompParams,
@@ -53,6 +58,10 @@ where
     A: BiLinOp<T>,
 {
     let full_rank = op.nrows().min(op.ncols());
+    // `faer`'s partial sparse/operator SVD backend is a restarted dominant
+    // solver with an internal Krylov subspace size floor. Small ambient
+    // dimensions therefore do not support arbitrary `k`; reject those requests
+    // here instead of letting the backend panic on an invalid window size.
     let max_requested = if full_rank > 64 {
         (full_rank - 1) / 2
     } else {
@@ -74,6 +83,9 @@ fn resolved_partial_dims(
     max_dim: Option<usize>,
 ) -> (usize, usize) {
     let max_allowed = full_rank - 1;
+    // Match the practical window shape expected by `faer`'s restarted partial
+    // solver while still allowing callers to override it when they have a good
+    // reason to do so.
     let min_dim = min_dim.unwrap_or(32usize.max(n_requested)).min(max_allowed);
     let max_dim = max_dim
         .unwrap_or(64usize.max(2 * n_requested))
@@ -118,6 +130,9 @@ where
     );
 
     let n_converged = info.n_converged_eigen.min(n_requested);
+    // `faer` returns the converged window in backend order. Normalize the
+    // public contract here by truncating to the converged prefix and then
+    // reordering by descending singular-value magnitude.
     let s = Col::from_fn(n_converged, |i| s[i]);
     let u = Mat::from_fn(op.nrows(), n_converged, |i, j| u[(i, j)]);
     let v = Mat::from_fn(op.ncols(), n_converged, |i, j| v[(i, j)]);
@@ -150,6 +165,8 @@ where
     let mut max_residual_norm = T::Real::zero();
 
     for j in 0..s.nrows() {
+        // Check both SVD residual relations so the reported residual reflects
+        // the worst mismatch in the returned singular triplet.
         let mut stack = MemStack::new(scratch);
         op.apply(av.as_mut().as_mat_mut(), v.col(j).as_mat(), par, &mut stack);
         for (dst, &u_value) in col_slice_mut(&mut av)
@@ -219,6 +236,9 @@ where
 }
 
 /// Computes the scratch requirement for [`sparse_svd_with_scratch`].
+///
+/// This is the expert entry point for callers that want to reuse `MemBuffer`
+/// storage across many partial SVD calls and avoid repeated allocation.
 pub fn sparse_svd_scratch_req<T, A>(
     op: &A,
     params: &SparseDecompParams<T>,
@@ -243,7 +263,11 @@ where
     ))
 }
 
-/// Computes a sparse / matrix-free partial SVD with caller-provided scratch space.
+/// Computes a sparse / matrix-free partial SVD with caller-provided scratch
+/// space.
+///
+/// Use this when the same operator shape will be decomposed repeatedly and the
+/// caller wants to keep scratch allocation outside the hot path.
 pub fn sparse_svd_with_scratch<T, A>(
     op: &A,
     params: &SparseDecompParams<T>,
@@ -268,6 +292,10 @@ where
 }
 
 /// Computes a sparse / matrix-free partial SVD.
+///
+/// The sparse / matrix-free API is intentionally partial-only. The caller must
+/// request a fixed number of dominant singular triplets through
+/// [`SparseDecompParams`].
 pub fn sparse_svd<T, A>(
     op: &A,
     params: &SparseDecompParams<T>,
@@ -286,7 +314,9 @@ where
 ///
 /// `params.n_components = None` uses `faer`'s dense thin-SVD backend and
 /// returns all singular components. `Some(k)` routes through the partial SVD
-/// backend and returns the leading `k` singular triplets.
+/// backend and returns the leading `k` singular triplets when that backend is
+/// numerically and dimensionally appropriate. Otherwise the wrapper falls back
+/// to the dense full SVD and truncates the result.
 pub fn dense_svd<T>(
     a: MatRef<'_, T>,
     params: &DenseDecompParams<T>,

@@ -8,6 +8,18 @@
 //!   as an error
 //! - compensated arithmetic is only used in the wrapper logic that this crate
 //!   owns, such as compensated operator adapters and diagnostic checks
+//!
+//! The public API intentionally distinguishes between dense and sparse /
+//! matrix-free use:
+//!
+//! - dense entry points may request the full decomposition
+//! - sparse / matrix-free entry points always request a fixed number of leading
+//!   components
+//!
+//! That split follows the actual backend capabilities. `faer` provides dense
+//! full decompositions, but its sparse / matrix-free eigendecomposition and SVD
+//! paths are restarted dominant-component solvers rather than full spectral
+//! factorizations.
 
 pub mod eigen;
 pub mod operator;
@@ -31,15 +43,28 @@ use std::cmp::Ordering;
 use std::fmt;
 
 /// Quality and convergence diagnostics returned alongside a decomposition.
+///
+/// The decomposition routines do not treat partial convergence as a hard error.
+/// Instead, they return whatever components the backend produced together with
+/// these diagnostics so callers can decide whether the result is good enough
+/// for their workflow.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DecompInfo<R> {
-    /// Number of components requested by the caller after target clamping.
+    /// Number of components requested by the caller after backend-specific
+    /// target validation or clamping.
     pub n_requested: usize,
     /// Number of components reported as converged by the backend.
     pub n_converged: usize,
     /// Maximum residual norm over the returned components.
+    ///
+    /// For SVD this is the worse of `||A v - sigma u||` and
+    /// `||A^H u - sigma v||`. For eigen it is `||A v - lambda v||`.
     pub max_residual_norm: R,
     /// Maximum orthogonality or norm drift error over the returned vectors.
+    ///
+    /// This combines norm drift and pairwise overlap checks so callers can
+    /// quickly tell whether the returned basis vectors still behave like an
+    /// orthonormal family.
     pub max_orthogonality_error: R,
 }
 
@@ -52,13 +77,16 @@ impl<R: Float> DecompInfo<R> {
 }
 
 /// Singular-value decomposition result.
+///
+/// The columns of `u` and `v` are ordered to match `s`, and `s` is sorted by
+/// descending magnitude.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartialSvd<T: ComplexField> {
-    /// Left singular vectors.
+    /// Left singular vectors, one per column.
     pub u: Mat<T>,
-    /// Singular values.
+    /// Singular values ordered by descending magnitude.
     pub s: Col<T>,
-    /// Right singular vectors.
+    /// Right singular vectors, one per column.
     pub v: Mat<T>,
     /// Convergence and quality diagnostics.
     pub info: DecompInfo<T::Real>,
@@ -78,11 +106,14 @@ impl<T: ComplexField> PartialSvd<T> {
 }
 
 /// Eigendecomposition result.
+///
+/// The columns of `vectors` are ordered to match `values`, and `values` are
+/// sorted by descending magnitude.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartialEigen<T: ComplexField> {
-    /// Eigenvalues.
+    /// Eigenvalues ordered by descending magnitude.
     pub values: Col<T>,
-    /// Corresponding eigenvectors.
+    /// Corresponding eigenvectors, one per column.
     pub vectors: Mat<T>,
     /// Convergence and quality diagnostics.
     pub info: DecompInfo<T::Real>,
@@ -102,6 +133,11 @@ impl<T: ComplexField> PartialEigen<T> {
 }
 
 /// Builder-style parameters for dense decomposition entry points.
+///
+/// Dense decomposition is allowed to request either the full factorization or
+/// only a leading dominant window. When a partial dense backend is not a good
+/// fit for the requested size, the dense wrappers may fall back to a full dense
+/// factorization and then truncate the result.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DenseDecompParams<T: ComplexField> {
     /// `None` requests the full dense decomposition, while `Some(k)` requests
@@ -192,6 +228,9 @@ where
 }
 
 /// Builder-style parameters for sparse / matrix-free partial decompositions.
+///
+/// Sparse and matrix-free backends are intentionally partial-only. The target
+/// count is therefore required up front rather than expressed as `Option`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SparseDecompParams<T: ComplexField> {
     /// Number of dominant components to request.
@@ -301,6 +340,8 @@ impl From<faer::linalg::solvers::EvdError> for DecompError {
     }
 }
 
+/// Builds the shared restarted-Krylov parameter block used by `faer`'s partial
+/// eigendecomposition and SVD entry points.
 pub(crate) fn partial_eigen_params<T: CompensatedField>(
     min_dim: Option<usize>,
     max_dim: Option<usize>,
@@ -317,6 +358,12 @@ where
     }
 }
 
+/// Normalizes a user-provided start vector or synthesizes a deterministic
+/// default one.
+///
+/// The normalization step is performed in this crate rather than assumed from
+/// the caller so all sparse and dense partial front-ends start from a known
+/// unit-norm vector.
 pub(crate) fn normalized_start_vector<T>(
     start_vector: Option<&Col<T>>,
     len: usize,
@@ -356,6 +403,9 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // Use a deterministic alternating-sign pattern instead of hidden
+    // randomness. That keeps results reproducible while avoiding the
+    // pathological symmetry of an all-ones vector.
     let one = T::Real::one();
     let minus_one = -one;
     let half = one / (one + one);
@@ -367,6 +417,8 @@ where
     })
 }
 
+/// Returns a permutation that orders scalar components by descending
+/// magnitude.
 pub(crate) fn sorted_order_descending_by_abs<T>(values: ColRef<'_, T>) -> Vec<usize>
 where
     T: CompensatedField,
@@ -381,16 +433,22 @@ where
     order
 }
 
+/// Applies a column-vector permutation.
 pub(crate) fn permute_col<T: Clone>(values: ColRef<'_, T>, order: &[usize]) -> Col<T> {
     Col::from_fn(order.len(), |i| values[order[i.unbound()]].clone())
 }
 
+/// Applies the same permutation to the columns of a matrix.
 pub(crate) fn permute_mat_cols<T: Clone>(matrix: MatRef<'_, T>, order: &[usize]) -> Mat<T> {
     Mat::from_fn(matrix.nrows(), order.len(), |i, j| {
         matrix[(i.unbound(), order[j.unbound()])].clone()
     })
 }
 
+/// Returns the worst norm-drift or pairwise-overlap error in `vectors`.
+///
+/// The decomposition wrappers use this as a lightweight sanity check on the
+/// basis returned by the backend after sorting and truncation.
 pub(crate) fn orthogonality_error<T>(vectors: MatRef<'_, T>) -> T::Real
 where
     T: CompensatedField,

@@ -5,6 +5,10 @@
 //! orthogonalization. They only change the accuracy of operator application for
 //! matrix types that this crate knows how to evaluate with compensated sparse
 //! accumulation.
+//!
+//! This is intentionally a narrow boundary. The goal is not to replace `faer`'s
+//! decomposition algorithms, but to reduce the local summation error in sparse
+//! matrix-vector products before those values enter the Krylov iteration.
 
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use faer::dyn_stack::{DynArray, MemStack, StackReq};
@@ -17,6 +21,11 @@ use faer_traits::ext::ComplexFieldExt;
 use num_traits::Float;
 
 /// Operator applications that can be evaluated with compensated accumulation.
+///
+/// The `LinOp` traits from `faer` define the algebraic interface expected by
+/// its matrix-free eigendecomposition and SVD routines. This companion trait
+/// lets an implementation override just the accumulation strategy for the
+/// operator application while keeping the same external operator shape.
 pub trait CompensatedApply<T: CompensatedField>: LinOp<T>
 where
     T::Real: Float + Copy,
@@ -25,6 +34,10 @@ where
     fn compensated_apply_scratch(&self, rhs_ncols: usize, par: Par) -> StackReq;
 
     /// Computes `out = self * rhs` with compensated accumulation.
+    ///
+    /// Intuitively, this replaces one naive running sum per output entry with a
+    /// compensated reduction so cancellation in long sparse rows or columns
+    /// loses less information.
     fn apply_compensated(
         &self,
         out: MatMut<'_, T>,
@@ -45,6 +58,9 @@ where
 
 /// Bi-directional operator applications that can be evaluated with compensated
 /// accumulation.
+///
+/// This extends [`CompensatedApply`] to operators that also need transpose or
+/// adjoint application, as required by matrix-free SVD.
 pub trait CompensatedBiApply<T: CompensatedField>: CompensatedApply<T> + BiLinOp<T>
 where
     T::Real: Float + Copy,
@@ -73,6 +89,9 @@ where
 
 /// Wraps a linear operator and routes `LinOp` application through compensated
 /// kernels supplied by [`CompensatedApply`].
+///
+/// The wrapper does not add new algebraic behavior. It only changes how the
+/// wrapped operator is evaluated when `faer` calls `apply` or `conj_apply`.
 #[derive(Clone, Copy, Debug)]
 pub struct CompensatedLinOp<A> {
     inner: A,
@@ -121,6 +140,9 @@ where
 
 /// Wraps a bi-directional linear operator and routes `BiLinOp` application
 /// through compensated kernels supplied by [`CompensatedBiApply`].
+///
+/// This is the natural wrapper to use before calling the matrix-free partial
+/// SVD routines, since they need both the forward and adjoint operator action.
 #[derive(Clone, Copy, Debug)]
 pub struct CompensatedBiLinOp<A> {
     inner: A,
@@ -348,6 +370,9 @@ where
             let rhs = col_ref_slice(rhs.col(j));
             let out_col = out.rb_mut().col_mut(j);
             let out = col_mut_slice(out_col);
+            // The transpose of a CSR matrix scatters each row into output
+            // columns. Accumulate into temporary compensated sums first so the
+            // scatter order does not become the final rounding order.
             let (mut acc, _) = init_accum_slice::<T>(ncols, stack);
             for value in acc.iter_mut() {
                 *value = CompensatedSum::default();
@@ -388,6 +413,8 @@ where
             let rhs = col_ref_slice(rhs.col(j));
             let out_col = out.rb_mut().col_mut(j);
             let out = col_mut_slice(out_col);
+            // The adjoint path has the same scatter pattern as the transpose
+            // path, but with conjugated matrix entries.
             let (mut acc, _) = init_accum_slice::<T>(ncols, stack);
             for value in acc.iter_mut() {
                 *value = CompensatedSum::default();
@@ -443,6 +470,9 @@ where
             let rhs = col_ref_slice(rhs.col(j));
             let out_col = out.rb_mut().col_mut(j);
             let out = col_mut_slice(out_col);
+            // CSC application also scatters contributions into output rows.
+            // Use one compensated accumulator per row and finalize once per
+            // output entry.
             let (mut acc, _) = init_accum_slice::<T>(nrows, stack);
             for value in acc.iter_mut() {
                 *value = CompensatedSum::default();
@@ -540,6 +570,8 @@ where
             for col in 0..ncols {
                 let start = col_ptr[col].zx();
                 let end = col_ptr[col + 1].zx();
+                // The transpose of CSC is row-like, so we can reduce each
+                // output entry directly with a single compensated accumulator.
                 let mut acc = CompensatedSum::<T>::default();
                 for idx in start..end {
                     acc.add(values[idx] * rhs[row_idx[idx].zx()]);

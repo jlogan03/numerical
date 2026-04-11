@@ -1,4 +1,9 @@
 //! Self-adjoint eigendecomposition front-ends.
+//!
+//! These wrappers target Hermitian / symmetric problems specifically. That is
+//! a deliberate narrower scope than general nonnormal eigendecomposition, since
+//! the self-adjoint case has much stronger numerical structure and clearer
+//! ordering semantics.
 
 use super::{
     DecompError, DecompInfo, DenseDecompParams, PartialEigen, SparseDecompParams,
@@ -68,6 +73,9 @@ where
         });
     }
 
+    // The same restarted-window constraint that applies to sparse partial SVD
+    // also applies here. Reject incompatible requests before calling into the
+    // backend.
     let max_requested = if op.nrows() > 64 {
         (op.nrows() - 1) / 2
     } else {
@@ -90,6 +98,9 @@ fn resolved_partial_dims(
     max_dim: Option<usize>,
 ) -> (usize, usize) {
     let max_allowed = dim - 1;
+    // Keep the Krylov window within the range expected by `faer`'s restarted
+    // self-adjoint eigensolver, while still honoring explicit caller
+    // overrides.
     let min_dim = min_dim.unwrap_or(32usize.max(n_requested)).min(max_allowed);
     let max_dim = max_dim
         .unwrap_or(64usize.max(2 * n_requested))
@@ -131,6 +142,8 @@ where
     );
 
     let n_converged = info.n_converged_eigen.min(n_requested);
+    // Reorder the converged Ritz pairs into the public descending-magnitude
+    // order used consistently throughout this module.
     let values = Col::from_fn(n_converged, |i| values[i]);
     let vectors = Mat::from_fn(op.nrows(), n_converged, |i, j| vectors[(i, j)]);
     let order = sorted_order_descending_by_abs(values.as_ref());
@@ -163,6 +176,8 @@ where
     let mut max_residual_norm = T::Real::zero();
 
     for j in 0..values.nrows() {
+        // For self-adjoint eigenpairs, one residual relation is enough:
+        // `A v - lambda v`.
         let mut stack = MemStack::new(scratch);
         op.apply(
             residual_vec.as_mut().as_mat_mut(),
@@ -214,7 +229,11 @@ where
     }
 }
 
-/// Computes the scratch requirement for [`sparse_self_adjoint_eigen_with_scratch`].
+/// Computes the scratch requirement for
+/// [`sparse_self_adjoint_eigen_with_scratch`].
+///
+/// This is the expert entry point for callers that want to manage reusable
+/// `MemBuffer` storage themselves.
 pub fn sparse_self_adjoint_eigen_scratch_req<T, A>(
     op: &A,
     params: &SparseDecompParams<T>,
@@ -237,6 +256,9 @@ where
 
 /// Computes a sparse / matrix-free partial self-adjoint eigendecomposition with
 /// caller-provided scratch space.
+///
+/// This is the lowest-allocation path when the same operator size will be
+/// decomposed repeatedly.
 pub fn sparse_self_adjoint_eigen_with_scratch<T, A>(
     op: &A,
     params: &SparseDecompParams<T>,
@@ -261,6 +283,10 @@ where
 }
 
 /// Computes a sparse / matrix-free partial self-adjoint eigendecomposition.
+///
+/// The sparse / matrix-free self-adjoint API is partial-only. Callers must
+/// provide the number of dominant eigenpairs they want through
+/// [`SparseDecompParams`].
 pub fn sparse_self_adjoint_eigen<T, A>(
     op: &A,
     params: &SparseDecompParams<T>,
@@ -278,7 +304,9 @@ where
 /// Computes a dense self-adjoint eigendecomposition.
 ///
 /// `params.n_components = None` uses `faer`'s dense self-adjoint eigensolver.
-/// `Some(k)` routes through the partial self-adjoint eigensolver.
+/// `Some(k)` routes through the partial self-adjoint eigensolver when that is a
+/// good fit for the matrix size, and otherwise falls back to a full dense
+/// self-adjoint eigendecomposition followed by truncation.
 pub fn dense_self_adjoint_eigen<T>(
     a: MatRef<'_, T>,
     params: &DenseDecompParams<T>,
