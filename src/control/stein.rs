@@ -68,8 +68,15 @@ pub enum SteinError {
     /// Sparse LR-ADI requires at least one shift.
     NoShifts,
     /// A user-provided ADI shift is not in the open left half-plane.
+    ///
+    /// For the sparse discrete solver, these shifts belong to the transformed
+    /// continuous-time Lyapunov problem after the Cayley map, not directly to
+    /// the original discrete-time spectrum.
     InvalidShift { index: usize },
     /// The Cayley transform requires `(A + I)` to be nonsingular.
+    ///
+    /// If `A` has an eigenvalue at or very near `-1`, the transform becomes
+    /// unusable numerically and the sparse discrete path rejects it here.
     SingularTransform,
     /// Sparse matrix creation failed.
     SparseBuild(CreationError),
@@ -105,6 +112,10 @@ impl From<SparseLuError> for SteinError {
     }
 }
 
+// This wrapper keeps a sparse CSC pattern fixed while varying only the affine
+// combination `alpha * A + beta * I`. That is exactly the structure needed by
+// the transformed shifted solves in the sparse discrete ADI backend, and it
+// lets symbolic LU structure be reused across every shift.
 #[derive(Clone, Debug)]
 struct AffineCscMatrix<I: Index, T> {
     matrix: SparseColMat<I, T>,
@@ -302,6 +313,11 @@ where
 /// The implementation uses a Cayley transform to map the discrete Stein
 /// equation to a continuous-time Lyapunov equation, then runs the same style of
 /// low-rank ADI iteration used by the sparse continuous solver.
+///
+/// The `shifts` parameter therefore refers to ADI shifts for the transformed
+/// continuous operator, not directly to the original discrete-time matrix `A`.
+/// This keeps the sparse discrete path aligned with the existing Lyapunov ADI
+/// machinery instead of introducing a second shift policy.
 pub fn controllability_gramian_discrete_low_rank<I, T, ViewT>(
     a: SparseColMatRef<'_, I, ViewT>,
     b: MatRef<'_, T>,
@@ -323,6 +339,9 @@ where
 ///
 /// This is the dual controllability solve on `(A^H, C^H)`, producing a factor
 /// `Z` such that `Wo ≈ Z Z^H`.
+///
+/// As in the controllability path, the user-provided shifts live in the
+/// transformed continuous-time ADI problem after the Cayley map.
 pub fn observability_gramian_discrete_low_rank<I, T, ViewT>(
     a: SparseColMatRef<'_, I, ViewT>,
     c: MatRef<'_, T>,
@@ -378,6 +397,9 @@ where
         });
     }
 
+    // The transformed operator is expressed through `(A + I)` and affine
+    // shifted systems built from `A`. We never form the dense Cayley operator
+    // `Ac = (A - I)(A + I)^(-1)` explicitly.
     let mut plus_identity = AffineCscMatrix::from_matrix(a)?;
     plus_identity.apply_affine(T::one_impl(), T::one_impl());
     let plus_lu = SparseLu::<I, T>::factorize(
@@ -484,6 +506,8 @@ where
 
 fn map_transform_error(err: SparseLuError) -> SteinError {
     match err {
+        // LU numeric failure on `(A + I)` or an affine shifted system is the
+        // operational signature of a bad Cayley transform in this backend.
         SparseLuError::Numeric(_) => SteinError::SingularTransform,
         other => SteinError::SparseLu(other),
     }
@@ -542,6 +566,10 @@ where
     let ncols = lhs.ncols().unbound();
     assert_eq!(rhs.nrows(), ncols);
 
+    // This is the one sparse-matrix / dense-block multiply needed in the
+    // transformed solve path. Keeping it local here makes the Cayley backend
+    // explicit and avoids introducing a more general sparse-dense kernel layer
+    // before it is justified elsewhere in the crate.
     let mut out = Mat::<T>::zeros(nrows, rhs.ncols());
     let col_ptr = lhs.col_ptr();
     let row_idx = lhs.row_idx();
@@ -570,6 +598,10 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // LR-ADI tracks a residual factor `W_k`, so `||W_k||_F^2` is the cheap
+    // upper bound already used by the sparse continuous solver. Reusing the
+    // same stopping quantity keeps the sparse continuous and discrete paths
+    // behaviorally aligned.
     let w_norm = frobenius_norm(factor);
     w_norm * w_norm
 }
