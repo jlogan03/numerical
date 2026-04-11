@@ -124,12 +124,9 @@ where
         sample_times: &[T::Real],
     ) -> Result<SampledResponse<T::Real, T>, LtiError> {
         validate_nonnegative_grid(sample_times, "continuous step response")?;
-        let inputs = Mat::from_fn(self.ninputs(), sample_times.len(), |_, _| T::one());
-        let x0 = vec![T::zero(); self.nstates()];
-        let sim = self.simulate_zoh(&x0, sample_times, inputs.as_ref())?;
         Ok(SampledResponse {
-            sample_points: sim.sample_times,
-            values: split_columns(sim.outputs.as_ref()),
+            sample_points: sample_times.to_vec(),
+            values: dense_continuous_step_blocks(self, sample_times)?,
         })
     }
 
@@ -251,19 +248,9 @@ where
     /// - `k = 0`: `D`
     /// - `k >= 1`: `C A^(k-1) B`
     pub fn impulse_response(&self, n_steps: usize) -> SampledResponse<usize, T> {
-        let mut inputs = Mat::<T>::zeros(self.ninputs(), n_steps);
-        if n_steps > 0 {
-            for row in 0..self.ninputs() {
-                inputs[(row, 0)] = T::one();
-            }
-        }
-        let x0 = vec![T::zero(); self.nstates()];
-        let sim = self
-            .simulate(&x0, inputs.as_ref())
-            .expect("constructed impulse inputs should be valid");
         SampledResponse {
             sample_points: (0..n_steps).collect(),
-            values: split_columns(sim.outputs.as_ref()),
+            values: dense_discrete_markov_blocks(self, n_steps),
         }
     }
 
@@ -272,14 +259,9 @@ where
     /// Each returned matrix maps a per-input unit step to the output vector at
     /// the corresponding discrete-time index.
     pub fn step_response(&self, n_steps: usize) -> SampledResponse<usize, T> {
-        let inputs = Mat::from_fn(self.ninputs(), n_steps, |_, _| T::one());
-        let x0 = vec![T::zero(); self.nstates()];
-        let sim = self
-            .simulate(&x0, inputs.as_ref())
-            .expect("constructed step inputs should be valid");
         SampledResponse {
             sample_points: (0..n_steps).collect(),
-            values: split_columns(sim.outputs.as_ref()),
+            values: dense_discrete_step_blocks(self, n_steps),
         }
     }
 
@@ -376,33 +358,18 @@ where
     /// Returns the first `n_steps` samples of the sparse discrete-time impulse
     /// response sequence.
     pub fn impulse_response(&self, n_steps: usize) -> SampledResponse<usize, T> {
-        let mut inputs = Mat::<T>::zeros(self.ninputs(), n_steps);
-        if n_steps > 0 {
-            for row in 0..self.ninputs() {
-                inputs[(row, 0)] = T::one();
-            }
-        }
-        let x0 = vec![T::zero(); self.nstates()];
-        let sim = self
-            .simulate(&x0, inputs.as_ref())
-            .expect("constructed sparse impulse inputs should be valid");
         SampledResponse {
             sample_points: (0..n_steps).collect(),
-            values: split_columns(sim.outputs.as_ref()),
+            values: sparse_discrete_markov_blocks(self, n_steps),
         }
     }
 
     /// Returns the first `n_steps` samples of the sparse discrete-time
     /// unit-step response sequence.
     pub fn step_response(&self, n_steps: usize) -> SampledResponse<usize, T> {
-        let inputs = Mat::from_fn(self.ninputs(), n_steps, |_, _| T::one());
-        let x0 = vec![T::zero(); self.nstates()];
-        let sim = self
-            .simulate(&x0, inputs.as_ref())
-            .expect("constructed sparse step inputs should be valid");
         SampledResponse {
             sample_points: (0..n_steps).collect(),
-            values: split_columns(sim.outputs.as_ref()),
+            values: sparse_discrete_step_blocks(self, n_steps),
         }
     }
 
@@ -523,16 +490,6 @@ fn column_owned<T: Copy>(matrix: MatRef<'_, T>, col: usize) -> Mat<T> {
     Mat::from_fn(matrix.nrows(), 1, |row, _| matrix[(row, col)])
 }
 
-/// Splits a dense matrix into a vector of single-column owned matrices.
-///
-/// This is mainly used to adapt the more general simulation output shape to the
-/// existing `SampledResponse` representation used by impulse/step wrappers.
-fn split_columns<T: Copy>(matrix: MatRef<'_, T>) -> Vec<Mat<T>> {
-    (0..matrix.ncols())
-        .map(|col| column_owned(matrix, col))
-        .collect()
-}
-
 /// Dense elementwise matrix addition for the response layer.
 ///
 /// This stays local rather than reusing a broader utility because the current
@@ -570,6 +527,159 @@ where
         }
         acc.finish()
     })
+}
+
+/// Returns the first `n_steps` discrete-time Markov blocks for a dense system.
+///
+/// This keeps the MIMO semantics explicit: each returned block is an
+/// `noutputs x ninputs` matrix, not the response to all unit inputs injected
+/// simultaneously.
+fn dense_discrete_markov_blocks<T>(system: &DiscreteStateSpace<T>, n_steps: usize) -> Vec<Mat<T>>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    if n_steps == 0 {
+        return Vec::new();
+    }
+    let mut blocks = Vec::with_capacity(n_steps);
+    blocks.push(clone_mat(system.d()));
+    if n_steps == 1 {
+        return blocks;
+    }
+
+    let mut state = clone_mat(system.b());
+    for _ in 1..n_steps {
+        blocks.push(dense_mul(system.c(), state.as_ref()));
+        state = dense_mul(system.a(), state.as_ref());
+    }
+    blocks
+}
+
+/// Returns the first `n_steps` dense discrete-time step-response blocks.
+///
+/// Column `j` of each returned matrix is the output trajectory produced by a
+/// unit step applied to input channel `j`.
+fn dense_discrete_step_blocks<T>(system: &DiscreteStateSpace<T>, n_steps: usize) -> Vec<Mat<T>>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let mut blocks = Vec::with_capacity(n_steps);
+    let mut state = Mat::<T>::zeros(system.nstates(), system.ninputs());
+    for _ in 0..n_steps {
+        blocks.push(dense_add(
+            dense_mul(system.c(), state.as_ref()).as_ref(),
+            system.d(),
+        ));
+        state = dense_add(dense_mul(system.a(), state.as_ref()).as_ref(), system.b());
+    }
+    blocks
+}
+
+/// Returns the first `n_steps` discrete-time Markov blocks for a sparse
+/// system.
+fn sparse_discrete_markov_blocks<T>(
+    system: &SparseDiscreteStateSpace<T>,
+    n_steps: usize,
+) -> Vec<Mat<T>>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    if n_steps == 0 {
+        return Vec::new();
+    }
+    let mut blocks = Vec::with_capacity(n_steps);
+    blocks.push(clone_mat(system.d()));
+    if n_steps == 1 {
+        return blocks;
+    }
+
+    let mut state = clone_mat(system.b());
+    for _ in 1..n_steps {
+        blocks.push(dense_mul(system.c(), state.as_ref()));
+        state = sparse_apply_columns(system.a(), state.as_ref());
+    }
+    blocks
+}
+
+/// Returns the first `n_steps` sparse discrete-time step-response blocks.
+fn sparse_discrete_step_blocks<T>(
+    system: &SparseDiscreteStateSpace<T>,
+    n_steps: usize,
+) -> Vec<Mat<T>>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let mut blocks = Vec::with_capacity(n_steps);
+    let mut state = Mat::<T>::zeros(system.nstates(), system.ninputs());
+    for _ in 0..n_steps {
+        blocks.push(dense_add(
+            dense_mul(system.c(), state.as_ref()).as_ref(),
+            system.d(),
+        ));
+        state = dense_add(
+            sparse_apply_columns(system.a(), state.as_ref()).as_ref(),
+            system.b(),
+        );
+    }
+    blocks
+}
+
+/// Returns the continuous-time unit-step response blocks on a sampling grid.
+///
+/// Each matrix maps the per-input unit step to the output vector at the
+/// corresponding sample time.
+fn dense_continuous_step_blocks<T>(
+    system: &ContinuousStateSpace<T>,
+    sample_times: &[T::Real],
+) -> Result<Vec<Mat<T>>, LtiError>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy + RealField,
+{
+    let mut blocks = Vec::with_capacity(sample_times.len());
+    let mut state = Mat::<T>::zeros(system.nstates(), system.ninputs());
+    for k in 0..sample_times.len() {
+        blocks.push(dense_add(
+            dense_mul(system.c(), state.as_ref()).as_ref(),
+            system.d(),
+        ));
+        if k + 1 < sample_times.len() {
+            let dt = sample_times[k + 1] - sample_times[k];
+            let (ad, bd) = continuous_interval_maps(system, dt)?;
+            state = dense_add(dense_mul(ad.as_ref(), state.as_ref()).as_ref(), bd.as_ref());
+        }
+    }
+    Ok(blocks)
+}
+
+/// Applies a sparse state matrix to every column of a dense matrix with
+/// compensated accumulation.
+///
+/// This is the small dense-column analogue of sparse matvec and is enough for
+/// block responses such as Markov sequences and per-input step responses.
+fn sparse_apply_columns<T>(a: impl SparseMatVec<T> + Copy, rhs: MatRef<'_, T>) -> Mat<T>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    assert_eq!(a.ncols(), rhs.nrows());
+    let mut out = Mat::<T>::zeros(a.nrows(), rhs.ncols());
+    let mut input = vec![T::zero(); a.ncols()];
+    let mut output = vec![T::zero(); a.nrows()];
+    for col in 0..rhs.ncols() {
+        for row in 0..a.ncols() {
+            input[row] = rhs[(row, col)];
+        }
+        a.apply_compensated(&mut output, &input);
+        for row in 0..a.nrows() {
+            out[(row, col)] = output[row];
+        }
+    }
+    out
 }
 
 /// Validates the expected state-vector length for simulation entry points.
@@ -802,6 +912,73 @@ mod tests {
                 1.0e-12,
             );
         }
+    }
+
+    #[test]
+    fn discrete_mimo_impulse_response_returns_output_by_input_blocks() {
+        let sys = DiscreteStateSpace::new(
+            Mat::from_fn(2, 2, |row, col| match (row, col) {
+                (0, 0) => 2.0,
+                (1, 1) => 3.0,
+                _ => 0.0,
+            }),
+            Mat::from_fn(2, 2, |row, col| if row == col { 1.0 } else { 0.0 }),
+            Mat::from_fn(2, 2, |row, col| match (row, col) {
+                (0, 0) => 4.0,
+                (0, 1) => 5.0,
+                (1, 0) => 6.0,
+                (1, 1) => 7.0,
+                _ => unreachable!(),
+            }),
+            Mat::from_fn(2, 2, |row, col| match (row, col) {
+                (0, 0) => 8.0,
+                (0, 1) => 9.0,
+                (1, 0) => 10.0,
+                (1, 1) => 11.0,
+                _ => unreachable!(),
+            }),
+            0.5,
+        )
+        .unwrap();
+
+        let impulse = sys.impulse_response(3);
+        assert_eq!(impulse.values[0].nrows(), 2);
+        assert_eq!(impulse.values[0].ncols(), 2);
+        assert_close_real(impulse.values[0].as_ref(), sys.d(), 1.0e-12);
+        assert_close_real(impulse.values[1].as_ref(), sys.c(), 1.0e-12);
+        assert_close_real(
+            impulse.values[2].as_ref(),
+            Mat::from_fn(2, 2, |row, col| match (row, col) {
+                (0, 0) => 8.0,
+                (0, 1) => 15.0,
+                (1, 0) => 12.0,
+                (1, 1) => 21.0,
+                _ => unreachable!(),
+            })
+            .as_ref(),
+            1.0e-12,
+        );
+    }
+
+    #[test]
+    fn continuous_mimo_step_response_returns_output_by_input_blocks() {
+        let sys = ContinuousStateSpace::new(
+            Mat::zeros(2, 2),
+            Mat::from_fn(2, 2, |row, col| if row == col { 1.0 } else { 0.0 }),
+            Mat::from_fn(2, 2, |row, col| if row == col { 1.0 } else { 0.0 }),
+            Mat::zeros(2, 2),
+        )
+        .unwrap();
+
+        let step = sys.step_response(&[0.0, 1.0]).unwrap();
+        assert_eq!(step.values[0].nrows(), 2);
+        assert_eq!(step.values[0].ncols(), 2);
+        assert_close_real(step.values[0].as_ref(), Mat::zeros(2, 2).as_ref(), 1.0e-12);
+        assert_close_real(
+            step.values[1].as_ref(),
+            Mat::from_fn(2, 2, |row, col| if row == col { 1.0 } else { 0.0 }).as_ref(),
+            1.0e-12,
+        );
     }
 
     #[test]
