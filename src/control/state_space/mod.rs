@@ -12,7 +12,7 @@
 //! structured `A/B/C/D` home and makes the time domain part of the type
 //! instead of leaving it as an implicit convention at the call site.
 
-mod convert;
+pub(crate) mod convert;
 mod domain;
 mod error;
 

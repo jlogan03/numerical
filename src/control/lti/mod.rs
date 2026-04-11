@@ -8,12 +8,14 @@
 
 mod analysis;
 mod error;
+mod response;
 mod sos;
 mod transfer_function;
 mod util;
 mod zpk;
 
 pub use error::LtiError;
+pub use response::{ContinuousImpulseResponse, SampledResponse};
 pub use sos::{ContinuousSos, DiscreteSos, SecondOrderSection, Sos};
 pub use transfer_function::{
     ContinuousTransferFunction, DiscreteTransferFunction, TransferFunction,

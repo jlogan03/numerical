@@ -253,7 +253,7 @@ fn bilinear_alpha<R: Float>(
     }
 }
 
-fn matrix_exponential<T>(matrix: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
+pub(crate) fn matrix_exponential<T>(matrix: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
 where
     T: CompensatedField,
     T::Real: Float + Copy,

@@ -1,5 +1,6 @@
 use core::fmt;
 
+use crate::control::state_space::StateSpaceError;
 use faer::linalg::solvers::{EvdError, SvdError};
 
 /// Errors produced by LTI analysis and representation-conversion routines.
@@ -12,6 +13,8 @@ pub enum LtiError {
     /// A discrete-time representation was given a nonpositive or nonfinite
     /// sample interval.
     InvalidSampleTime,
+    /// A response grid contained an invalid point.
+    InvalidSamplePoint { which: &'static str },
     /// A polynomial representation was missing required coefficients.
     EmptyPolynomial { which: &'static str },
     /// The leading coefficient of a polynomial must be nonzero.
@@ -25,6 +28,9 @@ pub enum LtiError {
     NonFiniteResult { which: &'static str },
     /// A second-order-section cascade must contain at least one section.
     EmptySos,
+    /// A dense state-space helper used underneath an LTI analysis routine
+    /// failed.
+    StateSpace(StateSpaceError),
 }
 
 impl fmt::Display for LtiError {
@@ -44,5 +50,11 @@ impl From<EvdError> for LtiError {
 impl From<SvdError> for LtiError {
     fn from(value: SvdError) -> Self {
         Self::Svd(value)
+    }
+}
+
+impl From<StateSpaceError> for LtiError {
+    fn from(value: StateSpaceError) -> Self {
+        Self::StateSpace(value)
     }
 }
