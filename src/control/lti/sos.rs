@@ -21,6 +21,11 @@ where
     R: Float + Copy + RealField,
 {
     /// Creates a normalized second-order section.
+    ///
+    /// The section storage is also used for padded first-order and identity
+    /// factors during `Zpk <-> Sos` conversion. For that reason, normalization
+    /// uses the first nonzero denominator coefficient rather than assuming the
+    /// quadratic term is present.
     pub fn new(numerator: [R; 3], denominator: [R; 3]) -> Result<Self, LtiError> {
         let leading = denominator
             .into_iter()
@@ -134,6 +139,9 @@ where
     }
 
     /// Converts the cascade into coefficient form.
+    ///
+    /// The section numerators and denominators are multiplied in cascade order,
+    /// then wrapped back into the normalized `TransferFunction` hub type.
     pub fn to_transfer_function(&self) -> Result<TransferFunction<R, Domain>, LtiError> {
         let mut numerator = vec![self.gain];
         let mut denominator = vec![R::one()];
@@ -150,6 +158,11 @@ where
     }
 
     /// Builds a section cascade from zero/pole/gain data.
+    ///
+    /// Real roots become padded first-order sections, complex-conjugate pairs
+    /// become true quadratic sections, and whichever side has fewer sections is
+    /// padded with identity factors so the numerator and denominator cascades
+    /// stay aligned section-by-section.
     pub fn from_zpk(zpk: &Zpk<R, Domain>) -> Result<Self, LtiError> {
         let numerator_sections = root_sections(zpk.zeros(), "zeros")?;
         let denominator_sections = root_sections(zpk.poles(), "poles")?;
@@ -189,6 +202,9 @@ where
 
     /// Converts the section cascade to continuous-time state space through
     /// `TransferFunction`.
+    ///
+    /// This stays a chained conversion on purpose so there is only one
+    /// `TransferFunction -> StateSpace` realization implementation to maintain.
     pub fn to_state_space(&self) -> Result<ContinuousStateSpace<R>, LtiError> {
         self.to_transfer_function()?.to_state_space()
     }
@@ -216,6 +232,9 @@ where
 
     /// Converts the section cascade to discrete-time state space through
     /// `TransferFunction`.
+    ///
+    /// The discrete sample time is preserved by the intermediate transfer
+    /// function and then carried into the realized state-space model.
     pub fn to_state_space(&self) -> Result<DiscreteStateSpace<R>, LtiError> {
         self.to_transfer_function()?.to_state_space()
     }

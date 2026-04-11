@@ -151,6 +151,12 @@ pub(crate) fn real_poly_from_roots<R: Float + Copy + RealField>(
 /// Real roots become first-order sections padded to the SOS width, while
 /// complex roots must appear in conjugate pairs so each section still has real
 /// coefficients.
+///
+/// The padded first-order convention is:
+///
+/// `s - r` or `z - r`  ->  `[0, 1, -r]`
+///
+/// rather than `[1, -r, 0]`, which would represent `s^2 - r s`.
 pub(crate) fn root_sections<R: Float + Copy + RealField>(
     roots: &[Complex<R>],
     which: &'static str,
@@ -199,6 +205,9 @@ pub(crate) fn root_sections<R: Float + Copy + RealField>(
 ///
 /// This is used to pad the shorter side when a ZPK representation has more
 /// pole than zero sections or vice versa.
+///
+/// In descending-power section storage, the identity is `[0, 0, 1]`, not
+/// `[1, 0, 0]`.
 pub(crate) fn identity_section<R: Float + Copy + RealField>() -> [R; 3] {
     [R::zero(), R::zero(), R::one()]
 }

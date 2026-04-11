@@ -35,6 +35,13 @@ pub enum LtiError {
     /// A conversion expected a single-input single-output state-space system.
     NonSisoStateSpace { ninputs: usize, noutputs: usize },
     /// A state-space realization exists only for proper transfer functions.
+    ///
+    /// In this module, ordinary `A/B/C/D` state space can represent:
+    ///
+    /// - strictly proper systems
+    /// - proper systems with nonzero direct feedthrough `D`
+    ///
+    /// but not strictly improper transfer functions.
     ImproperTransferFunction {
         numerator_degree: usize,
         denominator_degree: usize,

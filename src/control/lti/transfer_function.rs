@@ -103,6 +103,11 @@ where
 
     /// Realizes the proper transfer function as a dense continuous-time
     /// state-space model in controllable companion form.
+    ///
+    /// This is a deterministic reference realization, not a minimality pass.
+    /// If the input transfer function has pole-zero cancellations, the
+    /// resulting state-space model still represents the same transfer map, but
+    /// it may contain canceling internal modes.
     pub fn to_state_space(&self) -> Result<ContinuousStateSpace<R>, LtiError> {
         let (a, b, c, d) = companion_realization(self.numerator(), self.denominator())?;
         Ok(ContinuousStateSpace::new(a, b, c, d)?)
@@ -131,6 +136,10 @@ where
 
     /// Realizes the proper transfer function as a dense discrete-time
     /// state-space model in controllable companion form.
+    ///
+    /// The state update matrix is built from the same companion polynomial
+    /// coefficients as the continuous-time path; only the carried domain
+    /// metadata differs.
     pub fn to_state_space(&self) -> Result<DiscreteStateSpace<R>, LtiError> {
         let (a, b, c, d) = companion_realization(self.numerator(), self.denominator())?;
         Ok(DiscreteStateSpace::new(a, b, c, d, self.sample_time())?)
@@ -171,6 +180,10 @@ where
 {
     /// Converts the dense real SISO discrete-time state-space model into
     /// coefficient form.
+    ///
+    /// As in the continuous-time path, this recovers the transfer behavior of
+    /// the current realization and does not attempt to cancel common factors
+    /// numerically.
     pub fn to_transfer_function(&self) -> Result<DiscreteTransferFunction<R>, LtiError> {
         ensure_siso(self.ninputs(), self.noutputs())?;
         state_space_to_transfer_function(
@@ -195,6 +208,7 @@ where
     }
 }
 
+/// Rejects state-space conversions that are only defined for SISO models.
 fn ensure_siso(ninputs: usize, noutputs: usize) -> Result<(), LtiError> {
     if ninputs == 1 && noutputs == 1 {
         Ok(())
@@ -203,6 +217,17 @@ fn ensure_siso(ninputs: usize, noutputs: usize) -> Result<(), LtiError> {
     }
 }
 
+/// Builds a controllable companion realization of a proper SISO transfer
+/// function.
+///
+/// The input coefficients are first normalized so the denominator is monic.
+/// Equal-degree numerator terms are split into:
+///
+/// - a direct feedthrough term `D`
+/// - a strictly proper remainder realized in companion form
+///
+/// This keeps the realization algebra simple and makes the proper/improper
+/// boundary explicit.
 fn companion_realization<R>(
     numerator: &[R],
     denominator: &[R],
@@ -248,6 +273,8 @@ where
     for (idx, &coef) in numerator.iter().enumerate() {
         padded_numerator[offset + idx] = coef;
     }
+    // When the transfer function is proper but not strictly proper, the
+    // highest-degree numerator coefficient becomes the direct feedthrough.
     let direct = padded_numerator[0];
 
     let mut a = Mat::<R>::zeros(n, n);
@@ -271,6 +298,15 @@ where
     Ok((a, b, c, d))
 }
 
+/// Converts a dense real SISO state-space realization into coefficient form.
+///
+/// The denominator comes from the characteristic polynomial of `A`. The
+/// numerator is then reconstructed by evaluating the represented transfer map
+/// at enough real interpolation points to solve for the unknown coefficients.
+///
+/// This is a dense reference algorithm. It is appropriate for the current SISO
+/// conversion layer, even though it is not the only possible realization-to-TF
+/// route.
 fn state_space_to_transfer_function<R, Domain>(
     a: MatRef<'_, R>,
     b: MatRef<'_, R>,
@@ -292,6 +328,12 @@ where
     TransferFunction::new(numerator, denominator, domain)
 }
 
+/// Reconstructs the numerator coefficients once the denominator is known.
+///
+/// At each interpolation point `x`, we evaluate the represented transfer
+/// value `G(x)` and multiply by the known denominator polynomial to get the
+/// numerator polynomial value. Solving the resulting Vandermonde system
+/// recovers the numerator coefficients in descending-power order.
 fn interpolate_numerator<R>(
     a: MatRef<'_, R>,
     b: MatRef<'_, R>,
@@ -336,6 +378,11 @@ where
     Ok(trim_small_leading_coeffs(&coeffs))
 }
 
+/// Chooses real interpolation points away from denominator roots.
+///
+/// The points are simple deterministic samples around the origin. Any sample
+/// where the denominator is numerically too small is skipped so the numerator
+/// reconstruction does not divide by a nearly singular transfer evaluation.
 fn interpolation_points<R>(denominator: &[R], count: usize) -> Vec<R>
 where
     R: Float + Copy + RealField,
@@ -358,6 +405,12 @@ where
     points
 }
 
+/// Evaluates the dense real SISO state-space transfer map at one complex
+/// point.
+///
+/// This helper is used only inside the interpolation-based
+/// `StateSpace -> TransferFunction` path, so it stays local instead of
+/// exposing another public transfer API surface.
 fn dense_transfer_siso<R>(
     a: MatRef<'_, R>,
     b: MatRef<'_, R>,
@@ -400,6 +453,7 @@ where
     }
 }
 
+/// Checks whether every entry in a dense real matrix is finite.
 fn all_finite_real<R: Float + Copy + RealField>(matrix: MatRef<'_, R>) -> bool {
     for col in 0..matrix.ncols() {
         for row in 0..matrix.nrows() {
@@ -411,6 +465,12 @@ fn all_finite_real<R: Float + Copy + RealField>(matrix: MatRef<'_, R>) -> bool {
     true
 }
 
+/// Trims numerically insignificant leading coefficients after interpolation.
+///
+/// The Vandermonde solve can leave a tiny leading coefficient where the exact
+/// transfer function has lower degree, especially for strictly proper systems.
+/// Removing those near-zero leading terms restores the expected polynomial
+/// degree before the result is normalized into a `TransferFunction`.
 fn trim_small_leading_coeffs<R>(coeffs: &[R]) -> Vec<R>
 where
     R: Float + Copy + RealField,

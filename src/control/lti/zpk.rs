@@ -87,6 +87,11 @@ where
     }
 
     /// Converts zero/pole/gain form back into coefficient form.
+    ///
+    /// This is the central reverse path from root data into the rest of the
+    /// representation graph. The state-space conversion methods intentionally
+    /// chain through this coefficient form instead of reimplementing a second
+    /// realization path here.
     pub fn to_transfer_function(&self) -> Result<TransferFunction<R, Domain>, LtiError> {
         let mut numerator = real_poly_from_roots(&self.zeros, "zeros")?;
         if let Some(first) = numerator.first_mut() {
@@ -97,6 +102,9 @@ where
     }
 
     /// Converts zero/pole/gain form into a second-order-section cascade.
+    ///
+    /// The SOS path is implemented through the existing real root-section
+    /// builder so the pairing and padding logic stays centralized.
     pub fn to_sos(&self) -> Result<Sos<R, Domain>, LtiError> {
         Sos::from_zpk(self)
     }
@@ -117,6 +125,9 @@ where
 
     /// Converts zero/pole/gain form to continuous-time state space through
     /// `TransferFunction`.
+    ///
+    /// This is intentionally a chained conversion. `TransferFunction` is the
+    /// hub of the current SISO conversion graph.
     pub fn to_state_space(&self) -> Result<ContinuousStateSpace<R>, LtiError> {
         self.to_transfer_function()?.to_state_space()
     }
@@ -145,6 +156,9 @@ where
 
     /// Converts zero/pole/gain form to discrete-time state space through
     /// `TransferFunction`.
+    ///
+    /// This keeps the domain-preserving realization logic centralized in the
+    /// transfer-function layer.
     pub fn to_state_space(&self) -> Result<DiscreteStateSpace<R>, LtiError> {
         self.to_transfer_function()?.to_state_space()
     }
