@@ -141,9 +141,8 @@ mod tests {
 
     #[test]
     fn zpk_round_trip_preserves_coefficients() {
-        let tf =
-            ContinuousTransferFunction::continuous(vec![1.0, 3.0, 2.0], vec![1.0, 5.0, 6.0])
-                .unwrap();
+        let tf = ContinuousTransferFunction::continuous(vec![1.0, 3.0, 2.0], vec![1.0, 5.0, 6.0])
+            .unwrap();
         let back = tf.to_zpk().unwrap().to_transfer_function().unwrap();
         assert_coeffs_close(back.numerator(), tf.numerator(), 1.0e-12);
         assert_coeffs_close(back.denominator(), tf.denominator(), 1.0e-12);
@@ -175,17 +174,19 @@ mod tests {
     #[test]
     fn discrete_constructor_validates_sample_time() {
         let err = DiscreteTransferFunction::discrete(vec![1.0], vec![1.0, -0.5], 0.0).unwrap_err();
-        assert!(matches!(err, crate::control::lti::LtiError::InvalidSampleTime));
+        assert!(matches!(
+            err,
+            crate::control::lti::LtiError::InvalidSampleTime
+        ));
     }
 
     #[test]
     fn sos_identity_section_round_trip() {
         let sos = Sos::continuous(
-            vec![crate::control::lti::SecondOrderSection::new(
-                [1.0, 0.0, 0.0],
-                [1.0, -0.5, 0.0],
-            )
-            .unwrap()],
+            vec![
+                crate::control::lti::SecondOrderSection::new([1.0, 0.0, 0.0], [1.0, -0.5, 0.0])
+                    .unwrap(),
+            ],
             2.0,
         )
         .unwrap();

@@ -72,11 +72,15 @@ where
         let num = self
             .zeros
             .iter()
-            .fold(Complex::new(self.gain, R::zero()), |acc, &zero| acc * (point - zero));
+            .fold(Complex::new(self.gain, R::zero()), |acc, &zero| {
+                acc * (point - zero)
+            });
         let den = self
             .poles
             .iter()
-            .fold(Complex::new(R::one(), R::zero()), |acc, &pole| acc * (point - pole));
+            .fold(Complex::new(R::one(), R::zero()), |acc, &pole| {
+                acc * (point - pole)
+            });
         num / den
     }
 

@@ -119,9 +119,10 @@ where
     /// Evaluates the cascade at the supplied complex point.
     #[must_use]
     pub fn evaluate(&self, point: Complex<R>) -> Complex<R> {
-        self.sections
-            .iter()
-            .fold(Complex::new(self.gain, R::zero()), |acc: Complex<R>, section: &SecondOrderSection<R>| acc * section.evaluate(point))
+        self.sections.iter().fold(
+            Complex::new(self.gain, R::zero()),
+            |acc: Complex<R>, section: &SecondOrderSection<R>| acc * section.evaluate(point),
+        )
     }
 
     /// Converts the cascade into coefficient form.
@@ -144,7 +145,10 @@ where
     pub fn from_zpk(zpk: &Zpk<R, Domain>) -> Result<Self, LtiError> {
         let numerator_sections = root_sections(zpk.zeros(), "zeros")?;
         let denominator_sections = root_sections(zpk.poles(), "poles")?;
-        let count = numerator_sections.len().max(denominator_sections.len()).max(1);
+        let count = numerator_sections
+            .len()
+            .max(denominator_sections.len())
+            .max(1);
 
         let mut sections = Vec::with_capacity(count);
         for i in 0..count {

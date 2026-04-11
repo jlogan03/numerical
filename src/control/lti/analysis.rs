@@ -3,9 +3,9 @@ use crate::control::state_space::{ContinuousStateSpace, DiscreteStateSpace, Stat
 use faer::complex::Complex;
 use faer::prelude::Solve;
 use faer::{Mat, MatRef};
-use faer_traits::{ComplexField, RealField};
 use faer_traits::ext::ComplexFieldExt;
 use faer_traits::math_utils::eps;
+use faer_traits::{ComplexField, RealField};
 use num_traits::{Float, One, Zero};
 
 impl<T, Domain> StateSpace<T, Domain>
@@ -215,12 +215,22 @@ fn compare_poles<R: Float + Copy>(lhs: Complex<R>, rhs: Complex<R>) -> core::cmp
     rhs.norm()
         .partial_cmp(&lhs.norm())
         .unwrap_or(core::cmp::Ordering::Equal)
-        .then_with(|| rhs.re.partial_cmp(&lhs.re).unwrap_or(core::cmp::Ordering::Equal))
-        .then_with(|| rhs.im.partial_cmp(&lhs.im).unwrap_or(core::cmp::Ordering::Equal))
+        .then_with(|| {
+            rhs.re
+                .partial_cmp(&lhs.re)
+                .unwrap_or(core::cmp::Ordering::Equal)
+        })
+        .then_with(|| {
+            rhs.im
+                .partial_cmp(&lhs.im)
+                .unwrap_or(core::cmp::Ordering::Equal)
+        })
 }
 
 fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| matrix[(row, col)])
+    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
+        matrix[(row, col)]
+    })
 }
 
 fn copy_block<T: Copy>(
@@ -255,7 +265,12 @@ where
     T::Real: Float + Copy + RealField,
 {
     let sv = matrix.singular_values()?;
-    Ok(rank_from_singular_values(&sv, matrix.nrows(), matrix.ncols(), None))
+    Ok(rank_from_singular_values(
+        &sv,
+        matrix.nrows(),
+        matrix.ncols(),
+        None,
+    ))
 }
 
 fn numerical_rank_with_tol<T>(matrix: MatRef<'_, T>, tol: T::Real) -> Result<usize, LtiError>
@@ -317,10 +332,14 @@ fn all_finite_complex<R: Float + Copy + RealField>(matrix: MatRef<'_, Complex<R>
 #[cfg(test)]
 mod tests {
     use crate::control::state_space::{ContinuousStateSpace, DiscreteStateSpace};
-    use faer::complex::Complex;
     use faer::Mat;
+    use faer::complex::Complex;
 
-    fn assert_close_complex(lhs: MatRef<'_, Complex<f64>>, rhs: MatRef<'_, Complex<f64>>, tol: f64) {
+    fn assert_close_complex(
+        lhs: MatRef<'_, Complex<f64>>,
+        rhs: MatRef<'_, Complex<f64>>,
+        tol: f64,
+    ) {
         assert_eq!(lhs.nrows(), rhs.nrows());
         assert_eq!(lhs.ncols(), rhs.ncols());
         for col in 0..lhs.ncols() {
@@ -395,7 +414,9 @@ mod tests {
 
         let point = Complex::new(1.0, 2.0);
         let got = sys.transfer_at(point).unwrap();
-        let expected = Mat::from_fn(1, 1, |_, _| Complex::new(5.0, 0.0) + Complex::new(12.0, 0.0) / (point + Complex::new(2.0, 0.0)));
+        let expected = Mat::from_fn(1, 1, |_, _| {
+            Complex::new(5.0, 0.0) + Complex::new(12.0, 0.0) / (point + Complex::new(2.0, 0.0))
+        });
         assert_close_complex(got.as_ref(), expected.as_ref(), 1.0e-12);
     }
 

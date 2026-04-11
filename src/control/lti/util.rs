@@ -1,6 +1,6 @@
 use super::error::LtiError;
-use faer::complex::Complex;
 use faer::Mat;
+use faer::complex::Complex;
 use faer_traits::RealField;
 use faer_traits::math_utils::{eps, from_f64};
 use num_traits::Float;
@@ -49,17 +49,19 @@ pub(crate) fn normalize_ratio<R: Float + Copy + RealField>(
     let scale = leading.recip();
     Ok((
         numerator.into_iter().map(|value| value * scale).collect(),
-        denominator
-            .into_iter()
-            .map(|value| value * scale)
-            .collect(),
+        denominator.into_iter().map(|value| value * scale).collect(),
     ))
 }
 
-pub(crate) fn poly_eval<R: Float + Copy + RealField>(coeffs: &[R], point: Complex<R>) -> Complex<R> {
-    coeffs.iter().fold(Complex::new(R::zero(), R::zero()), |acc, &coef| {
-        acc * point + Complex::new(coef, R::zero())
-    })
+pub(crate) fn poly_eval<R: Float + Copy + RealField>(
+    coeffs: &[R],
+    point: Complex<R>,
+) -> Complex<R> {
+    coeffs
+        .iter()
+        .fold(Complex::new(R::zero(), R::zero()), |acc, &coef| {
+            acc * point + Complex::new(coef, R::zero())
+        })
 }
 
 pub(crate) fn poly_mul<R: Float + Copy + RealField>(lhs: &[R], rhs: &[R]) -> Vec<R> {
@@ -72,7 +74,9 @@ pub(crate) fn poly_mul<R: Float + Copy + RealField>(lhs: &[R], rhs: &[R]) -> Vec
     trim_leading_zeros(&out)
 }
 
-pub(crate) fn poly_roots<R: Float + Copy + RealField>(coeffs: &[R]) -> Result<Vec<Complex<R>>, LtiError> {
+pub(crate) fn poly_roots<R: Float + Copy + RealField>(
+    coeffs: &[R],
+) -> Result<Vec<Complex<R>>, LtiError> {
     let coeffs = trim_leading_zeros(coeffs);
     if coeffs.is_empty() {
         return Err(LtiError::EmptyPolynomial {
@@ -202,6 +206,14 @@ fn compare_roots<R: Float + Copy + RealField>(
     rhs.norm()
         .partial_cmp(&lhs.norm())
         .unwrap_or(core::cmp::Ordering::Equal)
-        .then_with(|| rhs.re.partial_cmp(&lhs.re).unwrap_or(core::cmp::Ordering::Equal))
-        .then_with(|| rhs.im.partial_cmp(&lhs.im).unwrap_or(core::cmp::Ordering::Equal))
+        .then_with(|| {
+            rhs.re
+                .partial_cmp(&lhs.re)
+                .unwrap_or(core::cmp::Ordering::Equal)
+        })
+        .then_with(|| {
+            rhs.im
+                .partial_cmp(&lhs.im)
+                .unwrap_or(core::cmp::Ordering::Equal)
+        })
 }
