@@ -6,6 +6,11 @@
 //!
 //! The design still keeps continuous and discrete systems distinct in the type
 //! system so downstream algorithms can state their assumptions clearly.
+//!
+//! This module is the model layer that sits above the lower-level Gramian and
+//! matrix-equation routines in [`super::lyapunov`]. It gives those routines a
+//! structured `A/B/C/D` home and makes the time domain part of the type
+//! instead of leaving it as an implicit convention at the call site.
 
 mod convert;
 mod domain;
@@ -49,18 +54,24 @@ pub type DiscreteStateSpace<T> = StateSpace<T, DiscreteTime<<T as ComplexField>:
 
 impl<T, Domain> StateSpace<T, Domain> {
     /// Number of states.
+    ///
+    /// This is the size of the internal state vector `x`.
     #[must_use]
     pub fn nstates(&self) -> usize {
         self.a.nrows()
     }
 
     /// Number of inputs.
+    ///
+    /// This is the width of the input vector `u`.
     #[must_use]
     pub fn ninputs(&self) -> usize {
         self.b.ncols()
     }
 
     /// Number of outputs.
+    ///
+    /// This is the height of the output vector `y`.
     #[must_use]
     pub fn noutputs(&self) -> usize {
         self.c.nrows()
@@ -103,6 +114,9 @@ impl<T, Domain> StateSpace<T, Domain> {
     }
 
     /// Splits the state-space system back into its owned parts.
+    ///
+    /// This is mainly useful when a caller wants to reuse the validated model
+    /// storage in a different representation without cloning the matrices.
     #[must_use]
     pub fn into_parts(self) -> (Mat<T>, Mat<T>, Mat<T>, Mat<T>, Domain) {
         (self.a, self.b, self.c, self.d, self.domain)
@@ -115,6 +129,12 @@ where
 {
     /// Creates a continuous-time state-space system after validating the
     /// `A/B/C/D` block dimensions.
+    ///
+    /// The validated model represents
+    ///
+    /// `x' = A x + B u`
+    ///
+    /// `y  = C x + D u`
     pub fn new(a: Mat<T>, b: Mat<T>, c: Mat<T>, d: Mat<T>) -> Result<Self, StateSpaceError> {
         validate_blocks(
             a.nrows(),
@@ -136,6 +156,9 @@ where
     }
 
     /// Creates a continuous-time model with a zero feedthrough matrix.
+    ///
+    /// This is the common case in state-space analysis workflows where the
+    /// direct input-to-output path is absent or intentionally omitted.
     pub fn with_zero_feedthrough(a: Mat<T>, b: Mat<T>, c: Mat<T>) -> Result<Self, StateSpaceError> {
         let d = Mat::zeros(c.nrows(), b.ncols());
         Self::new(a, b, c, d)
@@ -148,17 +171,28 @@ where
     T::Real: Float + Copy,
 {
     /// Computes the dense continuous-time controllability Gramian of the model.
+    ///
+    /// Intuitively, this measures how strongly the input channels in `B` can
+    /// drive the internal state through the stable continuous-time dynamics.
     pub fn controllability_gramian(&self) -> Result<DenseLyapunovSolve<T>, LyapunovError> {
         controllability_gramian_dense(self.a.as_ref(), self.b.as_ref())
     }
 
     /// Computes the dense continuous-time observability Gramian of the model.
+    ///
+    /// Intuitively, this measures how strongly the internal state is reflected
+    /// in the outputs through `C`.
     pub fn observability_gramian(&self) -> Result<DenseLyapunovSolve<T>, LyapunovError> {
         observability_gramian_dense(self.a.as_ref(), self.c.as_ref())
     }
 
     /// Converts the continuous-time model into a discrete-time one using the
     /// requested method and sample interval.
+    ///
+    /// The method is explicit because different `c2d` conversions encode
+    /// different intersample assumptions. Zero-order hold models piecewise
+    /// constant inputs; bilinear/Tustin models the trapezoidal-rule map that is
+    /// common in digital filter and controller design.
     pub fn discretize(
         &self,
         sample_time: T::Real,
@@ -175,6 +209,12 @@ where
 {
     /// Creates a discrete-time state-space system after validating dimensions
     /// and sample interval.
+    ///
+    /// The validated model represents
+    ///
+    /// `x[k + 1] = A x[k] + B u[k]`
+    ///
+    /// `y[k]     = C x[k] + D u[k]`
     pub fn new(
         a: Mat<T>,
         b: Mat<T>,
@@ -216,6 +256,9 @@ where
     }
 
     /// Sample interval used by the discrete-time model.
+    ///
+    /// This is the spacing between state updates in the discrete-time
+    /// interpretation of the system.
     #[must_use]
     pub fn sample_time(&self) -> T::Real {
         self.domain.sample_time()
@@ -229,6 +272,10 @@ where
 {
     /// Converts the discrete-time model back into a continuous-time one using
     /// the requested reconstruction assumption.
+    ///
+    /// The method is explicit because `d2c` is not unique: a sampled model
+    /// only corresponds to a continuous-time model after choosing how the input
+    /// behaves between samples.
     pub fn continuousize(
         &self,
         method: ContinuousizationMethod<T::Real>,
@@ -247,6 +294,8 @@ fn validate_blocks(
     d_nrows: usize,
     d_ncols: usize,
 ) -> Result<(), StateSpaceError> {
+    // Constructor-time validation keeps every downstream control routine from
+    // having to re-check the same `A/B/C/D` compatibility rules.
     if a_nrows != a_ncols {
         return Err(StateSpaceError::NonSquareA {
             nrows: a_nrows,

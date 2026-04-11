@@ -1,3 +1,9 @@
+//! Dense continuous/discrete conversion routines for state-space models.
+//!
+//! The public entry points in this file are intentionally method-driven rather
+//! than assumption-driven. A `c2d` or `d2c` call is not meaningful unless the
+//! caller states what happens between sample instants.
+
 use super::domain::{ContinuousTime, DiscreteTime};
 use super::error::StateSpaceError;
 use super::{ContinuousStateSpace, DiscreteStateSpace, StateSpace};
@@ -13,11 +19,15 @@ use num_traits::{Float, NumCast, ToPrimitive};
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DiscretizationMethod<R> {
     /// Exact zero-order-hold conversion for piecewise-constant sampled inputs.
+    ///
+    /// This is the standard choice when the digital input is updated once per
+    /// sample and then held constant by the actuator or DAC.
     ZeroOrderHold,
     /// Bilinear / Tustin conversion.
     ///
     /// The optional prewarp frequency lets the bilinear mapping match one
-    /// chosen continuous-time frequency exactly.
+    /// chosen continuous-time frequency exactly. This is the common frequency-
+    /// shaping conversion used in digital filter and controller design.
     Bilinear { prewarp_frequency: Option<R> },
 }
 
@@ -30,6 +40,9 @@ pub enum ContinuousizationMethod<R> {
     /// is intentionally left unsupported in the first implementation.
     ZeroOrderHold,
     /// Bilinear / Tustin inversion.
+    ///
+    /// This is the inverse of the bilinear map under the same optional
+    /// prewarping choice.
     Bilinear { prewarp_frequency: Option<R> },
 }
 
@@ -61,6 +74,9 @@ where
 {
     match method {
         ContinuousizationMethod::ZeroOrderHold => Err(StateSpaceError::UnsupportedConversion(
+            // Exact ZOH `d2c` is mathematically valid, but it is a matrix-log
+            // feature, not a small variant of the dense linear solves already
+            // implemented here.
             "exact ZOH d2c requires a matrix logarithm and is not implemented yet",
         )),
         ContinuousizationMethod::Bilinear { prewarp_frequency } => {
@@ -126,6 +142,12 @@ where
     let n = system.nstates();
 
     let identity = Mat::<T>::identity(n, n);
+    // The bilinear map is
+    //
+    // Ad = (I - alpha A)^(-1) (I + alpha A)
+    //
+    // with matching input/output transformations so the full state-space
+    // quadruple follows the same trapezoidal-rule change of variables.
     let p = dense_sub(
         identity.as_ref(),
         dense_scale_real(system.a.as_ref(), alpha).as_ref(),
@@ -174,6 +196,12 @@ where
     let ap_inv = inverse_checked(ap.as_ref(), "Ad + I")?;
     let bc_scale = (gamma + gamma) / (gamma * gamma);
 
+    // Inverting the bilinear map gives
+    //
+    // A = alpha^(-1) (Ad - I) (Ad + I)^(-1)
+    //
+    // with matching `B` and `C` scalings chosen so a forward bilinear
+    // discretization round-trips back to the original continuous model.
     let a = dense_scale_real(
         dense_mul(am.as_ref(), ap_inv.as_ref()).as_ref(),
         alpha.recip(),
@@ -213,6 +241,8 @@ fn bilinear_alpha<R: Float>(
         Some(w) if !w.is_finite() || w < R::zero() => Err(StateSpaceError::InvalidPrewarpFrequency),
         Some(w) if w == R::zero() => Ok(sample_time / (R::one() + R::one())),
         Some(w) => {
+            // Prewarping changes the bilinear scaling so one chosen continuous
+            // frequency is matched exactly after discretization.
             let half = sample_time / (R::one() + R::one());
             let alpha = (w * half).tan() / w;
             if !alpha.is_finite() || alpha <= R::zero() {
@@ -324,6 +354,9 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // Route inversion through a checked solve against the identity so singular
+    // or nearly singular conversion formulas fail explicitly instead of
+    // quietly returning nonsense.
     solve_left_checked(
         matrix,
         Mat::<T>::identity(matrix.nrows(), matrix.ncols()).as_ref(),
@@ -345,6 +378,9 @@ where
         return Err(StateSpaceError::SingularConversion { which });
     }
 
+    // Verify the solve explicitly. Conversion formulas are sensitive to bad
+    // inverses, so a non-finite or wildly inaccurate solve should be surfaced
+    // as a conversion failure, not silently accepted.
     let residual = dense_sub(dense_mul(lhs, sol.as_ref()).as_ref(), rhs);
     let residual_norm = frobenius_norm(residual.as_ref());
     let scale = frobenius_norm(lhs) * frobenius_norm(sol.as_ref())
@@ -409,6 +445,9 @@ where
 {
     assert_eq!(lhs.ncols(), rhs.nrows());
     Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
+        // The dense conversion helpers still use compensated accumulation in
+        // their inner products so the small matrix-function code here follows
+        // the same accuracy policy as the rest of the crate.
         let mut acc = CompensatedSum::<T>::default();
         for k in 0..lhs.ncols() {
             acc.add(lhs[(row, k)] * rhs[(k, col)]);

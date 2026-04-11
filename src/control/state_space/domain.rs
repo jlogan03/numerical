@@ -1,10 +1,17 @@
 use core::fmt;
 
 /// Marker type for continuous-time state-space systems.
+///
+/// Continuous-time models interpret the state matrix through
+/// `x' = A x + B u`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct ContinuousTime;
 
 /// Metadata carried by discrete-time state-space systems.
+///
+/// Discrete-time models interpret the same `A/B/C/D` block layout through
+/// `x[k + 1] = A x[k] + B u[k]`, and therefore need a sample interval as part
+/// of their domain metadata.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DiscreteTime<R> {
     sample_time: R,

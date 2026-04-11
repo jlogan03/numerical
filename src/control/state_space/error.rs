@@ -1,6 +1,13 @@
 use core::fmt;
 
 /// Errors produced by state-space construction and conversion routines.
+///
+/// The state-space layer distinguishes between:
+///
+/// - shape errors in the `A/B/C/D` blocks
+/// - invalid time-domain metadata such as a bad sample interval
+/// - mathematically valid but currently unsupported conversions
+/// - numerical failures inside dense conversion formulas
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum StateSpaceError {
     /// The state matrix `A` must be square.
