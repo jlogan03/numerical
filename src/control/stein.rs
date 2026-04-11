@@ -74,6 +74,11 @@ impl std::error::Error for SteinError {}
 /// result is projected back onto the Hermitian subspace with `(X + X^H) / 2`,
 /// since exact discrete Gramians are Hermitian and the direct solve can pick up
 /// small asymmetry from finite precision.
+///
+/// Compared with the continuous-time Lyapunov equation, the sign pattern
+/// changes because the discrete dynamics accumulate through repeated powers of
+/// the one-step transition matrix. That is why the dense operator here is
+/// `I - conj(A) ⊗ A` rather than a Kronecker sum.
 pub fn solve_discrete_stein_dense<T>(
     a: MatRef<'_, T>,
     q: MatRef<'_, T>,
@@ -106,6 +111,9 @@ where
     }
 
     let mut solution = unvectorize_square(vectorized.as_ref(), n);
+    // Exact discrete Gramians are Hermitian. This projection removes the small
+    // skew-Hermitian component introduced by the finite-precision dense solve
+    // without changing the intended solution materially.
     hermitianize_in_place(&mut solution);
 
     let residual = discrete_residual(a, solution.as_ref(), q);
@@ -130,6 +138,9 @@ where
 /// Intuitively, `B B^H` measures how the inputs inject energy into the state,
 /// and the Stein solve accumulates that effect across repeated applications of
 /// the one-step transition `A`.
+///
+/// This is the discrete-time analogue of the continuous controllability
+/// Gramian, with `B B^H` acting as the per-step input energy injection term.
 pub fn controllability_gramian_discrete_dense<T>(
     a: MatRef<'_, T>,
     b: MatRef<'_, T>,
@@ -141,6 +152,9 @@ where
     validate_square("a", a.nrows(), a.ncols())?;
     validate_dims("b", b.nrows(), b.ncols(), a.nrows(), b.ncols())?;
 
+    // `B B^H` is the natural Gramian forcing term in the controllability
+    // equation. It stays Hermitian and positive semidefinite in exact
+    // arithmetic even for complex-valued systems.
     let q = dense_mul_adjoint_rhs(b, b);
     solve_discrete_stein_dense(a, q.as_ref())
 }
@@ -153,6 +167,10 @@ where
 ///
 /// This is the dual controllability problem. The implementation reuses the same
 /// Stein core by solving with `A_obs = A^H` and `Q = C^H C`.
+///
+/// Writing the observability equation this way keeps one dense Stein solver at
+/// the center of the implementation instead of maintaining two nearly
+/// identical direct paths.
 pub fn observability_gramian_discrete_dense<T>(
     a: MatRef<'_, T>,
     c: MatRef<'_, T>,
@@ -164,6 +182,8 @@ where
     validate_square("a", a.nrows(), a.ncols())?;
     validate_dims("c", c.nrows(), c.ncols(), c.nrows(), a.ncols())?;
 
+    // `C^H C` is the dual forcing term: it measures how strongly each state
+    // direction is exposed through the outputs.
     let q = dense_mul_adjoint_lhs(c, c);
     let a_adjoint = dense_adjoint(a);
     solve_discrete_stein_dense(a_adjoint.as_ref(), q.as_ref())
@@ -214,6 +234,10 @@ where
     // Column-major vectorization turns `A X A^H` into
     // `(conj(A) ⊗ A) vec(X)`. The Stein equation is then
     // `(I - conj(A) ⊗ A) vec(X) = vec(Q)`.
+    //
+    // The implementation writes the dense operator entry-by-entry rather than
+    // relying on a more opaque Kronecker helper so the exact indexing contract
+    // stays visible in this reference path.
     for col in 0..n {
         for row in 0..n {
             let eq = vec_index(row, col, n);
@@ -267,6 +291,10 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // These dense helpers are not meant to outcompete faer's dense kernels.
+    // They exist so the residual and Gramian forcing terms can use the same
+    // compensated reduction style as the rest of this crate's numerically
+    // conservative control code.
     Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
         for k in 0..lhs.ncols() {
@@ -313,6 +341,9 @@ where
     let axah = dense_mul_adjoint_rhs(ax.as_ref(), a);
     Mat::from_fn(x.nrows(), x.ncols(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
+        // Recompute the residual in the original matrix form instead of
+        // recycling the vectorized solve state. That gives a more meaningful
+        // post-solve accuracy check for downstream control code.
         acc.add(x[(row, col)]);
         acc.add(-axah[(row, col)]);
         acc.add(-q[(row, col)]);

@@ -278,6 +278,10 @@ where
     ///
     /// This measures how strongly the sampled input channels can drive the
     /// state through repeated applications of the one-step transition matrix.
+    ///
+    /// This is currently the dense reference path. It calls the Stein solver on
+    /// `A` and `B` directly, so it is appropriate for modest dense models and
+    /// for validating later large-scale discrete Gramian implementations.
     pub fn controllability_gramian(&self) -> Result<DenseSteinSolve<T>, SteinError> {
         controllability_gramian_discrete_dense(self.a.as_ref(), self.b.as_ref())
     }
@@ -286,6 +290,10 @@ where
     ///
     /// This measures how strongly the internal state is visible at the outputs
     /// after repeated propagation through the sampled dynamics.
+    ///
+    /// Like the controllability path, this is intentionally dense-first. The
+    /// result is useful for discrete balanced truncation and for checking the
+    /// conditioning of sampled models before moving to reduced-order analysis.
     pub fn observability_gramian(&self) -> Result<DenseSteinSolve<T>, SteinError> {
         observability_gramian_discrete_dense(self.a.as_ref(), self.c.as_ref())
     }
