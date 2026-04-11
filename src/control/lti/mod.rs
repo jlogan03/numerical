@@ -26,7 +26,9 @@ mod util;
 mod zpk;
 
 pub use error::LtiError;
-pub use response::{ContinuousImpulseResponse, SampledResponse};
+pub use response::{
+    ContinuousImpulseResponse, ContinuousSimulation, DiscreteSimulation, SampledResponse,
+};
 pub use sos::{ContinuousSos, DiscreteSos, SecondOrderSection, Sos};
 pub use transfer_function::{
     ContinuousTransferFunction, DiscreteTransferFunction, TransferFunction,

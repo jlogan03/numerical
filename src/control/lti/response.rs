@@ -42,6 +42,36 @@ pub struct ContinuousImpulseResponse<R, T> {
     pub values: Vec<Mat<T>>,
 }
 
+/// Dense sampled trajectory of a continuous-time system under a piecewise-
+/// constant input.
+///
+/// `inputs[:, k]` is interpreted as the value held across the interval
+/// `[sample_times[k], sample_times[k + 1])`. The final input column is retained
+/// so the output at the last sample time can still be evaluated consistently.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ContinuousSimulation<R, T> {
+    /// Sample times at which the state and output were recorded.
+    pub sample_times: Vec<R>,
+    /// Input samples aligned with `sample_times`.
+    pub inputs: Mat<T>,
+    /// State trajectory, one column per sample time.
+    pub states: Mat<T>,
+    /// Output trajectory, one column per sample time.
+    pub outputs: Mat<T>,
+}
+
+/// Dense sampled trajectory of a discrete-time system.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DiscreteSimulation<T> {
+    /// Input sequence, one column per discrete update.
+    pub inputs: Mat<T>,
+    /// State trajectory. Column `k` stores `x[k]`, so there is one more state
+    /// sample than input samples.
+    pub states: Mat<T>,
+    /// Output sequence. Column `k` stores `y[k]`.
+    pub outputs: Mat<T>,
+}
+
 impl<T> ContinuousStateSpace<T>
 where
     T: CompensatedField,
@@ -90,40 +120,12 @@ where
         sample_times: &[T::Real],
     ) -> Result<SampledResponse<T::Real, T>, LtiError> {
         validate_nonnegative_grid(sample_times, "continuous step response")?;
-        let n = self.nstates();
-        let m = self.ninputs();
-        let size = n + m;
-        let mut values = Vec::with_capacity(sample_times.len());
-
-        for &time in sample_times {
-            let mut lifted = Mat::<T>::zeros(size, size);
-            for row in 0..n {
-                for col in 0..n {
-                    lifted[(row, col)] = self.a()[(row, col)].mul_real(time);
-                }
-            }
-            for row in 0..n {
-                for col in 0..m {
-                    lifted[(row, n + col)] = self.b()[(row, col)].mul_real(time);
-                }
-            }
-
-            // This is the same lifted exponential used for exact ZOH
-            // discretization:
-            //
-            // exp(t * [A B; 0 0]) = [exp(A t)   integral_0^t exp(A τ) B dτ
-            //                       0          I                         ]
-            //
-            // The upper-right block is exactly the step-response state map.
-            let exp_lifted = matrix_exponential(lifted.as_ref())?;
-            let bd = Mat::from_fn(n, m, |row, col| exp_lifted[(row, n + col)]);
-            let value = dense_add(dense_mul(self.c(), bd.as_ref()).as_ref(), self.d());
-            values.push(value);
-        }
-
+        let inputs = Mat::from_fn(self.ninputs(), sample_times.len(), |_, _| T::one());
+        let x0 = vec![T::zero(); self.nstates()];
+        let sim = self.simulate_zoh(&x0, sample_times, inputs.as_ref())?;
         Ok(SampledResponse {
-            sample_points: sample_times.to_vec(),
-            values,
+            sample_points: sim.sample_times,
+            values: split_columns(sim.outputs.as_ref()),
         })
     }
 
@@ -147,6 +149,63 @@ where
             values,
         })
     }
+
+    /// Simulates the dense continuous-time model on a sampling grid under a
+    /// zero-order-held input sequence.
+    ///
+    /// `inputs[:, k]` is held across the interval
+    /// `[sample_times[k], sample_times[k + 1])`. The final input column is used
+    /// only to evaluate the output at the final sample time.
+    pub fn simulate_zoh(
+        &self,
+        x0: &[T],
+        sample_times: &[T::Real],
+        inputs: MatRef<'_, T>,
+    ) -> Result<ContinuousSimulation<T::Real, T>, LtiError> {
+        validate_state_vector(self.nstates(), x0, "continuous_simulation.x0")?;
+        validate_continuous_grid(sample_times, "continuous simulation")?;
+        if inputs.nrows() != self.ninputs() || inputs.ncols() != sample_times.len() {
+            return Err(LtiError::DimensionMismatch {
+                which: "continuous_simulation.inputs",
+                expected_nrows: self.ninputs(),
+                expected_ncols: sample_times.len(),
+                actual_nrows: inputs.nrows(),
+                actual_ncols: inputs.ncols(),
+            });
+        }
+
+        let inputs_owned = clone_mat(inputs);
+        let mut states = Mat::<T>::zeros(self.nstates(), sample_times.len());
+        let mut outputs = Mat::<T>::zeros(self.noutputs(), sample_times.len());
+        let mut state = column_from_slice(x0);
+        write_column(states.as_mut(), 0, state.as_ref());
+
+        for k in 0..sample_times.len() {
+            let input = column_owned(inputs_owned.as_ref(), k);
+            let output = dense_add(
+                dense_mul(self.c(), state.as_ref()).as_ref(),
+                dense_mul(self.d(), input.as_ref()).as_ref(),
+            );
+            write_column(outputs.as_mut(), k, output.as_ref());
+
+            if k + 1 < sample_times.len() {
+                let dt = sample_times[k + 1] - sample_times[k];
+                let (ad, bd) = continuous_interval_maps(self, dt)?;
+                state = dense_add(
+                    dense_mul(ad.as_ref(), state.as_ref()).as_ref(),
+                    dense_mul(bd.as_ref(), input.as_ref()).as_ref(),
+                );
+                write_column(states.as_mut(), k + 1, state.as_ref());
+            }
+        }
+
+        Ok(ContinuousSimulation {
+            sample_times: sample_times.to_vec(),
+            inputs: inputs_owned,
+            states,
+            outputs,
+        })
+    }
 }
 
 impl<T> DiscreteStateSpace<T>
@@ -161,25 +220,19 @@ where
     /// - `k = 0`: `D`
     /// - `k >= 1`: `C A^(k-1) B`
     pub fn impulse_response(&self, n_steps: usize) -> SampledResponse<usize, T> {
-        let mut values = Vec::with_capacity(n_steps);
-        let mut ab = clone_mat(self.b());
-
-        for step in 0..n_steps {
-            let value = if step == 0 {
-                clone_mat(self.d())
-            } else {
-                // After the direct-feedthrough sample, the discrete impulse
-                // sequence follows the simple recurrence `C A^(k-1) B`.
-                let out = dense_mul(self.c(), ab.as_ref());
-                ab = dense_mul(self.a(), ab.as_ref());
-                out
-            };
-            values.push(value);
+        let mut inputs = Mat::<T>::zeros(self.ninputs(), n_steps);
+        if n_steps > 0 {
+            for row in 0..self.ninputs() {
+                inputs[(row, 0)] = T::one();
+            }
         }
-
+        let x0 = vec![T::zero(); self.nstates()];
+        let sim = self
+            .simulate(&x0, inputs.as_ref())
+            .expect("constructed impulse inputs should be valid");
         SampledResponse {
             sample_points: (0..n_steps).collect(),
-            values,
+            values: split_columns(sim.outputs.as_ref()),
         }
     }
 
@@ -188,21 +241,14 @@ where
     /// Each returned matrix maps a per-input unit step to the output vector at
     /// the corresponding discrete-time index.
     pub fn step_response(&self, n_steps: usize) -> SampledResponse<usize, T> {
-        let mut values = Vec::with_capacity(n_steps);
-        let mut state = Mat::<T>::zeros(self.nstates(), self.ninputs());
-
-        for _step in 0..n_steps {
-            // `state` stores the accumulated state response to a unit step up
-            // to the current sample. Advancing it is just the usual discrete
-            // affine recurrence `x_{k+1} = A x_k + B`.
-            let value = dense_add(dense_mul(self.c(), state.as_ref()).as_ref(), self.d());
-            values.push(value);
-            state = dense_add(dense_mul(self.a(), state.as_ref()).as_ref(), self.b());
-        }
-
+        let inputs = Mat::from_fn(self.ninputs(), n_steps, |_, _| T::one());
+        let x0 = vec![T::zero(); self.nstates()];
+        let sim = self
+            .simulate(&x0, inputs.as_ref())
+            .expect("constructed step inputs should be valid");
         SampledResponse {
             sample_points: (0..n_steps).collect(),
-            values,
+            values: split_columns(sim.outputs.as_ref()),
         }
     }
 
@@ -232,6 +278,63 @@ where
             values,
         })
     }
+
+    /// Simulates the dense discrete-time model for a supplied input sequence.
+    ///
+    /// The recurrence is
+    ///
+    /// `x[k+1] = A x[k] + B u[k]`
+    ///
+    /// `y[k]   = C x[k] + D u[k]`
+    ///
+    /// so the returned state trajectory has one more column than the input and
+    /// output sequences.
+    pub fn simulate(
+        &self,
+        x0: &[T],
+        inputs: MatRef<'_, T>,
+    ) -> Result<DiscreteSimulation<T>, LtiError> {
+        validate_state_vector(self.nstates(), x0, "discrete_simulation.x0")?;
+        if inputs.nrows() != self.ninputs() {
+            return Err(LtiError::DimensionMismatch {
+                which: "discrete_simulation.inputs",
+                expected_nrows: self.ninputs(),
+                expected_ncols: inputs.ncols(),
+                actual_nrows: inputs.nrows(),
+                actual_ncols: inputs.ncols(),
+            });
+        }
+
+        let inputs_owned = clone_mat(inputs);
+        let mut states = Mat::<T>::zeros(self.nstates(), inputs.ncols() + 1);
+        let mut outputs = Mat::<T>::zeros(self.noutputs(), inputs.ncols());
+        let mut state = column_from_slice(x0);
+        write_column(states.as_mut(), 0, state.as_ref());
+
+        for k in 0..inputs_owned.ncols() {
+            let input = column_owned(inputs_owned.as_ref(), k);
+
+            // Evaluate the output before the state update so the returned
+            // columns match the standard discrete-time convention `y[k]`.
+            let output = dense_add(
+                dense_mul(self.c(), state.as_ref()).as_ref(),
+                dense_mul(self.d(), input.as_ref()).as_ref(),
+            );
+            write_column(outputs.as_mut(), k, output.as_ref());
+
+            state = dense_add(
+                dense_mul(self.a(), state.as_ref()).as_ref(),
+                dense_mul(self.b(), input.as_ref()).as_ref(),
+            );
+            write_column(states.as_mut(), k + 1, state.as_ref());
+        }
+
+        Ok(DiscreteSimulation {
+            inputs: inputs_owned,
+            states,
+            outputs,
+        })
+    }
 }
 
 /// Clones a matrix view into an owned dense matrix.
@@ -242,6 +345,35 @@ fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
     Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
         matrix[(row, col)]
     })
+}
+
+/// Copies a dense column matrix into one column of a larger dense matrix.
+fn write_column<T: Copy>(mut dst: faer::MatMut<'_, T>, col: usize, src: MatRef<'_, T>) {
+    assert_eq!(src.ncols(), 1);
+    assert_eq!(dst.nrows(), src.nrows());
+    for row in 0..src.nrows() {
+        dst[(row, col)] = src[(row, 0)];
+    }
+}
+
+/// Builds an owned column matrix from a state-vector slice.
+fn column_from_slice<T: Copy>(values: &[T]) -> Mat<T> {
+    Mat::from_fn(values.len(), 1, |row, _| values[row])
+}
+
+/// Extracts one column of a dense matrix into an owned column matrix.
+fn column_owned<T: Copy>(matrix: MatRef<'_, T>, col: usize) -> Mat<T> {
+    Mat::from_fn(matrix.nrows(), 1, |row, _| matrix[(row, col)])
+}
+
+/// Splits a dense matrix into a vector of single-column owned matrices.
+///
+/// This is mainly used to adapt the more general simulation output shape to the
+/// existing `SampledResponse` representation used by impulse/step wrappers.
+fn split_columns<T: Copy>(matrix: MatRef<'_, T>) -> Vec<Mat<T>> {
+    (0..matrix.ncols())
+        .map(|col| column_owned(matrix, col))
+        .collect()
 }
 
 /// Dense elementwise matrix addition for the response layer.
@@ -283,6 +415,21 @@ where
     })
 }
 
+/// Validates the expected state-vector length for simulation entry points.
+fn validate_state_vector<T>(nstates: usize, x0: &[T], which: &'static str) -> Result<(), LtiError> {
+    if x0.len() == nstates {
+        Ok(())
+    } else {
+        Err(LtiError::DimensionMismatch {
+            which,
+            expected_nrows: nstates,
+            expected_ncols: 1,
+            actual_nrows: x0.len(),
+            actual_ncols: 1,
+        })
+    }
+}
+
 /// Checks that a time-domain sampling grid is finite and nonnegative.
 ///
 /// Negative time samples are not meaningful for the causal LTI response APIs
@@ -294,6 +441,27 @@ fn validate_nonnegative_grid<R: Float + Copy>(
     for &sample in sample_points {
         if !sample.is_finite() || sample < R::zero() {
             return Err(LtiError::InvalidSamplePoint { which });
+        }
+    }
+    Ok(())
+}
+
+/// Checks that a continuous-time simulation grid is finite, nonnegative, and
+/// nondecreasing.
+///
+/// Zero-width intervals are allowed so callers can sample the same instant more
+/// than once, but backward time steps are rejected.
+fn validate_continuous_grid<R: Float + Copy>(
+    sample_points: &[R],
+    which: &'static str,
+) -> Result<(), LtiError> {
+    if sample_points.is_empty() {
+        return Err(LtiError::InvalidSampleGrid { which });
+    }
+    validate_nonnegative_grid(sample_points, which)?;
+    for window in sample_points.windows(2) {
+        if window[1] < window[0] {
+            return Err(LtiError::InvalidSampleGrid { which });
         }
     }
     Ok(())
@@ -313,6 +481,39 @@ fn validate_finite_grid<R: Float + Copy>(
         }
     }
     Ok(())
+}
+
+/// Computes the exact dense ZOH state-transition maps over one time interval.
+///
+/// This is the same lifted-exponential construction used by the public
+/// continuous-time discretization path, just specialized to a single interval
+/// so the simulator can propagate one ZOH segment at a time.
+fn continuous_interval_maps<T>(
+    system: &ContinuousStateSpace<T>,
+    dt: T::Real,
+) -> Result<(Mat<T>, Mat<T>), LtiError>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy + RealField,
+{
+    let n = system.nstates();
+    let m = system.ninputs();
+    let size = n + m;
+    let mut lifted = Mat::<T>::zeros(size, size);
+    for row in 0..n {
+        for col in 0..n {
+            lifted[(row, col)] = system.a()[(row, col)].mul_real(dt);
+        }
+    }
+    for row in 0..n {
+        for col in 0..m {
+            lifted[(row, n + col)] = system.b()[(row, col)].mul_real(dt);
+        }
+    }
+    let exp_lifted = matrix_exponential(lifted.as_ref())?;
+    let ad = Mat::from_fn(n, n, |row, col| exp_lifted[(row, col)]);
+    let bd = Mat::from_fn(n, m, |row, col| exp_lifted[(row, n + col)]);
+    Ok((ad, bd))
 }
 
 #[cfg(test)]
@@ -440,6 +641,84 @@ mod tests {
                 1.0e-12,
             );
         }
+    }
+
+    #[test]
+    fn discrete_simulation_matches_manual_recurrence() {
+        let sys = DiscreteStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| 0.5),
+            Mat::from_fn(1, 1, |_, _| 2.0),
+            Mat::from_fn(1, 1, |_, _| 3.0),
+            Mat::from_fn(1, 1, |_, _| 4.0),
+            0.1,
+        )
+        .unwrap();
+
+        let inputs = Mat::from_fn(1, 2, |_, col| if col == 0 { 7.0 } else { 11.0 });
+        let sim = sys.simulate(&[5.0], inputs.as_ref()).unwrap();
+
+        assert_close_real(
+            sim.states.as_ref(),
+            Mat::from_fn(1, 3, |_, col| match col {
+                0 => 5.0,
+                1 => 16.5,
+                2 => 30.25,
+                _ => unreachable!(),
+            })
+            .as_ref(),
+            1.0e-12,
+        );
+        assert_close_real(
+            sim.outputs.as_ref(),
+            Mat::from_fn(1, 2, |_, col| if col == 0 { 43.0 } else { 93.5 }).as_ref(),
+            1.0e-12,
+        );
+    }
+
+    #[test]
+    fn continuous_zoh_simulation_matches_closed_form_scalar_case() {
+        let sys = ContinuousStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| -1.0),
+            Mat::from_fn(1, 1, |_, _| 2.0),
+            Mat::from_fn(1, 1, |_, _| 3.0),
+            Mat::from_fn(1, 1, |_, _| 4.0),
+        )
+        .unwrap();
+
+        let sample_times = [0.0, 1.0, 2.0];
+        let inputs = Mat::from_fn(1, 3, |_, col| match col {
+            0 => 7.0,
+            1 => 11.0,
+            _ => 13.0,
+        });
+        let sim = sys
+            .simulate_zoh(&[5.0], &sample_times, inputs.as_ref())
+            .unwrap();
+
+        let x1 = (-1.0f64).exp() * 5.0 + 2.0 * (1.0 - (-1.0f64).exp()) * 7.0;
+        let x2 = (-1.0f64).exp() * x1 + 2.0 * (1.0 - (-1.0f64).exp()) * 11.0;
+        assert_close_real(
+            sim.states.as_ref(),
+            Mat::from_fn(1, 3, |_, col| match col {
+                0 => 5.0,
+                1 => x1,
+                2 => x2,
+                _ => unreachable!(),
+            })
+            .as_ref(),
+            1.0e-12,
+        );
+        assert_close_real(
+            sim.outputs.as_ref(),
+            Mat::from_fn(1, 3, |_, col| match col {
+                0 => 3.0 * 5.0 + 4.0 * 7.0,
+                1 => 3.0 * x1 + 4.0 * 11.0,
+                2 => 3.0 * x2 + 4.0 * 13.0,
+                _ => unreachable!(),
+            })
+            .as_ref(),
+            1.0e-12,
+        );
     }
 
     #[test]

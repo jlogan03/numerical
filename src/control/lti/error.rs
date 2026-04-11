@@ -15,6 +15,17 @@ pub enum LtiError {
     InvalidSampleTime,
     /// A response grid contained an invalid point.
     InvalidSamplePoint { which: &'static str },
+    /// A sampling grid had inconsistent structure, such as mismatched lengths
+    /// or non-monotone time points.
+    InvalidSampleGrid { which: &'static str },
+    /// An analysis or simulation input had incompatible dimensions.
+    DimensionMismatch {
+        which: &'static str,
+        expected_nrows: usize,
+        expected_ncols: usize,
+        actual_nrows: usize,
+        actual_ncols: usize,
+    },
     /// A polynomial representation was missing required coefficients.
     EmptyPolynomial { which: &'static str },
     /// The leading coefficient of a polynomial must be nonzero.
