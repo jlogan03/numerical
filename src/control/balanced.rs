@@ -10,18 +10,17 @@
 //!
 //! This module sits above those solvers and performs the balancing step:
 //!
-//! 1. obtain controllability and observability Gramian factors
-//! 2. form the dense balancing core `Ro^H Rc`
-//! 3. compute its SVD to get the Hankel singular values
-//! 4. build the left/right projection factors
-//! 5. assemble the reduced state-space system
+//! 1. obtain controllability and observability Gramian data
+//! 2. delegate the balancing-core work to [`super::hsvd`]
+//! 3. assemble the reduced state-space system from the returned projections
 //!
 //! The returned result always includes the actual projection operators used to
 //! build the reduced model, and can optionally retain more of the internal
 //! balancing algebra on request.
 
+use super::hsvd::{HsvdError, hsvd_from_dense_gramians, hsvd_from_factors};
 use super::lyapunov::{
-    LowRankFactor, LyapunovError, LyapunovParams, ShiftStrategy, controllability_gramian_dense,
+    LyapunovError, LyapunovParams, ShiftStrategy, controllability_gramian_dense,
     controllability_gramian_low_rank, observability_gramian_dense, observability_gramian_low_rank,
 };
 use super::state_space::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
@@ -29,131 +28,23 @@ use super::stein::{
     SteinError, controllability_gramian_discrete_dense, controllability_gramian_discrete_low_rank,
     observability_gramian_discrete_dense, observability_gramian_discrete_low_rank,
 };
-use crate::decomp::{DecompError, DenseDecompParams, dense_self_adjoint_eigen, dense_svd};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use faer::sparse::SparseColMatRef;
 use faer::{Col, Index, Mat, MatRef, Unbind};
-use faer_traits::ComplexField;
 use faer_traits::Conjugate;
 use faer_traits::ext::ComplexFieldExt;
-use num_traits::{Float, One, Zero};
+use num_traits::{Float, Zero};
 use std::fmt;
 
-/// Controls how much internal balancing data is retained in the result.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum InternalsLevel {
-    /// Return only the reduced model, Hankel singular values, error bound, and
-    /// the final left/right projection operators.
-    #[default]
-    Summary,
-    /// Also retain the Gramian factors and balancing-core SVD data.
-    Factors,
-    /// Also retain dense Gramian and dense square-root data when that is
-    /// mathematically available and practical to materialize.
-    Full,
-}
+/// Alias of the shared HSVD internal-detail policy used by balanced
+/// truncation.
+pub use super::hsvd::HsvdInternalsLevel as InternalsLevel;
 
-impl InternalsLevel {
-    #[inline]
-    fn keep_factors(self) -> bool {
-        !matches!(self, Self::Summary)
-    }
+/// Alias of the shared HSVD parameter type used by balanced truncation.
+pub use super::hsvd::HsvdParams as BalancedParams;
 
-    #[inline]
-    fn keep_full(self) -> bool {
-        matches!(self, Self::Full)
-    }
-}
-
-/// Builder-style parameters for balanced truncation.
-///
-/// The truncation decision is driven by the Hankel singular values of the
-/// balancing core. `order` chooses how many balanced modes to keep, while
-/// `sigma_tol` can be used to drop modes whose Hankel singular values are too
-/// small to treat as numerically meaningful.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct BalancedParams<R> {
-    /// Requested reduced order. `None` keeps all numerically retained balanced
-    /// modes.
-    pub order: Option<usize>,
-    /// Optional Hankel singular value tolerance. If omitted, a relative default
-    /// based on machine precision is used.
-    pub sigma_tol: Option<R>,
-    /// Requested internal detail level for the returned result.
-    pub internals: InternalsLevel,
-}
-
-impl<R> Default for BalancedParams<R> {
-    fn default() -> Self {
-        Self {
-            order: None,
-            sigma_tol: None,
-            internals: InternalsLevel::Summary,
-        }
-    }
-}
-
-impl<R> BalancedParams<R> {
-    /// Creates parameters with documented defaults.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Requests a specific reduced order.
-    #[must_use]
-    pub fn with_order(mut self, order: usize) -> Self {
-        self.order = Some(order);
-        self
-    }
-
-    /// Overrides the Hankel singular value retention tolerance.
-    #[must_use]
-    pub fn with_sigma_tol(mut self, sigma_tol: R) -> Self {
-        self.sigma_tol = Some(sigma_tol);
-        self
-    }
-
-    /// Chooses how much internal balancing data to retain.
-    #[must_use]
-    pub fn with_internals(mut self, internals: InternalsLevel) -> Self {
-        self.internals = internals;
-        self
-    }
-}
-
-/// Optional retained internal balancing data.
-///
-/// These values expose the algebra that produced the reduced model. In
-/// particular, `controllability_factor`, `observability_factor`, and the
-/// balancing-core SVD data are the direct ingredients used to build the final
-/// projection operators.
-#[derive(Clone, Debug)]
-pub struct BalancedInternals<T: CompensatedField>
-where
-    T::Real: Float + Copy,
-{
-    /// Controllability Gramian factor used in the balancing core.
-    pub controllability_factor: Mat<T>,
-    /// Observability Gramian factor used in the balancing core.
-    pub observability_factor: Mat<T>,
-    /// Dense balancing core `Ro^H Rc`.
-    pub core: Mat<T>,
-    /// Left singular vectors of the balancing core.
-    pub core_u: Mat<T>,
-    /// Singular values of the balancing core.
-    pub core_singular_values: Col<T::Real>,
-    /// Adjoint of the right singular vector matrix of the balancing core.
-    pub core_vh: Mat<T>,
-    /// Dense controllability Gramian, when retained.
-    pub dense_controllability_gramian: Option<Mat<T>>,
-    /// Dense observability Gramian, when retained.
-    pub dense_observability_gramian: Option<Mat<T>>,
-    /// Dense controllability square-root factor, when retained.
-    pub dense_controllability_sqrt: Option<Mat<T>>,
-    /// Dense observability square-root factor, when retained.
-    pub dense_observability_sqrt: Option<Mat<T>>,
-}
+/// Alias of the shared HSVD internals retained by balanced truncation.
+pub use super::hsvd::HsvdInternals as BalancedInternals;
 
 /// Result of balanced truncation.
 ///
@@ -188,18 +79,11 @@ pub enum BalancedError<R> {
     Lyapunov(LyapunovError),
     /// Dense or sparse discrete Gramian solve failed.
     Stein(SteinError),
-    /// Dense balancing decomposition failed.
-    Decomposition(DecompError),
+    /// Hankel singular value decomposition or balancing-core construction
+    /// failed.
+    Hsvd(HsvdError<R>),
     /// Reduced state-space construction failed.
     StateSpace(super::state_space::StateSpaceError),
-    /// The requested reduced order exceeds the available core dimension.
-    InvalidOrder { requested: usize, available: usize },
-    /// No numerically meaningful balanced modes remained.
-    EmptyRetainedSpectrum,
-    /// A dense Gramian expected to be PSD had a clearly negative eigenvalue.
-    IndefiniteGramian { which: &'static str, eigenvalue: R },
-    /// A balancing intermediate became non-finite.
-    NonFiniteResult { which: &'static str },
 }
 
 impl<R: fmt::Debug> fmt::Display for BalancedError<R> {
@@ -222,42 +106,16 @@ impl<R> From<SteinError> for BalancedError<R> {
     }
 }
 
-impl<R> From<DecompError> for BalancedError<R> {
-    fn from(value: DecompError) -> Self {
-        Self::Decomposition(value)
-    }
-}
-
 impl<R> From<super::state_space::StateSpaceError> for BalancedError<R> {
     fn from(value: super::state_space::StateSpaceError) -> Self {
         Self::StateSpace(value)
     }
 }
 
-#[derive(Clone, Debug)]
-struct DenseFactorData<T: CompensatedField>
-where
-    T::Real: Float + Copy,
-{
-    factor: Mat<T>,
-    dense_gramian: Mat<T>,
-    dense_sqrt: Mat<T>,
-}
-
-#[derive(Clone, Debug)]
-struct BalanceCore<T: CompensatedField>
-where
-    T::Real: Float + Copy,
-{
-    hankel_singular_values: Col<T::Real>,
-    reduced_order: usize,
-    error_bound: Option<T::Real>,
-    left_projection: Mat<T>,
-    right_projection: Mat<T>,
-    core: Mat<T>,
-    core_u: Mat<T>,
-    core_singular_values: Col<T::Real>,
-    core_vh: Mat<T>,
+impl<R> From<HsvdError<R>> for BalancedError<R> {
+    fn from(value: HsvdError<R>) -> Self {
+        Self::Hsvd(value)
+    }
 }
 
 /// Computes dense continuous-time balanced truncation.
@@ -276,28 +134,24 @@ where
 {
     let wc = controllability_gramian_dense(system.a(), system.b())?;
     let wo = observability_gramian_dense(system.a(), system.c())?;
-    let wc_factor = dense_psd_factor("controllability", wc.solution.as_ref())?;
-    let wo_factor = dense_psd_factor("observability", wo.solution.as_ref())?;
-
-    let core = build_balance_core(wc_factor.factor.as_ref(), wo_factor.factor.as_ref(), params)?;
+    let hsvd = hsvd_from_dense_gramians(wc.solution.as_ref(), wo.solution.as_ref(), params)?;
     let reduced = build_dense_reduced_system(
         system.a(),
         system.b(),
         system.c(),
         system.d(),
-        core.left_projection.as_ref(),
-        core.right_projection.as_ref(),
+        hsvd.left_projection.as_ref(),
+        hsvd.right_projection.as_ref(),
     )?;
 
-    let internals = dense_internals(params.internals, wc_factor, wo_factor, &core);
     Ok(BalancedTruncationResult {
         reduced,
-        hankel_singular_values: core.hankel_singular_values.clone(),
-        reduced_order: core.reduced_order,
-        error_bound: core.error_bound,
-        left_projection: core.left_projection.clone(),
-        right_projection: core.right_projection.clone(),
-        internals,
+        hankel_singular_values: hsvd.hankel_singular_values,
+        reduced_order: hsvd.reduced_order,
+        error_bound: hsvd.error_bound,
+        left_projection: hsvd.left_projection,
+        right_projection: hsvd.right_projection,
+        internals: hsvd.internals,
     })
 }
 
@@ -316,29 +170,25 @@ where
 {
     let wc = controllability_gramian_discrete_dense(system.a(), system.b())?;
     let wo = observability_gramian_discrete_dense(system.a(), system.c())?;
-    let wc_factor = dense_psd_factor("controllability", wc.solution.as_ref())?;
-    let wo_factor = dense_psd_factor("observability", wo.solution.as_ref())?;
-
-    let core = build_balance_core(wc_factor.factor.as_ref(), wo_factor.factor.as_ref(), params)?;
+    let hsvd = hsvd_from_dense_gramians(wc.solution.as_ref(), wo.solution.as_ref(), params)?;
     let reduced = build_dense_reduced_discrete_system(
         system.a(),
         system.b(),
         system.c(),
         system.d(),
         system.sample_time(),
-        core.left_projection.as_ref(),
-        core.right_projection.as_ref(),
+        hsvd.left_projection.as_ref(),
+        hsvd.right_projection.as_ref(),
     )?;
 
-    let internals = dense_internals(params.internals, wc_factor, wo_factor, &core);
     Ok(BalancedTruncationResult {
         reduced,
-        hankel_singular_values: core.hankel_singular_values.clone(),
-        reduced_order: core.reduced_order,
-        error_bound: core.error_bound,
-        left_projection: core.left_projection.clone(),
-        right_projection: core.right_projection.clone(),
-        internals,
+        hankel_singular_values: hsvd.hankel_singular_values,
+        reduced_order: hsvd.reduced_order,
+        error_bound: hsvd.error_bound,
+        left_projection: hsvd.left_projection,
+        right_projection: hsvd.right_projection,
+        internals: hsvd.internals,
     })
 }
 
@@ -366,25 +216,24 @@ where
 
     let wc = controllability_gramian_low_rank(a, b, shifts, gramian_params)?;
     let wo = observability_gramian_low_rank(a, c, shifts, gramian_params)?;
-    let core = build_balance_core(wc.factor.z.as_ref(), wo.factor.z.as_ref(), params)?;
+    let hsvd = hsvd_from_factors(wc.factor.z.as_ref(), wo.factor.z.as_ref(), params)?;
     let reduced = build_sparse_reduced_system(
         a.canonical(),
         b,
         c,
         d,
-        core.left_projection.as_ref(),
-        core.right_projection.as_ref(),
+        hsvd.left_projection.as_ref(),
+        hsvd.right_projection.as_ref(),
     )?;
 
-    let internals = low_rank_internals(params.internals, wc.factor, wo.factor, &core);
     Ok(BalancedTruncationResult {
         reduced,
-        hankel_singular_values: core.hankel_singular_values.clone(),
-        reduced_order: core.reduced_order,
-        error_bound: core.error_bound,
-        left_projection: core.left_projection.clone(),
-        right_projection: core.right_projection.clone(),
-        internals,
+        hankel_singular_values: hsvd.hankel_singular_values,
+        reduced_order: hsvd.reduced_order,
+        error_bound: hsvd.error_bound,
+        left_projection: hsvd.left_projection,
+        right_projection: hsvd.right_projection,
+        internals: hsvd.internals,
     })
 }
 
@@ -418,26 +267,25 @@ where
 
     let wc = controllability_gramian_discrete_low_rank(a, b, shifts, gramian_params)?;
     let wo = observability_gramian_discrete_low_rank(a, c, shifts, gramian_params)?;
-    let core = build_balance_core(wc.factor.z.as_ref(), wo.factor.z.as_ref(), params)?;
+    let hsvd = hsvd_from_factors(wc.factor.z.as_ref(), wo.factor.z.as_ref(), params)?;
     let reduced = build_sparse_reduced_discrete_system(
         a.canonical(),
         b,
         c,
         d,
         sample_time,
-        core.left_projection.as_ref(),
-        core.right_projection.as_ref(),
+        hsvd.left_projection.as_ref(),
+        hsvd.right_projection.as_ref(),
     )?;
 
-    let internals = low_rank_internals(params.internals, wc.factor, wo.factor, &core);
     Ok(BalancedTruncationResult {
         reduced,
-        hankel_singular_values: core.hankel_singular_values.clone(),
-        reduced_order: core.reduced_order,
-        error_bound: core.error_bound,
-        left_projection: core.left_projection.clone(),
-        right_projection: core.right_projection.clone(),
-        internals,
+        hankel_singular_values: hsvd.hankel_singular_values,
+        reduced_order: hsvd.reduced_order,
+        error_bound: hsvd.error_bound,
+        left_projection: hsvd.left_projection,
+        right_projection: hsvd.right_projection,
+        internals: hsvd.internals,
     })
 }
 
@@ -467,235 +315,6 @@ where
     ) -> Result<BalancedTruncationResult<T, DiscreteTime<T::Real>>, BalancedError<T::Real>> {
         balanced_truncation_discrete_dense(self, params)
     }
-}
-
-fn dense_internals<T>(
-    level: InternalsLevel,
-    wc: DenseFactorData<T>,
-    wo: DenseFactorData<T>,
-    core: &BalanceCore<T>,
-) -> Option<BalancedInternals<T>>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    if !level.keep_factors() {
-        return None;
-    }
-
-    Some(BalancedInternals {
-        controllability_factor: wc.factor,
-        observability_factor: wo.factor,
-        core: core.core.clone(),
-        core_u: core.core_u.clone(),
-        core_singular_values: core.core_singular_values.clone(),
-        core_vh: core.core_vh.clone(),
-        dense_controllability_gramian: level.keep_full().then_some(wc.dense_gramian),
-        dense_observability_gramian: level.keep_full().then_some(wo.dense_gramian),
-        dense_controllability_sqrt: level.keep_full().then_some(wc.dense_sqrt),
-        dense_observability_sqrt: level.keep_full().then_some(wo.dense_sqrt),
-    })
-}
-
-fn low_rank_internals<T>(
-    level: InternalsLevel,
-    wc: LowRankFactor<T>,
-    wo: LowRankFactor<T>,
-    core: &BalanceCore<T>,
-) -> Option<BalancedInternals<T>>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    if !level.keep_factors() {
-        return None;
-    }
-
-    Some(BalancedInternals {
-        controllability_factor: wc.z,
-        observability_factor: wo.z,
-        core: core.core.clone(),
-        core_u: core.core_u.clone(),
-        core_singular_values: core.core_singular_values.clone(),
-        core_vh: core.core_vh.clone(),
-        dense_controllability_gramian: None,
-        dense_observability_gramian: None,
-        dense_controllability_sqrt: None,
-        dense_observability_sqrt: None,
-    })
-}
-
-fn dense_psd_factor<T>(
-    which: &'static str,
-    gramian: MatRef<'_, T>,
-) -> Result<DenseFactorData<T>, BalancedError<T::Real>>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    // Balanced truncation only needs a Gramian square root, not the Gramian
-    // itself. Using a self-adjoint eigendecomposition here is more robust than
-    // assuming strict positive definiteness and requiring Cholesky.
-    let eig = dense_self_adjoint_eigen(gramian, &DenseDecompParams::<T>::new())?;
-    let mut max_abs = <T::Real as Zero>::zero();
-    for i in 0..eig.values.nrows() {
-        let abs = eig.values[i].abs();
-        if abs > max_abs {
-            max_abs = abs;
-        }
-    }
-    let eig_tol = <T::Real as Float>::epsilon().sqrt() * max_abs;
-    let mut kept = Vec::new();
-    for i in 0..eig.values.nrows() {
-        let lambda = eig.values[i].real();
-        // Tiny negative eigenvalues are treated as roundoff noise; clearly
-        // negative ones mean the solved Gramian is not PSD enough to support a
-        // meaningful balancing factor.
-        if lambda < -eig_tol {
-            return Err(BalancedError::IndefiniteGramian {
-                which,
-                eigenvalue: lambda,
-            });
-        }
-        if lambda > eig_tol {
-            kept.push((i, lambda.sqrt()));
-        }
-    }
-
-    let factor = Mat::from_fn(gramian.nrows(), kept.len(), |row, col| {
-        eig.vectors[(row, kept[col].0)].mul_real(kept[col].1)
-    });
-
-    if !factor.as_ref().is_all_finite() {
-        return Err(BalancedError::NonFiniteResult { which });
-    }
-
-    Ok(DenseFactorData {
-        factor: factor.clone(),
-        dense_gramian: clone_mat(gramian),
-        dense_sqrt: factor,
-    })
-}
-
-fn build_balance_core<T>(
-    controllability_factor: MatRef<'_, T>,
-    observability_factor: MatRef<'_, T>,
-    params: &BalancedParams<T::Real>,
-) -> Result<BalanceCore<T>, BalancedError<T::Real>>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    // The dense balancing core is small even when the original system is
-    // sparse, because it is built from Gramian factors rather than from the
-    // full Gramians themselves.
-    let core = dense_mul_adjoint_lhs(observability_factor, controllability_factor);
-    let svd = dense_svd(core.as_ref(), &DenseDecompParams::<T>::new())?;
-    let hankel_singular_values = Col::from_fn(svd.s.nrows(), |i| svd.s[i].abs());
-
-    let mut max_sigma = <T::Real as Zero>::zero();
-    for i in 0..hankel_singular_values.nrows() {
-        let sigma = hankel_singular_values[i];
-        if sigma > max_sigma {
-            max_sigma = sigma;
-        }
-    }
-    let sigma_tol = params
-        .sigma_tol
-        .unwrap_or_else(|| <T::Real as Float>::epsilon().sqrt() * max_sigma);
-    // `available` counts the modes that still look numerically meaningful after
-    // applying the retention threshold. Callers can either request an explicit
-    // order or let the solver keep this whole retained set.
-    let available = (0..hankel_singular_values.nrows())
-        .take_while(|&i| hankel_singular_values[i] > sigma_tol)
-        .count();
-
-    let reduced_order = match params.order {
-        Some(order) if order > hankel_singular_values.nrows() => {
-            return Err(BalancedError::InvalidOrder {
-                requested: order,
-                available: hankel_singular_values.nrows(),
-            });
-        }
-        Some(order) if params.sigma_tol.is_some() => order.min(available),
-        Some(order) if order > available => {
-            return Err(BalancedError::InvalidOrder {
-                requested: order,
-                available,
-            });
-        }
-        Some(order) => order,
-        None => available,
-    };
-
-    if reduced_order == 0 && params.order != Some(0) {
-        return Err(BalancedError::EmptyRetainedSpectrum);
-    }
-
-    let error_bound = Some(
-        (<T::Real as One>::one() + <T::Real as One>::one())
-            * tail_sum(hankel_singular_values.as_ref(), reduced_order),
-    );
-
-    // The final projection factors are exactly the square-root balanced
-    // truncation formulas:
-    //
-    // T_r = Rc V_r Sigma_r^{-1/2}
-    // S_r = Ro U_r Sigma_r^{-1/2}
-    let right_projection = build_projection(
-        controllability_factor,
-        svd.v.as_ref(),
-        hankel_singular_values.as_ref(),
-        reduced_order,
-    );
-    let left_projection = build_projection(
-        observability_factor,
-        svd.u.as_ref(),
-        hankel_singular_values.as_ref(),
-        reduced_order,
-    );
-    if !right_projection.as_ref().is_all_finite() {
-        return Err(BalancedError::NonFiniteResult {
-            which: "right_projection",
-        });
-    }
-    if !left_projection.as_ref().is_all_finite() {
-        return Err(BalancedError::NonFiniteResult {
-            which: "left_projection",
-        });
-    }
-
-    Ok(BalanceCore {
-        hankel_singular_values: hankel_singular_values.clone(),
-        reduced_order,
-        error_bound,
-        left_projection,
-        right_projection,
-        core,
-        core_u: svd.u,
-        core_singular_values: hankel_singular_values,
-        core_vh: dense_adjoint(svd.v.as_ref()),
-    })
-}
-
-fn build_projection<T>(
-    factor: MatRef<'_, T>,
-    basis: MatRef<'_, T>,
-    hankel_singular_values: faer::ColRef<'_, T::Real>,
-    order: usize,
-) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    // Scale the retained singular-vector basis by Sigma_r^{-1/2} before
-    // applying the controllability/observability factor. This is the step that
-    // converts the core SVD into a state-space projection.
-    let scaled_basis = Mat::from_fn(basis.nrows(), order, |row, col| {
-        let sigma_inv_sqrt = hankel_singular_values[col].sqrt().recip();
-        basis[(row, col)].mul_real(sigma_inv_sqrt)
-    });
-    dense_mul(factor, scaled_basis.as_ref())
 }
 
 fn build_dense_reduced_system<T>(
@@ -898,30 +517,10 @@ where
     out
 }
 
-fn dense_adjoint<T>(matrix: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
-        matrix[(col, row)].conj()
-    })
-}
-
 fn clone_mat<T: Clone>(matrix: MatRef<'_, T>) -> Mat<T> {
     Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
         matrix[(row, col)].clone()
     })
-}
-
-fn tail_sum<R>(values: faer::ColRef<'_, R>, from: usize) -> R
-where
-    R: Float + Copy,
-{
-    let mut sum = <R as Zero>::zero();
-    for i in from..values.nrows() {
-        sum = sum + values[i];
-    }
-    sum
 }
 
 #[cfg(test)]
