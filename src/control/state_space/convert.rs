@@ -1,0 +1,472 @@
+use super::domain::{ContinuousTime, DiscreteTime};
+use super::error::StateSpaceError;
+use super::{ContinuousStateSpace, DiscreteStateSpace, StateSpace};
+use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use crate::sum::twosum::TwoSum;
+use faer::linalg::solvers::Solve;
+use faer::{Mat, MatRef};
+use faer_traits::ComplexField;
+use faer_traits::ext::ComplexFieldExt;
+use num_traits::{Float, NumCast, ToPrimitive};
+
+/// Dense continuous-to-discrete conversion method.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DiscretizationMethod<R> {
+    /// Exact zero-order-hold conversion for piecewise-constant sampled inputs.
+    ZeroOrderHold,
+    /// Bilinear / Tustin conversion.
+    ///
+    /// The optional prewarp frequency lets the bilinear mapping match one
+    /// chosen continuous-time frequency exactly.
+    Bilinear { prewarp_frequency: Option<R> },
+}
+
+/// Dense discrete-to-continuous conversion method.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ContinuousizationMethod<R> {
+    /// Exact zero-order-hold reconstruction.
+    ///
+    /// This requires a matrix logarithm of the lifted discrete-time system and
+    /// is intentionally left unsupported in the first implementation.
+    ZeroOrderHold,
+    /// Bilinear / Tustin inversion.
+    Bilinear { prewarp_frequency: Option<R> },
+}
+
+pub(super) fn discretize<T>(
+    system: &ContinuousStateSpace<T>,
+    sample_time: T::Real,
+    method: DiscretizationMethod<T::Real>,
+) -> Result<DiscreteStateSpace<T>, StateSpaceError>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    validate_sample_time(sample_time)?;
+    match method {
+        DiscretizationMethod::ZeroOrderHold => discretize_zoh(system, sample_time),
+        DiscretizationMethod::Bilinear { prewarp_frequency } => {
+            discretize_bilinear(system, sample_time, prewarp_frequency)
+        }
+    }
+}
+
+pub(super) fn continuousize<T>(
+    system: &DiscreteStateSpace<T>,
+    method: ContinuousizationMethod<T::Real>,
+) -> Result<ContinuousStateSpace<T>, StateSpaceError>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    match method {
+        ContinuousizationMethod::ZeroOrderHold => Err(StateSpaceError::UnsupportedConversion(
+            "exact ZOH d2c requires a matrix logarithm and is not implemented yet",
+        )),
+        ContinuousizationMethod::Bilinear { prewarp_frequency } => {
+            continuousize_bilinear(system, prewarp_frequency)
+        }
+    }
+}
+
+fn discretize_zoh<T>(
+    system: &ContinuousStateSpace<T>,
+    sample_time: T::Real,
+) -> Result<DiscreteStateSpace<T>, StateSpaceError>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let n = system.nstates();
+    let nu = system.ninputs();
+    let size = n + nu;
+
+    // Use the standard lifted exponential:
+    //
+    // exp(dt * [A B; 0 0]) = [Ad Bd; 0 I]
+    //
+    // This is exact for inputs that are held constant across each sample
+    // interval.
+    let mut lifted = Mat::<T>::zeros(size, size);
+    for row in 0..n {
+        for col in 0..n {
+            lifted[(row, col)] = system.a[(row, col)].mul_real(sample_time);
+        }
+    }
+    for row in 0..n {
+        for col in 0..nu {
+            lifted[(row, n + col)] = system.b[(row, col)].mul_real(sample_time);
+        }
+    }
+
+    let exp_lifted = matrix_exponential(lifted.as_ref())?;
+    let ad = Mat::from_fn(n, n, |row, col| exp_lifted[(row, col)]);
+    let bd = Mat::from_fn(n, nu, |row, col| exp_lifted[(row, n + col)]);
+
+    Ok(StateSpace {
+        a: ad,
+        b: bd,
+        c: system.c.clone(),
+        d: system.d.clone(),
+        domain: DiscreteTime::new(sample_time),
+    })
+}
+
+fn discretize_bilinear<T>(
+    system: &ContinuousStateSpace<T>,
+    sample_time: T::Real,
+    prewarp_frequency: Option<T::Real>,
+) -> Result<DiscreteStateSpace<T>, StateSpaceError>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let alpha = bilinear_alpha(sample_time, prewarp_frequency)?;
+    let gamma = (alpha + alpha).sqrt();
+    let n = system.nstates();
+
+    let identity = Mat::<T>::identity(n, n);
+    let p = dense_sub(
+        identity.as_ref(),
+        dense_scale_real(system.a.as_ref(), alpha).as_ref(),
+    );
+    let q = dense_add(
+        identity.as_ref(),
+        dense_scale_real(system.a.as_ref(), alpha).as_ref(),
+    );
+    let p_inv = inverse_checked(p.as_ref(), "I - alpha A")?;
+
+    let ad = dense_mul(p_inv.as_ref(), q.as_ref());
+    let bd = dense_scale_real(dense_mul(p_inv.as_ref(), system.b.as_ref()).as_ref(), gamma);
+    let c_p_inv = dense_mul(system.c.as_ref(), p_inv.as_ref());
+    let cd = dense_scale_real(c_p_inv.as_ref(), gamma);
+    let d_corr = dense_scale_real(
+        dense_mul(c_p_inv.as_ref(), system.b.as_ref()).as_ref(),
+        alpha,
+    );
+    let dd = dense_add(system.d.as_ref(), d_corr.as_ref());
+
+    Ok(StateSpace {
+        a: ad,
+        b: bd,
+        c: cd,
+        d: dd,
+        domain: DiscreteTime::new(sample_time),
+    })
+}
+
+fn continuousize_bilinear<T>(
+    system: &DiscreteStateSpace<T>,
+    prewarp_frequency: Option<T::Real>,
+) -> Result<ContinuousStateSpace<T>, StateSpaceError>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let sample_time = system.sample_time();
+    let alpha = bilinear_alpha(sample_time, prewarp_frequency)?;
+    let gamma = (alpha + alpha).sqrt();
+    let n = system.nstates();
+
+    let identity = Mat::<T>::identity(n, n);
+    let ap = dense_add(system.a.as_ref(), identity.as_ref());
+    let am = dense_sub(system.a.as_ref(), identity.as_ref());
+    let ap_inv = inverse_checked(ap.as_ref(), "Ad + I")?;
+    let bc_scale = (gamma + gamma) / (gamma * gamma);
+
+    let a = dense_scale_real(
+        dense_mul(am.as_ref(), ap_inv.as_ref()).as_ref(),
+        alpha.recip(),
+    );
+    let b = dense_scale_real(
+        dense_mul(ap_inv.as_ref(), system.b.as_ref()).as_ref(),
+        bc_scale,
+    );
+    let c_ap_inv = dense_mul(system.c.as_ref(), ap_inv.as_ref());
+    let c = dense_scale_real(c_ap_inv.as_ref(), bc_scale);
+    let d_corr = dense_mul(c_ap_inv.as_ref(), system.b.as_ref());
+    let d = dense_sub(system.d.as_ref(), d_corr.as_ref());
+
+    Ok(StateSpace {
+        a,
+        b,
+        c,
+        d,
+        domain: ContinuousTime,
+    })
+}
+
+fn validate_sample_time<R: Float>(sample_time: R) -> Result<(), StateSpaceError> {
+    if !sample_time.is_finite() || sample_time <= R::zero() {
+        return Err(StateSpaceError::InvalidSampleTime);
+    }
+    Ok(())
+}
+
+fn bilinear_alpha<R: Float>(
+    sample_time: R,
+    prewarp_frequency: Option<R>,
+) -> Result<R, StateSpaceError> {
+    validate_sample_time(sample_time)?;
+    match prewarp_frequency {
+        None => Ok(sample_time / (R::one() + R::one())),
+        Some(w) if !w.is_finite() || w < R::zero() => Err(StateSpaceError::InvalidPrewarpFrequency),
+        Some(w) if w == R::zero() => Ok(sample_time / (R::one() + R::one())),
+        Some(w) => {
+            let half = sample_time / (R::one() + R::one());
+            let alpha = (w * half).tan() / w;
+            if !alpha.is_finite() || alpha <= R::zero() {
+                return Err(StateSpaceError::InvalidPrewarpFrequency);
+            }
+            Ok(alpha)
+        }
+    }
+}
+
+fn matrix_exponential<T>(matrix: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    if matrix.nrows() != matrix.ncols() {
+        return Err(StateSpaceError::DimensionMismatch {
+            which: "matrix_exponential.matrix",
+            expected_nrows: matrix.ncols(),
+            expected_ncols: matrix.ncols(),
+            actual_nrows: matrix.nrows(),
+            actual_ncols: matrix.ncols(),
+        });
+    }
+
+    let n = matrix.nrows();
+    if n == 0 {
+        return Ok(Mat::zeros(0, 0));
+    }
+
+    let theta13 = <T::Real as NumCast>::from(5.371_920_351_148_152f64).unwrap();
+    let norm1 = matrix_one_norm(matrix);
+    let s = if norm1 > theta13 {
+        (norm1 / theta13).log2().ceil().to_u32().unwrap_or(u32::MAX)
+    } else {
+        0
+    };
+    let scale =
+        <T::Real as NumCast>::from(2.0f64.powi(i32::try_from(s).unwrap_or(i32::MAX))).unwrap();
+    let a = dense_scale_real(matrix, scale.recip());
+
+    // Pade-13 scaling-and-squaring is the standard dense reference choice for
+    // a general matrix exponential. It gives a good accuracy/cost tradeoff for
+    // the modest state dimensions this first dense control layer targets.
+    let a2 = dense_mul(a.as_ref(), a.as_ref());
+    let a4 = dense_mul(a2.as_ref(), a2.as_ref());
+    let a6 = dense_mul(a2.as_ref(), a4.as_ref());
+    let ident = Mat::<T>::identity(n, n);
+
+    let b = pade13_coeffs::<T::Real>();
+
+    let mut tmp = dense_scale_real(a6.as_ref(), b[13]);
+    dense_axpy_real(&mut tmp, b[11], a4.as_ref());
+    dense_axpy_real(&mut tmp, b[9], a2.as_ref());
+
+    let mut u_inner = dense_mul(a6.as_ref(), tmp.as_ref());
+    dense_axpy_real(&mut u_inner, b[7], a6.as_ref());
+    dense_axpy_real(&mut u_inner, b[5], a4.as_ref());
+    dense_axpy_real(&mut u_inner, b[3], a2.as_ref());
+    dense_axpy_real(&mut u_inner, b[1], ident.as_ref());
+    let u = dense_mul(a.as_ref(), u_inner.as_ref());
+
+    let mut tmp = dense_scale_real(a6.as_ref(), b[12]);
+    dense_axpy_real(&mut tmp, b[10], a4.as_ref());
+    dense_axpy_real(&mut tmp, b[8], a2.as_ref());
+    let mut v = dense_mul(a6.as_ref(), tmp.as_ref());
+    dense_axpy_real(&mut v, b[6], a6.as_ref());
+    dense_axpy_real(&mut v, b[4], a4.as_ref());
+    dense_axpy_real(&mut v, b[2], a2.as_ref());
+    dense_axpy_real(&mut v, b[0], ident.as_ref());
+
+    let p = dense_sub(v.as_ref(), u.as_ref());
+    let q = dense_add(v.as_ref(), u.as_ref());
+    let mut result = solve_left_checked(p.as_ref(), q.as_ref(), "matrix exponential solve")?;
+
+    for _ in 0..s {
+        result = dense_mul(result.as_ref(), result.as_ref());
+    }
+
+    if !result.as_ref().is_all_finite() {
+        return Err(StateSpaceError::NonFiniteResult {
+            which: "matrix_exponential",
+        });
+    }
+    Ok(result)
+}
+
+fn pade13_coeffs<R: Float>() -> [R; 14] {
+    [
+        R::from(64_764_752_532_480_000.0).unwrap(),
+        R::from(32_382_376_266_240_000.0).unwrap(),
+        R::from(7_771_770_303_897_600.0).unwrap(),
+        R::from(1_187_353_796_428_800.0).unwrap(),
+        R::from(129_060_195_264_000.0).unwrap(),
+        R::from(10_559_470_521_600.0).unwrap(),
+        R::from(670_442_572_800.0).unwrap(),
+        R::from(33_522_128_640.0).unwrap(),
+        R::from(1_323_241_920.0).unwrap(),
+        R::from(40_840_800.0).unwrap(),
+        R::from(960_960.0).unwrap(),
+        R::from(16_380.0).unwrap(),
+        R::from(182.0).unwrap(),
+        R::one(),
+    ]
+}
+
+fn inverse_checked<T>(matrix: MatRef<'_, T>, which: &'static str) -> Result<Mat<T>, StateSpaceError>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    solve_left_checked(
+        matrix,
+        Mat::<T>::identity(matrix.nrows(), matrix.ncols()).as_ref(),
+        which,
+    )
+}
+
+fn solve_left_checked<T>(
+    lhs: MatRef<'_, T>,
+    rhs: MatRef<'_, T>,
+    which: &'static str,
+) -> Result<Mat<T>, StateSpaceError>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let sol = lhs.full_piv_lu().solve(rhs);
+    if !sol.as_ref().is_all_finite() {
+        return Err(StateSpaceError::SingularConversion { which });
+    }
+
+    let residual = dense_sub(dense_mul(lhs, sol.as_ref()).as_ref(), rhs);
+    let residual_norm = frobenius_norm(residual.as_ref());
+    let scale = frobenius_norm(lhs) * frobenius_norm(sol.as_ref())
+        + frobenius_norm(rhs)
+        + <T::Real as num_traits::One>::one();
+    let tol = <T::Real as NumCast>::from(64.0).unwrap() * T::Real::epsilon().sqrt() * scale;
+    if !residual_norm.is_finite() || residual_norm > tol {
+        return Err(StateSpaceError::SingularConversion { which });
+    }
+
+    Ok(sol)
+}
+
+fn dense_axpy_real<T>(dst: &mut Mat<T>, alpha: T::Real, src: MatRef<'_, T>)
+where
+    T: ComplexField + Copy,
+{
+    assert_eq!(dst.nrows(), src.nrows());
+    assert_eq!(dst.ncols(), src.ncols());
+    for col in 0..dst.ncols() {
+        for row in 0..dst.nrows() {
+            dst[(row, col)] += src[(row, col)].mul_real(&alpha);
+        }
+    }
+}
+
+fn dense_scale_real<T>(matrix: MatRef<'_, T>, alpha: T::Real) -> Mat<T>
+where
+    T: ComplexField + Copy,
+{
+    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
+        matrix[(row, col)].mul_real(&alpha)
+    })
+}
+
+fn dense_add<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
+where
+    T: ComplexField + Copy,
+{
+    assert_eq!(lhs.nrows(), rhs.nrows());
+    assert_eq!(lhs.ncols(), rhs.ncols());
+    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
+        lhs[(row, col)] + rhs[(row, col)]
+    })
+}
+
+fn dense_sub<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
+where
+    T: ComplexField + Copy,
+{
+    assert_eq!(lhs.nrows(), rhs.nrows());
+    assert_eq!(lhs.ncols(), rhs.ncols());
+    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
+        lhs[(row, col)] - rhs[(row, col)]
+    })
+}
+
+fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    assert_eq!(lhs.ncols(), rhs.nrows());
+    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
+        let mut acc = CompensatedSum::<T>::default();
+        for k in 0..lhs.ncols() {
+            acc.add(lhs[(row, k)] * rhs[(k, col)]);
+        }
+        acc.finish()
+    })
+}
+
+fn matrix_one_norm<T>(matrix: MatRef<'_, T>) -> T::Real
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let mut max_norm = <T::Real as num_traits::Zero>::zero();
+    for col in 0..matrix.ncols() {
+        let mut acc: Option<TwoSum<T::Real>> = None;
+        for row in 0..matrix.nrows() {
+            let value = matrix[(row, col)].abs1();
+            match acc.as_mut() {
+                Some(acc) => acc.add(value),
+                None => acc = Some(TwoSum::new(value)),
+            }
+        }
+        let col_sum = match acc {
+            Some(acc) => {
+                let (sum, residual) = acc.finish();
+                sum + residual
+            }
+            None => <T::Real as num_traits::Zero>::zero(),
+        };
+        if col_sum > max_norm {
+            max_norm = col_sum;
+        }
+    }
+    max_norm
+}
+
+fn frobenius_norm<T>(matrix: MatRef<'_, T>) -> T::Real
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let mut acc: Option<TwoSum<T::Real>> = None;
+    for col in 0..matrix.ncols() {
+        for row in 0..matrix.nrows() {
+            let value = matrix[(row, col)].abs2();
+            match acc.as_mut() {
+                Some(acc) => acc.add(value),
+                None => acc = Some(TwoSum::new(value)),
+            }
+        }
+    }
+
+    match acc {
+        Some(acc) => {
+            let (sum, residual) = acc.finish();
+            (sum + residual).sqrt()
+        }
+        None => <T::Real as num_traits::Zero>::zero(),
+    }
+}
