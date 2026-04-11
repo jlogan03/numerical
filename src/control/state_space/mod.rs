@@ -23,6 +23,10 @@ pub use error::StateSpaceError;
 use super::lyapunov::{
     DenseLyapunovSolve, LyapunovError, controllability_gramian_dense, observability_gramian_dense,
 };
+use super::stein::{
+    DenseSteinSolve, SteinError, controllability_gramian_discrete_dense,
+    observability_gramian_discrete_dense,
+};
 use crate::sparse::compensated::CompensatedField;
 use faer::{Mat, MatRef};
 use faer_traits::ComplexField;
@@ -270,6 +274,22 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    /// Computes the dense discrete-time controllability Gramian of the model.
+    ///
+    /// This measures how strongly the sampled input channels can drive the
+    /// state through repeated applications of the one-step transition matrix.
+    pub fn controllability_gramian(&self) -> Result<DenseSteinSolve<T>, SteinError> {
+        controllability_gramian_discrete_dense(self.a.as_ref(), self.b.as_ref())
+    }
+
+    /// Computes the dense discrete-time observability Gramian of the model.
+    ///
+    /// This measures how strongly the internal state is visible at the outputs
+    /// after repeated propagation through the sampled dynamics.
+    pub fn observability_gramian(&self) -> Result<DenseSteinSolve<T>, SteinError> {
+        observability_gramian_discrete_dense(self.a.as_ref(), self.c.as_ref())
+    }
+
     /// Converts the discrete-time model back into a continuous-time one using
     /// the requested reconstruction assumption.
     ///
@@ -511,6 +531,23 @@ mod tests {
         let b = Mat::<f64>::identity(2, 2);
         let c = Mat::<f64>::identity(2, 2);
         let sys = ContinuousStateSpace::with_zero_feedthrough(a, b, c).unwrap();
+
+        let wc = sys.controllability_gramian().unwrap();
+        let wo = sys.observability_gramian().unwrap();
+        assert!(wc.residual_norm <= 1e-12);
+        assert!(wo.residual_norm <= 1e-12);
+    }
+
+    #[test]
+    fn discrete_gramian_adapters_call_dense_stein_paths() {
+        let a = Mat::from_fn(2, 2, |row, col| match (row, col) {
+            (0, 0) => 0.25,
+            (1, 1) => -0.5,
+            _ => 0.0,
+        });
+        let b = Mat::<f64>::identity(2, 2);
+        let c = Mat::<f64>::identity(2, 2);
+        let sys = DiscreteStateSpace::with_zero_feedthrough(a, b, c, 0.1).unwrap();
 
         let wc = sys.controllability_gramian().unwrap();
         let wo = sys.observability_gramian().unwrap();
