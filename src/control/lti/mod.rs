@@ -5,6 +5,17 @@
 //! that foundation and groups the user-facing model-analysis and
 //! transfer-function-style APIs that are specifically about linear
 //! time-invariant systems.
+//!
+//! The current implementation is dense-first:
+//!
+//! - dense state-space analysis lives in `analysis`
+//! - dense sampled responses live in `response`
+//! - real-coefficient SISO alternate representations live in
+//!   `transfer_function`, `zpk`, and `sos`
+//!
+//! Sparse/operator-backed state-space analysis can be added later behind the
+//! same conceptual API surface once the required Krylov and matrix-function
+//! machinery is in place.
 
 mod analysis;
 mod error;

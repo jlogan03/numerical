@@ -12,6 +12,10 @@ use num_traits::{Float, Zero};
 ///
 /// For time-domain responses, `sample_points` contains times or discrete step
 /// indices. For frequency-domain responses, it contains angular frequencies.
+///
+/// Each entry in `values` is a full output-by-input matrix evaluated at the
+/// corresponding sample point, so MIMO systems retain the same block shape as
+/// the original `C`/`D` maps.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SampledResponse<X, T> {
     /// Grid points at which the response matrices were evaluated.
@@ -25,6 +29,9 @@ pub struct SampledResponse<X, T> {
 /// Continuous LTI systems with nonzero `D` have an impulsive feedthrough term
 /// `D δ(t)`. The `values` field stores only the regular part `C exp(A t) B`;
 /// the singular feedthrough is returned separately in `direct_feedthrough`.
+///
+/// This keeps the API honest about the distribution-valued part of the
+/// response instead of silently mixing it into the sampled regular component.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ContinuousImpulseResponse<R, T> {
     /// Sample times where the regular impulse response was evaluated.
@@ -55,6 +62,9 @@ where
         validate_nonnegative_grid(sample_times, "continuous impulse response")?;
         let mut values = Vec::with_capacity(sample_times.len());
         for &time in sample_times {
+            // For each sample time, evaluate the state-transition map exactly
+            // through the dense matrix exponential and then project it through
+            // `C` and `B` to obtain the regular impulse kernel.
             let scaled_a = Mat::from_fn(self.nstates(), self.nstates(), |row, col| {
                 self.a()[(row, col)].mul_real(time)
             });
@@ -98,6 +108,13 @@ where
                 }
             }
 
+            // This is the same lifted exponential used for exact ZOH
+            // discretization:
+            //
+            // exp(t * [A B; 0 0]) = [exp(A t)   integral_0^t exp(A τ) B dτ
+            //                       0          I                         ]
+            //
+            // The upper-right block is exactly the step-response state map.
             let exp_lifted = matrix_exponential(lifted.as_ref())?;
             let bd = Mat::from_fn(n, m, |row, col| exp_lifted[(row, n + col)]);
             let value = dense_add(dense_mul(self.c(), bd.as_ref()).as_ref(), self.d());
@@ -121,6 +138,8 @@ where
         validate_finite_grid(angular_frequencies, "continuous frequency response")?;
         let mut values = Vec::with_capacity(angular_frequencies.len());
         for &omega in angular_frequencies {
+            // Frequency response is just transfer-function evaluation on the
+            // imaginary axis; the dense solve is handled by `transfer_at`.
             values.push(self.transfer_at(Complex::new(<T::Real as Zero>::zero(), omega))?);
         }
         Ok(SampledResponse {
@@ -149,6 +168,8 @@ where
             let value = if step == 0 {
                 clone_mat(self.d())
             } else {
+                // After the direct-feedthrough sample, the discrete impulse
+                // sequence follows the simple recurrence `C A^(k-1) B`.
                 let out = dense_mul(self.c(), ab.as_ref());
                 ab = dense_mul(self.a(), ab.as_ref());
                 out
@@ -171,6 +192,9 @@ where
         let mut state = Mat::<T>::zeros(self.nstates(), self.ninputs());
 
         for _step in 0..n_steps {
+            // `state` stores the accumulated state response to a unit step up
+            // to the current sample. Advancing it is just the usual discrete
+            // affine recurrence `x_{k+1} = A x_k + B`.
             let value = dense_add(dense_mul(self.c(), state.as_ref()).as_ref(), self.d());
             values.push(value);
             state = dense_add(dense_mul(self.a(), state.as_ref()).as_ref(), self.b());
@@ -197,6 +221,8 @@ where
         let dt = self.sample_time();
         let mut values = Vec::with_capacity(angular_frequencies.len());
         for &omega in angular_frequencies {
+            // Map physical angular frequency onto the sampled unit circle
+            // before reusing the generic transfer-function evaluation.
             let phase = omega * dt;
             let point = Complex::new(phase.cos(), phase.sin());
             values.push(self.transfer_at(point)?);
@@ -232,6 +258,9 @@ where
 {
     assert_eq!(lhs.ncols(), rhs.nrows());
     Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
+        // Keep even these small dense response-building products compensated so
+        // the LTI analysis layer follows the same accumulation policy as the
+        // rest of the control module.
         let mut acc = CompensatedSum::<T>::default();
         for k in 0..lhs.ncols() {
             acc.add(lhs[(row, k)] * rhs[(k, col)]);

@@ -1,3 +1,16 @@
+//! Control-systems algorithms built on the crate's dense and sparse numerics.
+//!
+//! The module is organized in layers:
+//!
+//! - `state_space` and `lti` provide model representations and analysis
+//! - `lyapunov`, `stein`, and `hsvd` provide reusable matrix-equation and
+//!   balancing-core numerics
+//! - `balanced` builds reduced-order models on top of those lower-level pieces
+//!
+//! The current public surface is intentionally dense-first for higher-level
+//! model manipulation, while sparse support is concentrated in the reusable
+//! solver layers underneath.
+
 pub mod balanced;
 pub mod hsvd;
 pub mod lti;

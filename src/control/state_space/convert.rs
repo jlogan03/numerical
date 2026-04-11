@@ -253,6 +253,12 @@ fn bilinear_alpha<R: Float>(
     }
 }
 
+/// Dense reference matrix exponential used by state-space conversions and
+/// continuous-time response evaluation.
+///
+/// This is intentionally `pub(crate)` so higher-level LTI analysis code can
+/// reuse the same dense scaling-and-squaring implementation instead of growing
+/// a second copy of the same numerical kernel.
 pub(crate) fn matrix_exponential<T>(matrix: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
 where
     T: CompensatedField,
