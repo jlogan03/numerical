@@ -234,12 +234,20 @@ where
     }
 }
 
+/// Clones a matrix view into an owned dense matrix.
+///
+/// The response layer uses this mostly to preserve `B`, `C`, or `D` blocks in
+/// returned response objects without keeping borrow ties to the original model.
 fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
     Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
         matrix[(row, col)]
     })
 }
 
+/// Dense elementwise matrix addition for the response layer.
+///
+/// This stays local rather than reusing a broader utility because the current
+/// response code only needs a tiny subset of dense matrix arithmetic.
 fn dense_add<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: ComplexField + Copy,
@@ -251,6 +259,12 @@ where
     })
 }
 
+/// Dense matrix product with compensated accumulation.
+///
+/// The response routines build small dense intermediates from `A`, `B`, and
+/// `C`. Keeping these products compensated avoids losing the accuracy policy
+/// established elsewhere in the control module just because the matrices are
+/// small.
 fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
@@ -269,6 +283,10 @@ where
     })
 }
 
+/// Checks that a time-domain sampling grid is finite and nonnegative.
+///
+/// Negative time samples are not meaningful for the causal LTI response APIs
+/// exposed here, so they are rejected at the wrapper boundary.
 fn validate_nonnegative_grid<R: Float + Copy>(
     sample_points: &[R],
     which: &'static str,
@@ -281,6 +299,10 @@ fn validate_nonnegative_grid<R: Float + Copy>(
     Ok(())
 }
 
+/// Checks that a frequency grid contains only finite values.
+///
+/// Negative frequencies are allowed because callers may want symmetric grids,
+/// but `NaN` or infinite values would produce meaningless transfer evaluations.
 fn validate_finite_grid<R: Float + Copy>(
     sample_points: &[R],
     which: &'static str,

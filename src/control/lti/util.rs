@@ -5,6 +5,8 @@ use faer_traits::RealField;
 use faer_traits::math_utils::{eps, from_f64};
 use num_traits::Float;
 
+/// Validates the positive finite sample-time invariant shared by discrete LTI
+/// representations.
 pub(crate) fn validate_sample_time<R: Float + RealField>(sample_time: R) -> Result<(), LtiError> {
     if sample_time.is_finite() && sample_time > R::zero() {
         Ok(())
@@ -13,6 +15,10 @@ pub(crate) fn validate_sample_time<R: Float + RealField>(sample_time: R) -> Resu
     }
 }
 
+/// Drops leading zeros from a real polynomial coefficient vector.
+///
+/// The polynomial utilities normalize coefficients to descending-power form
+/// without redundant leading zeros so degree calculations stay well-defined.
 pub(crate) fn trim_leading_zeros<R: Float + Copy + RealField>(coeffs: &[R]) -> Vec<R> {
     let first_nz = coeffs.iter().position(|&value| value != R::zero());
     match first_nz {
@@ -21,6 +27,10 @@ pub(crate) fn trim_leading_zeros<R: Float + Copy + RealField>(coeffs: &[R]) -> V
     }
 }
 
+/// Normalizes a rational polynomial pair so the denominator is monic.
+///
+/// This gives transfer-function coefficient form a stable canonicalization
+/// rule, which simplifies equality checks and conversion round trips.
 pub(crate) fn normalize_ratio<R: Float + Copy + RealField>(
     numerator: &[R],
     denominator: &[R],
@@ -53,6 +63,8 @@ pub(crate) fn normalize_ratio<R: Float + Copy + RealField>(
     ))
 }
 
+/// Evaluates a real-coefficient polynomial at a complex point via Horner's
+/// method.
 pub(crate) fn poly_eval<R: Float + Copy + RealField>(
     coeffs: &[R],
     point: Complex<R>,
@@ -64,6 +76,7 @@ pub(crate) fn poly_eval<R: Float + Copy + RealField>(
         })
 }
 
+/// Multiplies two real-coefficient polynomials in descending-power form.
 pub(crate) fn poly_mul<R: Float + Copy + RealField>(lhs: &[R], rhs: &[R]) -> Vec<R> {
     let mut out = vec![R::zero(); lhs.len() + rhs.len() - 1];
     for (i, &lhs_value) in lhs.iter().enumerate() {
@@ -74,6 +87,12 @@ pub(crate) fn poly_mul<R: Float + Copy + RealField>(lhs: &[R], rhs: &[R]) -> Vec
     trim_leading_zeros(&out)
 }
 
+/// Computes the roots of a real-coefficient polynomial through its companion
+/// matrix.
+///
+/// This is the dense reference implementation used by the first TF/ZPK/SOS
+/// conversion layer. It is appropriate for modest SISO polynomials and keeps
+/// the implementation on top of already-available dense eigenvalue routines.
 pub(crate) fn poly_roots<R: Float + Copy + RealField>(
     coeffs: &[R],
 ) -> Result<Vec<Complex<R>>, LtiError> {
@@ -106,6 +125,11 @@ pub(crate) fn poly_roots<R: Float + Copy + RealField>(
     Ok(roots)
 }
 
+/// Rebuilds a real polynomial from a root list.
+///
+/// The result is only accepted when the coefficients are numerically real,
+/// which in practice means the supplied roots are closed under complex
+/// conjugation to within tolerance.
 pub(crate) fn real_poly_from_roots<R: Float + Copy + RealField>(
     roots: &[Complex<R>],
     which: &'static str,
@@ -122,6 +146,11 @@ pub(crate) fn real_poly_from_roots<R: Float + Copy + RealField>(
     complex_coeffs_to_real(&coeffs, which)
 }
 
+/// Groups roots into first- or second-order real polynomial sections.
+///
+/// Real roots become first-order sections padded to the SOS width, while
+/// complex roots must appear in conjugate pairs so each section still has real
+/// coefficients.
 pub(crate) fn root_sections<R: Float + Copy + RealField>(
     roots: &[Complex<R>],
     which: &'static str,
@@ -166,10 +195,18 @@ pub(crate) fn root_sections<R: Float + Copy + RealField>(
     Ok(sections)
 }
 
+/// Returns the multiplicative identity section `[1, 0, 0]`.
+///
+/// This is used to pad the shorter side when a ZPK representation has more
+/// pole than zero sections or vice versa.
 pub(crate) fn identity_section<R: Float + Copy + RealField>() -> [R; 3] {
     [R::one(), R::zero(), R::zero()]
 }
 
+/// Converts numerically real complex coefficients back into a real vector.
+///
+/// A small tolerance is allowed so roundoff from root reconstruction does not
+/// falsely reject an otherwise valid conjugate-closed polynomial.
 fn complex_coeffs_to_real<R: Float + Copy + RealField>(
     coeffs: &[Complex<R>],
     which: &'static str,
@@ -185,6 +222,7 @@ fn complex_coeffs_to_real<R: Float + Copy + RealField>(
     Ok(trim_leading_zeros(&out))
 }
 
+/// Heuristic matching tolerance for pairing complex-conjugate roots.
 fn root_tol<R: Float + Copy + RealField>(roots: &[Complex<R>]) -> R {
     let scale = roots
         .iter()
@@ -192,6 +230,8 @@ fn root_tol<R: Float + Copy + RealField>(roots: &[Complex<R>]) -> R {
     scale * from_f64::<R>(128.0) * eps::<R>()
 }
 
+/// Heuristic tolerance for deciding whether reconstructed coefficients are
+/// numerically real.
 fn coeff_tol<R: Float + Copy + RealField>(coeffs: &[Complex<R>]) -> R {
     let scale = coeffs
         .iter()
@@ -199,6 +239,12 @@ fn coeff_tol<R: Float + Copy + RealField>(coeffs: &[Complex<R>]) -> R {
     scale * from_f64::<R>(128.0) * eps::<R>()
 }
 
+/// Stable sort order for roots: descending magnitude, then real part, then
+/// imaginary part.
+///
+/// This keeps conversions and tests deterministic without imposing a stronger
+/// mathematical meaning on root ordering than the underlying eigenvalue solve
+/// actually provides.
 fn compare_roots<R: Float + Copy + RealField>(
     lhs: &Complex<R>,
     rhs: &Complex<R>,

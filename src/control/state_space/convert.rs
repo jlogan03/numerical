@@ -224,6 +224,8 @@ where
     })
 }
 
+/// Validates the common positive finite sample-time invariant shared by all
+/// explicit continuous/discrete conversion methods.
 fn validate_sample_time<R: Float>(sample_time: R) -> Result<(), StateSpaceError> {
     if !sample_time.is_finite() || sample_time <= R::zero() {
         return Err(StateSpaceError::InvalidSampleTime);
@@ -231,6 +233,11 @@ fn validate_sample_time<R: Float>(sample_time: R) -> Result<(), StateSpaceError>
     Ok(())
 }
 
+/// Computes the bilinear/Tustin scaling parameter.
+///
+/// Without prewarping this is just `dt / 2`. With prewarping it becomes the
+/// modified scale that preserves one chosen continuous-time frequency exactly
+/// under the bilinear map.
 fn bilinear_alpha<R: Float>(
     sample_time: R,
     prewarp_frequency: Option<R>,
@@ -336,6 +343,11 @@ where
     Ok(result)
 }
 
+/// Returns the fixed Pade-13 coefficients used by the dense scaling-and-
+/// squaring matrix exponential.
+///
+/// Keeping these in one helper makes the exponential implementation easier to
+/// audit against the standard algorithm.
 fn pade13_coeffs<R: Float>() -> [R; 14] {
     [
         R::from(64_764_752_532_480_000.0).unwrap(),
@@ -355,6 +367,11 @@ fn pade13_coeffs<R: Float>() -> [R; 14] {
     ]
 }
 
+/// Computes a checked dense inverse by solving against the identity.
+///
+/// This keeps all inversion logic going through the same residual-checked solve
+/// path, so conversion formulas fail explicitly on singular or numerically
+/// unusable matrices.
 fn inverse_checked<T>(matrix: MatRef<'_, T>, which: &'static str) -> Result<Mat<T>, StateSpaceError>
 where
     T: CompensatedField,
@@ -370,6 +387,13 @@ where
     )
 }
 
+/// Solves `lhs * X = rhs` and rejects non-finite or numerically poor results.
+///
+/// The dense conversion formulas rely on inverses of matrices such as
+/// `I - α A`, `I + α A`, and the linear systems inside the matrix exponential.
+/// A bare LU solve can return a finite-looking answer even when the problem is
+/// too ill-conditioned for the result to be trusted, so this helper performs an
+/// explicit residual check before accepting the solve.
 fn solve_left_checked<T>(
     lhs: MatRef<'_, T>,
     rhs: MatRef<'_, T>,
@@ -400,6 +424,10 @@ where
     Ok(sol)
 }
 
+/// Adds `alpha * src` into `dst` in place.
+///
+/// This is the small dense equivalent of the BLAS `axpy` pattern and is used
+/// heavily in the Pade polynomial assembly for the matrix exponential.
 fn dense_axpy_real<T>(dst: &mut Mat<T>, alpha: T::Real, src: MatRef<'_, T>)
 where
     T: ComplexField + Copy,
@@ -413,6 +441,10 @@ where
     }
 }
 
+/// Scales a dense matrix by a real scalar.
+///
+/// The helper keeps the call sites in the conversion formulas readable and
+/// avoids open-coding the same elementwise loop around `mul_real`.
 fn dense_scale_real<T>(matrix: MatRef<'_, T>, alpha: T::Real) -> Mat<T>
 where
     T: ComplexField + Copy,
@@ -422,6 +454,7 @@ where
     })
 }
 
+/// Dense elementwise matrix addition used by the conversion formulas.
 fn dense_add<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: ComplexField + Copy,
@@ -433,6 +466,7 @@ where
     })
 }
 
+/// Dense elementwise matrix subtraction used by the conversion formulas.
 fn dense_sub<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: ComplexField + Copy,
@@ -444,6 +478,12 @@ where
     })
 }
 
+/// Dense matrix product with compensated inner products.
+///
+/// These matrices are usually modest in size, but they sit in numerically
+/// sensitive conversions and matrix-function code. Using the crate's
+/// compensated accumulation policy here keeps those dense helper kernels
+/// aligned with the rest of the control numerics.
 fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
@@ -462,6 +502,10 @@ where
     })
 }
 
+/// Returns the matrix one-norm `max_j sum_i |a_ij|`.
+///
+/// The scaling-and-squaring exponential uses this as its cheap norm estimate
+/// when deciding how aggressively to scale the input before the Pade step.
 fn matrix_one_norm<T>(matrix: MatRef<'_, T>) -> T::Real
 where
     T: CompensatedField,
@@ -491,6 +535,11 @@ where
     max_norm
 }
 
+/// Returns the Frobenius norm `sqrt(sum_ij |a_ij|^2)`.
+///
+/// This is used only for solve validation, not as the primary matrix-function
+/// scaling norm. The compensated accumulation keeps the residual checks from
+/// becoming the least accurate part of the conversion path.
 fn frobenius_norm<T>(matrix: MatRef<'_, T>) -> T::Real
 where
     T: CompensatedField,
