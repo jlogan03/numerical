@@ -96,7 +96,7 @@ impl<T> ShiftStrategy<T> {
         Self::UserProvided(shifts.into())
     }
 
-    fn as_slice(&self) -> &[T] {
+    pub(crate) fn as_slice(&self) -> &[T] {
         match self {
             Self::UserProvided(shifts) => shifts.as_slice(),
         }

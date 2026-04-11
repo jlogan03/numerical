@@ -13,5 +13,6 @@ pub use state_space::{
 };
 pub use stein::{
     DenseSteinSolve, SteinError, controllability_gramian_discrete_dense,
-    observability_gramian_discrete_dense, solve_discrete_stein_dense,
+    controllability_gramian_discrete_low_rank, observability_gramian_discrete_dense,
+    observability_gramian_discrete_low_rank, solve_discrete_stein_dense,
 };

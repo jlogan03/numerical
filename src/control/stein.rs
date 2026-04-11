@@ -18,12 +18,20 @@
 //! reference path that fits the current control module cleanly and unlocks
 //! dense discrete Gramians for balanced truncation work.
 
+use super::lyapunov::{LowRankLyapunovSolve, LyapunovParams, ShiftStrategy};
+use crate::sparse::SparseLuError;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use crate::sparse::lu::SparseLu;
 use crate::sum::twosum::TwoSum;
 use core::fmt;
+use faer::Index;
+use faer::linalg::lu::partial_pivoting::factor::PartialPivLuParams;
 use faer::linalg::solvers::Solve;
-use faer::{Mat, MatRef};
+use faer::sparse::linalg::lu::LuSymbolicParams;
+use faer::sparse::{CreationError, FaerError, SparseColMat, SparseColMatRef, Triplet};
+use faer::{Mat, MatRef, Par, Spec, Unbind};
 use faer_traits::ComplexField;
+use faer_traits::Conjugate;
 use faer_traits::ext::ComplexFieldExt;
 use num_traits::{Float, One, Zero};
 
@@ -43,7 +51,7 @@ where
 }
 
 /// Errors that can occur while building or solving dense Stein systems.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Debug)]
 pub enum SteinError {
     /// The state matrix must be square.
     NonSquare { nrows: usize, ncols: usize },
@@ -57,6 +65,18 @@ pub enum SteinError {
     },
     /// The dense solve produced a non-finite result or residual.
     SolveFailed,
+    /// Sparse LR-ADI requires at least one shift.
+    NoShifts,
+    /// A user-provided ADI shift is not in the open left half-plane.
+    InvalidShift { index: usize },
+    /// The Cayley transform requires `(A + I)` to be nonsingular.
+    SingularTransform,
+    /// Sparse matrix creation failed.
+    SparseBuild(CreationError),
+    /// Sparse format conversion failed.
+    SparseFormat(FaerError),
+    /// Sparse LU factorization or solve failed.
+    SparseLu(SparseLuError),
 }
 
 impl fmt::Display for SteinError {
@@ -66,6 +86,89 @@ impl fmt::Display for SteinError {
 }
 
 impl std::error::Error for SteinError {}
+
+impl From<CreationError> for SteinError {
+    fn from(value: CreationError) -> Self {
+        Self::SparseBuild(value)
+    }
+}
+
+impl From<FaerError> for SteinError {
+    fn from(value: FaerError) -> Self {
+        Self::SparseFormat(value)
+    }
+}
+
+impl From<SparseLuError> for SteinError {
+    fn from(value: SparseLuError) -> Self {
+        Self::SparseLu(value)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct AffineCscMatrix<I: Index, T> {
+    matrix: SparseColMat<I, T>,
+    base_values: Vec<T>,
+    diag_positions: Vec<usize>,
+}
+
+impl<I: Index, T: ComplexField + Copy> AffineCscMatrix<I, T> {
+    fn from_matrix<ViewT>(matrix: SparseColMatRef<'_, I, ViewT>) -> Result<Self, SteinError>
+    where
+        ViewT: Conjugate<Canonical = T>,
+    {
+        let matrix = matrix.canonical();
+        let nrows = matrix.nrows().unbound();
+        let ncols = matrix.ncols().unbound();
+        let mut triplets: Vec<Triplet<I, I, T>> =
+            Vec::with_capacity(matrix.row_idx().len() + nrows.min(ncols));
+
+        for col in 0..ncols {
+            let start = matrix.col_ptr()[col].zx();
+            let end = matrix.col_ptr()[col + 1].zx();
+            let mut has_diag = false;
+            for idx in start..end {
+                let row = matrix.row_idx()[idx].zx();
+                has_diag |= row == col;
+                triplets.push(Triplet::new(
+                    I::truncate(row),
+                    I::truncate(col),
+                    matrix.val()[idx],
+                ));
+            }
+            if col < nrows && !has_diag {
+                triplets.push(Triplet::new(
+                    I::truncate(col),
+                    I::truncate(col),
+                    T::zero_impl(),
+                ));
+            }
+        }
+
+        let matrix = SparseColMat::<I, T>::try_new_from_triplets(nrows, ncols, &triplets)?;
+        let diag_positions = diagonal_positions(matrix.as_ref());
+        let base_values = matrix.val().to_vec();
+        Ok(Self {
+            matrix,
+            base_values,
+            diag_positions,
+        })
+    }
+
+    fn apply_affine(&mut self, alpha: T, beta: T) {
+        let values = self.matrix.val_mut();
+        for (dst, &src) in values.iter_mut().zip(self.base_values.iter()) {
+            *dst = alpha * src;
+        }
+        for &diag_idx in &self.diag_positions {
+            values[diag_idx] += beta;
+        }
+    }
+
+    fn as_ref(&self) -> SparseColMatRef<'_, I, T> {
+        self.matrix.as_ref()
+    }
+}
 
 /// Solves the dense discrete-time Stein equation `X - A X A^H = Q`.
 ///
@@ -187,6 +290,288 @@ where
     let q = dense_mul_adjoint_lhs(c, c);
     let a_adjoint = dense_adjoint(a);
     solve_discrete_stein_dense(a_adjoint.as_ref(), q.as_ref())
+}
+
+/// Computes a sparse low-rank discrete-time controllability Gramian factor.
+///
+/// For a stable sparse system `x[k + 1] = A x[k] + B u[k]`, this computes a
+/// factor `Z` such that `Wc ≈ Z Z^H` satisfies
+///
+/// `Wc - A Wc A^H = B B^H`.
+///
+/// The implementation uses a Cayley transform to map the discrete Stein
+/// equation to a continuous-time Lyapunov equation, then runs the same style of
+/// low-rank ADI iteration used by the sparse continuous solver.
+pub fn controllability_gramian_discrete_low_rank<I, T, ViewT>(
+    a: SparseColMatRef<'_, I, ViewT>,
+    b: MatRef<'_, T>,
+    shifts: &ShiftStrategy<T>,
+    params: LyapunovParams<T::Real>,
+) -> Result<LowRankLyapunovSolve<T>, SteinError>
+where
+    I: Index,
+    T: CompensatedField,
+    T::Real: Float + Copy,
+    ViewT: Conjugate<Canonical = T>,
+{
+    validate_square("a", a.nrows().unbound(), a.ncols().unbound())?;
+    validate_dims("b", b.nrows(), b.ncols(), a.nrows().unbound(), b.ncols())?;
+    low_rank_discrete_core(a.canonical(), b, shifts, params)
+}
+
+/// Computes a sparse low-rank discrete-time observability Gramian factor.
+///
+/// This is the dual controllability solve on `(A^H, C^H)`, producing a factor
+/// `Z` such that `Wo ≈ Z Z^H`.
+pub fn observability_gramian_discrete_low_rank<I, T, ViewT>(
+    a: SparseColMatRef<'_, I, ViewT>,
+    c: MatRef<'_, T>,
+    shifts: &ShiftStrategy<T>,
+    params: LyapunovParams<T::Real>,
+) -> Result<LowRankLyapunovSolve<T>, SteinError>
+where
+    I: Index,
+    T: CompensatedField,
+    T::Real: Float + Copy,
+    ViewT: Conjugate<Canonical = T>,
+{
+    validate_square("a", a.nrows().unbound(), a.ncols().unbound())?;
+    validate_dims("c", c.nrows(), c.ncols(), c.nrows(), a.ncols().unbound())?;
+
+    let a_adjoint = a.adjoint().to_col_major()?;
+    let c_adjoint = dense_adjoint(c);
+    low_rank_discrete_core(a_adjoint.as_ref(), c_adjoint.as_ref(), shifts, params)
+}
+
+fn low_rank_discrete_core<I, T>(
+    a: SparseColMatRef<'_, I, T>,
+    b: MatRef<'_, T>,
+    shifts: &ShiftStrategy<T>,
+    params: LyapunovParams<T::Real>,
+) -> Result<LowRankLyapunovSolve<T>, SteinError>
+where
+    I: Index,
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let shifts = shifts.as_slice();
+    if shifts.is_empty() {
+        return Err(SteinError::NoShifts);
+    }
+    for (index, &shift) in shifts.iter().enumerate() {
+        if shift.real() >= <T::Real as Zero>::zero() {
+            return Err(SteinError::InvalidShift { index });
+        }
+    }
+
+    let n = a.nrows().unbound();
+    let block_cols = b.ncols();
+
+    if block_cols == 0 {
+        return Ok(LowRankLyapunovSolve {
+            factor: super::lyapunov::LowRankFactor {
+                z: Mat::zeros(n, 0),
+            },
+            residual_upper_bound: <T::Real as Zero>::zero(),
+            iterations: 0,
+            converged: true,
+        });
+    }
+
+    let mut plus_identity = AffineCscMatrix::from_matrix(a)?;
+    plus_identity.apply_affine(T::one_impl(), T::one_impl());
+    let plus_lu = SparseLu::<I, T>::factorize(
+        plus_identity.as_ref(),
+        Par::Seq,
+        LuSymbolicParams::default(),
+        Spec::<PartialPivLuParams, T>::default(),
+    )
+    .map_err(map_transform_error)?;
+
+    let sqrt_two = (<T::Real as One>::one() + <T::Real as One>::one()).sqrt();
+    // The Cayley transform maps the discrete Stein equation to a continuous
+    // Lyapunov equation with `Bc = sqrt(2) (A + I)^(-1) B`.
+    let mut residual_factor =
+        solve_block_with_lu(&plus_lu, b.to_owned(), Par::Seq).map_err(map_transform_error)?;
+    if !residual_factor.as_ref().is_all_finite() {
+        return Err(SteinError::SingularTransform);
+    }
+    scale_block_in_place(&mut residual_factor, sqrt_two);
+
+    let mut residual_upper_bound = residual_factor_norm_upper_bound(residual_factor.as_ref());
+    if !residual_upper_bound.is_finite() {
+        return Err(SteinError::SingularTransform);
+    }
+    if residual_upper_bound <= params.tol {
+        return Ok(LowRankLyapunovSolve {
+            factor: super::lyapunov::LowRankFactor {
+                z: Mat::zeros(n, 0),
+            },
+            residual_upper_bound,
+            iterations: 0,
+            converged: true,
+        });
+    }
+
+    let mut z = Mat::<T>::zeros(n, block_cols * params.max_iters);
+    let mut used_cols = 0usize;
+    let mut shifted = AffineCscMatrix::from_matrix(a)?;
+    shifted.apply_affine(T::one_impl() + shifts[0], shifts[0] - T::one_impl());
+    let mut shifted_lu = SparseLu::<I, T>::analyze(shifted.as_ref(), LuSymbolicParams::default())?;
+
+    for iter in 0..params.max_iters {
+        if residual_upper_bound <= params.tol {
+            let mut z_final = z;
+            z_final.resize_with(n, used_cols, |_, _| T::zero_impl());
+            return Ok(LowRankLyapunovSolve {
+                factor: super::lyapunov::LowRankFactor { z: z_final },
+                residual_upper_bound,
+                iterations: iter,
+                converged: true,
+            });
+        }
+
+        let shift = shifts[iter % shifts.len()];
+        shifted.apply_affine(T::one_impl() + shift, shift - T::one_impl());
+        shifted_lu.refactor(
+            shifted.as_ref(),
+            Par::Seq,
+            Spec::<PartialPivLuParams, T>::default(),
+        )?;
+
+        // `(Ac + p I)^(-1)` can be applied without forming `Ac` explicitly:
+        // solve with `((1 + p) A + (p - 1) I)`, then multiply by `(A + I)`.
+        let y = solve_block_with_lu(&shifted_lu, residual_factor.to_owned(), Par::Seq)?;
+        if !y.as_ref().is_all_finite() {
+            return Err(SteinError::SolveFailed);
+        }
+        let v = sparse_matmul_dense(plus_identity.as_ref(), y.as_ref());
+        if !v.as_ref().is_all_finite() {
+            return Err(SteinError::SolveFailed);
+        }
+
+        let append_scale = (-(shift.real() + shift.real())).sqrt();
+        for col in 0..block_cols {
+            for row in 0..n {
+                z[(row, used_cols + col)] = v[(row, col)].mul_real(append_scale);
+            }
+        }
+        used_cols += block_cols;
+
+        let residual_scale = -(shift.real() + shift.real());
+        for col in 0..block_cols {
+            for row in 0..n {
+                residual_factor[(row, col)] =
+                    residual_factor[(row, col)] + v[(row, col)].mul_real(residual_scale);
+            }
+        }
+
+        residual_upper_bound = residual_factor_norm_upper_bound(residual_factor.as_ref());
+        if !residual_upper_bound.is_finite() {
+            return Err(SteinError::SolveFailed);
+        }
+    }
+
+    let mut z_final = z;
+    z_final.resize_with(n, used_cols, |_, _| T::zero_impl());
+    Ok(LowRankLyapunovSolve {
+        factor: super::lyapunov::LowRankFactor { z: z_final },
+        residual_upper_bound,
+        iterations: params.max_iters,
+        converged: residual_upper_bound <= params.tol,
+    })
+}
+
+fn map_transform_error(err: SparseLuError) -> SteinError {
+    match err {
+        SparseLuError::Numeric(_) => SteinError::SingularTransform,
+        other => SteinError::SparseLu(other),
+    }
+}
+
+fn solve_block_with_lu<I, T>(
+    lu: &SparseLu<I, T>,
+    mut rhs: Mat<T>,
+    par: Par,
+) -> Result<Mat<T>, SparseLuError>
+where
+    I: Index,
+    T: ComplexField,
+{
+    lu.solve_in_place(rhs.as_mut(), par)?;
+    Ok(rhs)
+}
+
+fn scale_block_in_place<T>(matrix: &mut Mat<T>, scale: T::Real)
+where
+    T: ComplexField + Copy,
+{
+    for col in 0..matrix.ncols() {
+        for row in 0..matrix.nrows() {
+            matrix[(row, col)] = matrix[(row, col)].mul_real(&scale);
+        }
+    }
+}
+
+fn diagonal_positions<I: Index, T>(matrix: SparseColMatRef<'_, I, T>) -> Vec<usize> {
+    let n = matrix.nrows().unbound().min(matrix.ncols().unbound());
+    let mut positions = Vec::with_capacity(n);
+    for col in 0..n {
+        let start = matrix.col_ptr()[col].zx();
+        let end = matrix.col_ptr()[col + 1].zx();
+        let mut found = None;
+        for idx in start..end {
+            if matrix.row_idx()[idx].zx() == col {
+                found = Some(idx);
+                break;
+            }
+        }
+        positions.push(found.expect("affine matrix must contain an explicit diagonal"));
+    }
+    positions
+}
+
+fn sparse_matmul_dense<I, T>(lhs: SparseColMatRef<'_, I, T>, rhs: MatRef<'_, T>) -> Mat<T>
+where
+    I: Index,
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let lhs = lhs.canonical();
+    let nrows = lhs.nrows().unbound();
+    let ncols = lhs.ncols().unbound();
+    assert_eq!(rhs.nrows(), ncols);
+
+    let mut out = Mat::<T>::zeros(nrows, rhs.ncols());
+    let col_ptr = lhs.col_ptr();
+    let row_idx = lhs.row_idx();
+    let values = lhs.val();
+
+    for out_col in 0..rhs.ncols() {
+        let mut acc = vec![CompensatedSum::<T>::default(); nrows];
+        for lhs_col in 0..ncols {
+            let rhs_value = rhs[(lhs_col, out_col)];
+            let start = col_ptr[lhs_col].zx();
+            let end = col_ptr[lhs_col + 1].zx();
+            for idx in start..end {
+                acc[row_idx[idx].zx()].add(values[idx] * rhs_value);
+            }
+        }
+        for row in 0..nrows {
+            out[(row, out_col)] = acc[row].finish();
+        }
+    }
+
+    out
+}
+
+fn residual_factor_norm_upper_bound<T>(factor: MatRef<'_, T>) -> T::Real
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let w_norm = frobenius_norm(factor);
+    w_norm * w_norm
 }
 
 fn validate_square(which: &'static str, nrows: usize, ncols: usize) -> Result<(), SteinError> {
@@ -379,9 +764,14 @@ where
 #[cfg(test)]
 mod test {
     use super::{
-        SteinError, controllability_gramian_discrete_dense, discrete_residual,
-        observability_gramian_discrete_dense, solve_discrete_stein_dense,
+        SteinError, controllability_gramian_discrete_dense,
+        controllability_gramian_discrete_low_rank, discrete_residual,
+        observability_gramian_discrete_dense, observability_gramian_discrete_low_rank,
+        solve_discrete_stein_dense,
     };
+    use crate::control::LyapunovParams;
+    use crate::control::lyapunov::ShiftStrategy;
+    use faer::sparse::{SparseColMat, Triplet};
     use faer::{Mat, c64};
     use faer_traits::ext::ComplexFieldExt;
 
@@ -411,6 +801,18 @@ mod test {
                 );
             }
         }
+    }
+
+    fn assert_factor_close<T>(
+        factor: &crate::control::lyapunov::LowRankFactor<T>,
+        expected: &Mat<T>,
+        tol: T::Real,
+    ) where
+        T: super::CompensatedField,
+        T::Real: num_traits::Float + Copy,
+    {
+        let dense = factor.to_dense();
+        assert_close(&dense, expected, tol);
     }
 
     #[test]
@@ -536,5 +938,148 @@ mod test {
                 actual_ncols: 3,
             }
         ));
+    }
+
+    #[test]
+    fn sparse_controllability_low_rank_matches_dense_reference() {
+        let a = SparseColMat::<usize, f64>::try_new_from_triplets(
+            3,
+            3,
+            &[
+                Triplet::new(0, 0, 0.25),
+                Triplet::new(1, 0, 0.05),
+                Triplet::new(0, 1, -0.1),
+                Triplet::new(1, 1, -0.4),
+                Triplet::new(2, 1, 0.03),
+                Triplet::new(1, 2, 0.08),
+                Triplet::new(2, 2, 0.15),
+            ],
+        )
+        .unwrap();
+        let b = Mat::from_fn(3, 1, |row, _| match row {
+            0 => 1.0,
+            1 => -0.25,
+            _ => 0.5,
+        });
+        let shifts = ShiftStrategy::user_provided(vec![-0.25, -0.5, -1.0, -2.0]);
+        let params = LyapunovParams {
+            tol: 1.0e-10,
+            max_iters: 24,
+        };
+
+        let sparse =
+            controllability_gramian_discrete_low_rank(a.as_ref(), b.as_ref(), &shifts, params)
+                .unwrap();
+        let a_dense = a.as_ref().to_dense();
+        let dense = controllability_gramian_discrete_dense(a_dense.as_ref(), b.as_ref()).unwrap();
+
+        assert!(
+            sparse.converged,
+            "residual_upper_bound={:?}",
+            sparse.residual_upper_bound
+        );
+        assert!(sparse.residual_upper_bound <= 1.0e-10);
+        assert_factor_close(&sparse.factor, &dense.solution, 5.0e-8);
+    }
+
+    #[test]
+    fn sparse_observability_low_rank_matches_dense_reference() {
+        let a = SparseColMat::<usize, f64>::try_new_from_triplets(
+            3,
+            3,
+            &[
+                Triplet::new(0, 0, 0.2),
+                Triplet::new(1, 0, 0.04),
+                Triplet::new(0, 1, -0.08),
+                Triplet::new(1, 1, -0.35),
+                Triplet::new(2, 1, 0.02),
+                Triplet::new(1, 2, 0.06),
+                Triplet::new(2, 2, 0.1),
+            ],
+        )
+        .unwrap();
+        let c = Mat::from_fn(2, 3, |row, col| match (row, col) {
+            (0, 0) => 1.0,
+            (0, 1) => -0.75,
+            (0, 2) => 0.25,
+            (1, 0) => -0.5,
+            (1, 1) => 0.0,
+            _ => 1.25,
+        });
+        let shifts = ShiftStrategy::user_provided(vec![-0.25, -0.5, -1.0, -2.0]);
+        let params = LyapunovParams {
+            tol: 1.0e-10,
+            max_iters: 24,
+        };
+
+        let sparse =
+            observability_gramian_discrete_low_rank(a.as_ref(), c.as_ref(), &shifts, params)
+                .unwrap();
+        let a_dense = a.as_ref().to_dense();
+        let dense = observability_gramian_discrete_dense(a_dense.as_ref(), c.as_ref()).unwrap();
+
+        assert!(
+            sparse.converged,
+            "residual_upper_bound={:?}",
+            sparse.residual_upper_bound
+        );
+        assert!(sparse.residual_upper_bound <= 1.0e-10);
+        assert_factor_close(&sparse.factor, &dense.solution, 5.0e-8);
+    }
+
+    #[test]
+    fn sparse_controllability_handles_complex_system() {
+        let a = SparseColMat::<usize, c64>::try_new_from_triplets(
+            2,
+            2,
+            &[
+                Triplet::new(0, 0, c64::new(0.25, 0.1)),
+                Triplet::new(1, 0, c64::new(0.04, -0.03)),
+                Triplet::new(0, 1, c64::new(-0.08, 0.02)),
+                Triplet::new(1, 1, c64::new(-0.35, -0.2)),
+            ],
+        )
+        .unwrap();
+        let b = Mat::from_fn(2, 1, |row, _| match row {
+            0 => c64::new(1.0, -0.5),
+            _ => c64::new(-0.25, 0.75),
+        });
+        let shifts = ShiftStrategy::user_provided(vec![c64::new(-0.25, 0.0), c64::new(-1.0, 0.0)]);
+        let params = LyapunovParams {
+            tol: 1.0e-10,
+            max_iters: 24,
+        };
+
+        let sparse =
+            controllability_gramian_discrete_low_rank(a.as_ref(), b.as_ref(), &shifts, params)
+                .unwrap();
+        let a_dense = a.as_ref().to_dense();
+        let dense = controllability_gramian_discrete_dense(a_dense.as_ref(), b.as_ref()).unwrap();
+
+        assert!(
+            sparse.converged,
+            "residual_upper_bound={:?}",
+            sparse.residual_upper_bound
+        );
+        assert_factor_close(&sparse.factor, &dense.solution, 1.0e-7);
+    }
+
+    #[test]
+    fn sparse_low_rank_rejects_singular_cayley_transform() {
+        let a =
+            SparseColMat::<usize, f64>::try_new_from_triplets(1, 1, &[Triplet::new(0, 0, -1.0)])
+                .unwrap();
+        let b = Mat::from_fn(1, 1, |_, _| 1.0);
+        let err = controllability_gramian_discrete_low_rank(
+            a.as_ref(),
+            b.as_ref(),
+            &ShiftStrategy::user_provided(vec![-0.5]),
+            LyapunovParams {
+                tol: 1.0e-12,
+                max_iters: 1,
+            },
+        )
+        .unwrap_err();
+        assert!(matches!(err, SteinError::SingularTransform));
     }
 }
