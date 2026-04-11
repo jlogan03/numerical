@@ -1,7 +1,13 @@
+pub mod balanced;
 pub mod lyapunov;
 pub mod state_space;
 pub mod stein;
 
+pub use balanced::{
+    BalancedError, BalancedInternals, BalancedParams, BalancedTruncationResult, InternalsLevel,
+    balanced_truncation_continuous_dense, balanced_truncation_continuous_low_rank,
+    balanced_truncation_discrete_dense, balanced_truncation_discrete_low_rank,
+};
 pub use lyapunov::{
     DenseLyapunovSolve, LowRankFactor, LowRankLyapunovSolve, LyapunovError, LyapunovParams,
     ShiftStrategy, controllability_gramian_dense, controllability_gramian_low_rank,
