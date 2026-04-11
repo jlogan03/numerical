@@ -34,6 +34,11 @@ pub enum LtiError {
     ZeroLeadingCoefficient { which: &'static str },
     /// A conversion expected a single-input single-output state-space system.
     NonSisoStateSpace { ninputs: usize, noutputs: usize },
+    /// A state-space realization exists only for proper transfer functions.
+    ImproperTransferFunction {
+        numerator_degree: usize,
+        denominator_degree: usize,
+    },
     /// A conversion from complex roots back to real coefficients requires the
     /// root set to be closed under complex conjugation.
     NotConjugateClosed { which: &'static str },

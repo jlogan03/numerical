@@ -2,7 +2,9 @@ use super::error::LtiError;
 use super::sos::Sos;
 use super::transfer_function::TransferFunction;
 use super::util::{real_poly_from_roots, validate_sample_time};
-use crate::control::state_space::{ContinuousTime, DiscreteTime};
+use crate::control::state_space::{
+    ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime,
+};
 use faer::complex::Complex;
 use faer_traits::RealField;
 use num_traits::Float;
@@ -112,6 +114,12 @@ where
     ) -> Result<Self, LtiError> {
         Self::new(zeros, poles, gain, ContinuousTime)
     }
+
+    /// Converts zero/pole/gain form to continuous-time state space through
+    /// `TransferFunction`.
+    pub fn to_state_space(&self) -> Result<ContinuousStateSpace<R>, LtiError> {
+        self.to_transfer_function()?.to_state_space()
+    }
 }
 
 impl<R> DiscreteZpk<R>
@@ -133,5 +141,11 @@ where
     #[must_use]
     pub fn sample_time(&self) -> R {
         self.domain.sample_time()
+    }
+
+    /// Converts zero/pole/gain form to discrete-time state space through
+    /// `TransferFunction`.
+    pub fn to_state_space(&self) -> Result<DiscreteStateSpace<R>, LtiError> {
+        self.to_transfer_function()?.to_state_space()
     }
 }

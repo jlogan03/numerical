@@ -2,7 +2,9 @@ use super::error::LtiError;
 use super::transfer_function::TransferFunction;
 use super::util::{identity_section, poly_mul, root_sections, validate_sample_time};
 use super::zpk::Zpk;
-use crate::control::state_space::{ContinuousTime, DiscreteTime};
+use crate::control::state_space::{
+    ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime,
+};
 use faer::complex::Complex;
 use faer_traits::RealField;
 use num_traits::Float;
@@ -20,12 +22,18 @@ where
 {
     /// Creates a normalized second-order section.
     pub fn new(numerator: [R; 3], denominator: [R; 3]) -> Result<Self, LtiError> {
-        if denominator[0] == R::zero() {
+        let leading = denominator
+            .into_iter()
+            .find(|&value| value != R::zero())
+            .ok_or(LtiError::ZeroLeadingCoefficient {
+                which: "sos.denominator",
+            })?;
+        if leading == R::zero() {
             return Err(LtiError::ZeroLeadingCoefficient {
                 which: "sos.denominator",
             });
         }
-        let scale = denominator[0].recip();
+        let scale = leading.recip();
         Ok(Self {
             numerator: numerator.map(|value| value * scale),
             denominator: denominator.map(|value| value * scale),
@@ -178,6 +186,12 @@ where
     ) -> Result<Self, LtiError> {
         Self::new(sections, gain, ContinuousTime)
     }
+
+    /// Converts the section cascade to continuous-time state space through
+    /// `TransferFunction`.
+    pub fn to_state_space(&self) -> Result<ContinuousStateSpace<R>, LtiError> {
+        self.to_transfer_function()?.to_state_space()
+    }
 }
 
 impl<R> DiscreteSos<R>
@@ -198,5 +212,11 @@ where
     #[must_use]
     pub fn sample_time(&self) -> R {
         self.domain.sample_time()
+    }
+
+    /// Converts the section cascade to discrete-time state space through
+    /// `TransferFunction`.
+    pub fn to_state_space(&self) -> Result<DiscreteStateSpace<R>, LtiError> {
+        self.to_transfer_function()?.to_state_space()
     }
 }

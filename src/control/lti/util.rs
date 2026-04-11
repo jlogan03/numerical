@@ -171,7 +171,7 @@ pub(crate) fn root_sections<R: Float + Copy + RealField>(
         used[i] = true;
 
         if root.im.abs() <= tol {
-            sections.push([R::one(), -root.re, R::zero()]);
+            sections.push([R::zero(), R::one(), -root.re]);
             continue;
         }
 
@@ -195,12 +195,12 @@ pub(crate) fn root_sections<R: Float + Copy + RealField>(
     Ok(sections)
 }
 
-/// Returns the multiplicative identity section `[1, 0, 0]`.
+/// Returns the multiplicative identity polynomial `1` in section storage.
 ///
 /// This is used to pad the shorter side when a ZPK representation has more
 /// pole than zero sections or vice versa.
 pub(crate) fn identity_section<R: Float + Copy + RealField>() -> [R; 3] {
-    [R::one(), R::zero(), R::zero()]
+    [R::zero(), R::zero(), R::one()]
 }
 
 /// Converts numerically real complex coefficients back into a real vector.
