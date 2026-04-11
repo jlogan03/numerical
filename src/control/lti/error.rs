@@ -1,7 +1,9 @@
 use core::fmt;
 
 use crate::control::state_space::StateSpaceError;
+use crate::sparse::lu::SparseLuError;
 use faer::linalg::solvers::{EvdError, SvdError};
+use faer::sparse::{CreationError, FaerError};
 
 /// Errors produced by LTI analysis and representation-conversion routines.
 #[derive(Debug)]
@@ -42,6 +44,12 @@ pub enum LtiError {
     /// A dense state-space helper used underneath an LTI analysis routine
     /// failed.
     StateSpace(StateSpaceError),
+    /// Sparse CSC construction failed while building an analysis operator.
+    SparseBuild(CreationError),
+    /// Sparse format conversion failed.
+    SparseFormat(FaerError),
+    /// Sparse LU analysis, factorization, or solve failed.
+    SparseLu(SparseLuError),
 }
 
 impl fmt::Display for LtiError {
@@ -67,5 +75,23 @@ impl From<SvdError> for LtiError {
 impl From<StateSpaceError> for LtiError {
     fn from(value: StateSpaceError) -> Self {
         Self::StateSpace(value)
+    }
+}
+
+impl From<CreationError> for LtiError {
+    fn from(value: CreationError) -> Self {
+        Self::SparseBuild(value)
+    }
+}
+
+impl From<FaerError> for LtiError {
+    fn from(value: FaerError) -> Self {
+        Self::SparseFormat(value)
+    }
+}
+
+impl From<SparseLuError> for LtiError {
+    fn from(value: SparseLuError) -> Self {
+        Self::SparseLu(value)
     }
 }

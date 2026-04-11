@@ -1,4 +1,4 @@
-//! Dense state-space model types and dense continuous/discrete conversions.
+//! Dense and sparse state-space model types plus dense conversion routines.
 //!
 //! The first state-space layer in this crate is intentionally dense-first.
 //! Exact `c2d` conversions use dense matrix functions, and even bilinear
@@ -15,10 +15,12 @@
 pub(crate) mod convert;
 mod domain;
 mod error;
+mod sparse;
 
 pub use convert::{ContinuousizationMethod, DiscretizationMethod};
 pub use domain::{ContinuousTime, DiscreteTime};
 pub use error::StateSpaceError;
+pub use sparse::{SparseContinuousStateSpace, SparseDiscreteStateSpace, SparseStateSpace};
 
 use super::lyapunov::{
     DenseLyapunovSolve, LyapunovError, controllability_gramian_dense, observability_gramian_dense,

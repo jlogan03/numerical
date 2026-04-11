@@ -7,9 +7,11 @@
 //!   balancing-core numerics
 //! - `balanced` builds reduced-order models on top of those lower-level pieces
 //!
-//! The current public surface is intentionally dense-first for higher-level
-//! model manipulation, while sparse support is concentrated in the reusable
-//! solver layers underneath.
+//! The current public surface is still dense-first for higher-level model
+//! manipulation, but it now includes selected sparse state-space workflows on
+//! top of the lower-level sparse solver layers. Dense conversion, dense
+//! full-spectrum analysis, and dense direct model manipulation remain the most
+//! complete paths.
 
 pub mod balanced;
 pub mod hsvd;
@@ -34,7 +36,8 @@ pub use lyapunov::{
 };
 pub use state_space::{
     ContinuousStateSpace, ContinuousTime, ContinuousizationMethod, DiscreteStateSpace,
-    DiscreteTime, DiscretizationMethod, StateSpace, StateSpaceError,
+    DiscreteTime, DiscretizationMethod, SparseContinuousStateSpace, SparseDiscreteStateSpace,
+    SparseStateSpace, StateSpace, StateSpaceError,
 };
 pub use stein::{
     DenseSteinSolve, SteinError, controllability_gramian_discrete_dense,

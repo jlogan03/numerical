@@ -1,7 +1,11 @@
+use super::analysis::sparse_transfer_at_points;
 use super::error::LtiError;
 use crate::control::state_space::convert::matrix_exponential;
-use crate::control::state_space::{ContinuousStateSpace, DiscreteStateSpace};
-use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use crate::control::state_space::{
+    ContinuousStateSpace, DiscreteStateSpace, SparseContinuousStateSpace, SparseDiscreteStateSpace,
+};
+use crate::sparse::compensated::{CompensatedField, CompensatedSum, sum2};
+use crate::sparse::matvec::SparseMatVec;
 use faer::complex::Complex;
 use faer::{Mat, MatRef};
 use faer_traits::ext::ComplexFieldExt;
@@ -208,6 +212,33 @@ where
     }
 }
 
+impl<T> SparseContinuousStateSpace<T>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy + RealField,
+{
+    /// Evaluates the sparse frequency response on the imaginary axis.
+    ///
+    /// Each frequency `ω` is mapped to `s = jω`, and the returned matrices are
+    /// computed through sparse shifted solves rather than a dense transfer
+    /// matrix formula.
+    pub fn frequency_response(
+        &self,
+        angular_frequencies: &[T::Real],
+    ) -> Result<SampledResponse<T::Real, Complex<T::Real>>, LtiError> {
+        validate_finite_grid(angular_frequencies, "sparse continuous frequency response")?;
+        let points = angular_frequencies
+            .iter()
+            .map(|&omega| Complex::new(<T::Real as Zero>::zero(), omega))
+            .collect::<Vec<_>>();
+        let values = sparse_transfer_at_points(self.a(), self.b(), self.c(), self.d(), &points)?;
+        Ok(SampledResponse {
+            sample_points: angular_frequencies.to_vec(),
+            values,
+        })
+    }
+}
+
 impl<T> DiscreteStateSpace<T>
 where
     T: CompensatedField,
@@ -337,6 +368,120 @@ where
     }
 }
 
+impl<T> SparseDiscreteStateSpace<T>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy + RealField,
+{
+    /// Returns the first `n_steps` samples of the sparse discrete-time impulse
+    /// response sequence.
+    pub fn impulse_response(&self, n_steps: usize) -> SampledResponse<usize, T> {
+        let mut inputs = Mat::<T>::zeros(self.ninputs(), n_steps);
+        if n_steps > 0 {
+            for row in 0..self.ninputs() {
+                inputs[(row, 0)] = T::one();
+            }
+        }
+        let x0 = vec![T::zero(); self.nstates()];
+        let sim = self
+            .simulate(&x0, inputs.as_ref())
+            .expect("constructed sparse impulse inputs should be valid");
+        SampledResponse {
+            sample_points: (0..n_steps).collect(),
+            values: split_columns(sim.outputs.as_ref()),
+        }
+    }
+
+    /// Returns the first `n_steps` samples of the sparse discrete-time
+    /// unit-step response sequence.
+    pub fn step_response(&self, n_steps: usize) -> SampledResponse<usize, T> {
+        let inputs = Mat::from_fn(self.ninputs(), n_steps, |_, _| T::one());
+        let x0 = vec![T::zero(); self.nstates()];
+        let sim = self
+            .simulate(&x0, inputs.as_ref())
+            .expect("constructed sparse step inputs should be valid");
+        SampledResponse {
+            sample_points: (0..n_steps).collect(),
+            values: split_columns(sim.outputs.as_ref()),
+        }
+    }
+
+    /// Evaluates the sparse discrete-time frequency response on the unit
+    /// circle.
+    pub fn frequency_response(
+        &self,
+        angular_frequencies: &[T::Real],
+    ) -> Result<SampledResponse<T::Real, Complex<T::Real>>, LtiError> {
+        validate_finite_grid(angular_frequencies, "sparse discrete frequency response")?;
+        let dt = self.sample_time();
+        let points = angular_frequencies
+            .iter()
+            .map(|&omega| {
+                let phase = omega * dt;
+                Complex::new(phase.cos(), phase.sin())
+            })
+            .collect::<Vec<_>>();
+        let values = sparse_transfer_at_points(self.a(), self.b(), self.c(), self.d(), &points)?;
+        Ok(SampledResponse {
+            sample_points: angular_frequencies.to_vec(),
+            values,
+        })
+    }
+
+    /// Simulates the sparse discrete-time model for a supplied input sequence.
+    ///
+    /// The sparse state matrix is applied with compensated sparse accumulation,
+    /// while the dense `B`, `C`, and `D` blocks remain ordinary small dense
+    /// products.
+    pub fn simulate(
+        &self,
+        x0: &[T],
+        inputs: MatRef<'_, T>,
+    ) -> Result<DiscreteSimulation<T>, LtiError> {
+        validate_state_vector(self.nstates(), x0, "sparse_discrete_simulation.x0")?;
+        if inputs.nrows() != self.ninputs() {
+            return Err(LtiError::DimensionMismatch {
+                which: "sparse_discrete_simulation.inputs",
+                expected_nrows: self.ninputs(),
+                expected_ncols: inputs.ncols(),
+                actual_nrows: inputs.nrows(),
+                actual_ncols: inputs.ncols(),
+            });
+        }
+
+        let inputs_owned = clone_mat(inputs);
+        let mut states = Mat::<T>::zeros(self.nstates(), inputs.ncols() + 1);
+        let mut outputs = Mat::<T>::zeros(self.noutputs(), inputs.ncols());
+        let mut state = x0.to_vec();
+        let mut ax = vec![T::zero(); self.nstates()];
+        write_column_from_slice(states.as_mut(), 0, &state);
+
+        for k in 0..inputs_owned.ncols() {
+            let input = column_owned(inputs_owned.as_ref(), k);
+            let state_col = column_from_slice(&state);
+
+            let output = dense_add(
+                dense_mul(self.c(), state_col.as_ref()).as_ref(),
+                dense_mul(self.d(), input.as_ref()).as_ref(),
+            );
+            write_column(outputs.as_mut(), k, output.as_ref());
+
+            self.a().apply_compensated(&mut ax, &state);
+            let bu = dense_mul(self.b(), input.as_ref());
+            for row in 0..self.nstates() {
+                state[row] = sum2(ax[row], bu[(row, 0)]);
+            }
+            write_column_from_slice(states.as_mut(), k + 1, &state);
+        }
+
+        Ok(DiscreteSimulation {
+            inputs: inputs_owned,
+            states,
+            outputs,
+        })
+    }
+}
+
 /// Clones a matrix view into an owned dense matrix.
 ///
 /// The response layer uses this mostly to preserve `B`, `C`, or `D` blocks in
@@ -353,6 +498,18 @@ fn write_column<T: Copy>(mut dst: faer::MatMut<'_, T>, col: usize, src: MatRef<'
     assert_eq!(dst.nrows(), src.nrows());
     for row in 0..src.nrows() {
         dst[(row, col)] = src[(row, 0)];
+    }
+}
+
+/// Copies a raw state slice into one column of a larger dense matrix.
+///
+/// The sparse simulation path keeps the evolving state in a plain vector for
+/// direct sparse matvec application, then uses this helper to expose that
+/// vector in the same dense trajectory layout as the dense simulator.
+fn write_column_from_slice<T: Copy>(mut dst: faer::MatMut<'_, T>, col: usize, src: &[T]) {
+    assert_eq!(dst.nrows(), src.len());
+    for (row, &value) in src.iter().enumerate() {
+        dst[(row, col)] = value;
     }
 }
 
@@ -519,8 +676,12 @@ where
 #[cfg(test)]
 mod tests {
     use super::{ContinuousImpulseResponse, SampledResponse};
-    use crate::control::state_space::{ContinuousStateSpace, DiscreteStateSpace};
+    use crate::control::state_space::{
+        ContinuousStateSpace, DiscreteStateSpace, SparseContinuousStateSpace,
+        SparseDiscreteStateSpace,
+    };
     use faer::complex::Complex;
+    use faer::sparse::{SparseColMat, Triplet};
     use faer::{Mat, MatRef};
 
     fn assert_close_real(lhs: MatRef<'_, f64>, rhs: MatRef<'_, f64>, tol: f64) {
@@ -749,6 +910,141 @@ mod tests {
         assert_close_complex(
             disc_resp.values[0].as_ref(),
             disc.dc_gain().unwrap().as_ref(),
+            1.0e-12,
+        );
+    }
+
+    #[test]
+    fn sparse_discrete_simulation_matches_dense_reference() {
+        let dense = DiscreteStateSpace::new(
+            Mat::from_fn(2, 2, |row, col| match (row, col) {
+                (0, 0) => 0.5,
+                (0, 1) => 0.25,
+                (1, 1) => 0.75,
+                _ => 0.0,
+            }),
+            Mat::from_fn(2, 1, |row, _| if row == 0 { 2.0 } else { -1.0 }),
+            Mat::from_fn(1, 2, |_, col| if col == 0 { 3.0 } else { -2.0 }),
+            Mat::from_fn(1, 1, |_, _| 4.0),
+            0.1,
+        )
+        .unwrap();
+        let sparse_a = SparseColMat::<usize, f64>::try_new_from_triplets(
+            2,
+            2,
+            &[
+                Triplet::new(0, 0, 0.5),
+                Triplet::new(0, 1, 0.25),
+                Triplet::new(1, 1, 0.75),
+            ],
+        )
+        .unwrap();
+        let sparse = SparseDiscreteStateSpace::new(
+            sparse_a,
+            Mat::from_fn(2, 1, |row, _| if row == 0 { 2.0 } else { -1.0 }),
+            Mat::from_fn(1, 2, |_, col| if col == 0 { 3.0 } else { -2.0 }),
+            Mat::from_fn(1, 1, |_, _| 4.0),
+            0.1,
+        )
+        .unwrap();
+
+        let inputs = Mat::from_fn(1, 3, |_, col| match col {
+            0 => 1.0,
+            1 => -2.0,
+            _ => 0.5,
+        });
+        let x0 = [0.25, -0.5];
+        let dense_sim = dense.simulate(&x0, inputs.as_ref()).unwrap();
+        let sparse_sim = sparse.simulate(&x0, inputs.as_ref()).unwrap();
+        assert_close_real(
+            sparse_sim.states.as_ref(),
+            dense_sim.states.as_ref(),
+            1.0e-12,
+        );
+        assert_close_real(
+            sparse_sim.outputs.as_ref(),
+            dense_sim.outputs.as_ref(),
+            1.0e-12,
+        );
+    }
+
+    #[test]
+    fn sparse_discrete_step_response_matches_dense_reference() {
+        let dense = DiscreteStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| 0.5),
+            Mat::from_fn(1, 1, |_, _| 2.0),
+            Mat::from_fn(1, 1, |_, _| 3.0),
+            Mat::from_fn(1, 1, |_, _| 4.0),
+            0.1,
+        )
+        .unwrap();
+        let sparse_a =
+            SparseColMat::<usize, f64>::try_new_from_triplets(1, 1, &[Triplet::new(0, 0, 0.5)])
+                .unwrap();
+        let sparse = SparseDiscreteStateSpace::new(
+            sparse_a,
+            Mat::from_fn(1, 1, |_, _| 2.0),
+            Mat::from_fn(1, 1, |_, _| 3.0),
+            Mat::from_fn(1, 1, |_, _| 4.0),
+            0.1,
+        )
+        .unwrap();
+
+        let dense_resp = dense.step_response(4);
+        let sparse_resp = sparse.step_response(4);
+        for (sparse_value, dense_value) in sparse_resp.values.iter().zip(dense_resp.values.iter()) {
+            assert_close_real(sparse_value.as_ref(), dense_value.as_ref(), 1.0e-12);
+        }
+    }
+
+    #[test]
+    fn sparse_frequency_response_matches_dense_reference_at_zero_frequency() {
+        let dense_cont = ContinuousStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| -2.0),
+            Mat::from_fn(1, 1, |_, _| 3.0),
+            Mat::from_fn(1, 1, |_, _| 4.0),
+            Mat::from_fn(1, 1, |_, _| 5.0),
+        )
+        .unwrap();
+        let sparse_cont = SparseContinuousStateSpace::new(
+            SparseColMat::<usize, f64>::try_new_from_triplets(1, 1, &[Triplet::new(0, 0, -2.0)])
+                .unwrap(),
+            Mat::from_fn(1, 1, |_, _| 3.0),
+            Mat::from_fn(1, 1, |_, _| 4.0),
+            Mat::from_fn(1, 1, |_, _| 5.0),
+        )
+        .unwrap();
+        let dense_disc = DiscreteStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| 0.25),
+            Mat::from_fn(1, 1, |_, _| 3.0),
+            Mat::from_fn(1, 1, |_, _| 4.0),
+            Mat::from_fn(1, 1, |_, _| 5.0),
+            0.1,
+        )
+        .unwrap();
+        let sparse_disc = SparseDiscreteStateSpace::new(
+            SparseColMat::<usize, f64>::try_new_from_triplets(1, 1, &[Triplet::new(0, 0, 0.25)])
+                .unwrap(),
+            Mat::from_fn(1, 1, |_, _| 3.0),
+            Mat::from_fn(1, 1, |_, _| 4.0),
+            Mat::from_fn(1, 1, |_, _| 5.0),
+            0.1,
+        )
+        .unwrap();
+
+        let dense_cont_resp = dense_cont.frequency_response(&[0.0]).unwrap();
+        let sparse_cont_resp = sparse_cont.frequency_response(&[0.0]).unwrap();
+        assert_close_complex(
+            sparse_cont_resp.values[0].as_ref(),
+            dense_cont_resp.values[0].as_ref(),
+            1.0e-12,
+        );
+
+        let dense_disc_resp = dense_disc.frequency_response(&[0.0]).unwrap();
+        let sparse_disc_resp = sparse_disc.frequency_response(&[0.0]).unwrap();
+        assert_close_complex(
+            sparse_disc_resp.values[0].as_ref(),
+            dense_disc_resp.values[0].as_ref(),
             1.0e-12,
         );
     }

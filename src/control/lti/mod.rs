@@ -6,16 +6,21 @@
 //! transfer-function-style APIs that are specifically about linear
 //! time-invariant systems.
 //!
-//! The current implementation is dense-first:
+//! The current implementation is still dense-first overall, but selected
+//! sparse state-space workflows are now available:
 //!
 //! - dense state-space analysis lives in `analysis`
 //! - dense sampled responses live in `response`
 //! - real-coefficient SISO alternate representations live in
 //!   `transfer_function`, `zpk`, and `sos`
+//! - sparse CSC-backed state-space models support transfer evaluation,
+//!   frequency response, and discrete-time simulation through the same
+//!   conceptual API
 //!
-//! Sparse/operator-backed state-space analysis can be added later behind the
-//! same conceptual API surface once the required Krylov and matrix-function
-//! machinery is in place.
+//! Broader sparse/operator-backed analysis, especially continuous-time
+//! matrix-function actions and large-scale stability diagnostics, still belongs
+//! to later phases once the required Krylov and matrix-function machinery is in
+//! place.
 
 mod analysis;
 mod error;
@@ -36,6 +41,7 @@ pub use transfer_function::{
 pub use zpk::{ContinuousZpk, DiscreteZpk, Zpk};
 
 pub use super::state_space::{
-    ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime, StateSpace,
+    ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime,
+    SparseContinuousStateSpace, SparseDiscreteStateSpace, SparseStateSpace, StateSpace,
     StateSpaceError,
 };
