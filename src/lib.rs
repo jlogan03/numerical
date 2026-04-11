@@ -4,5 +4,7 @@
 #[cfg(feature = "std")]
 pub mod control;
 #[cfg(feature = "std")]
+pub mod decomp;
+#[cfg(feature = "std")]
 pub mod sparse;
 pub mod sum;
