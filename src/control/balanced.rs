@@ -66,6 +66,11 @@ impl InternalsLevel {
 }
 
 /// Builder-style parameters for balanced truncation.
+///
+/// The truncation decision is driven by the Hankel singular values of the
+/// balancing core. `order` chooses how many balanced modes to keep, while
+/// `sigma_tol` can be used to drop modes whose Hankel singular values are too
+/// small to treat as numerically meaningful.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct BalancedParams<R> {
     /// Requested reduced order. `None` keeps all numerically retained balanced
@@ -118,6 +123,11 @@ impl<R> BalancedParams<R> {
 }
 
 /// Optional retained internal balancing data.
+///
+/// These values expose the algebra that produced the reduced model. In
+/// particular, `controllability_factor`, `observability_factor`, and the
+/// balancing-core SVD data are the direct ingredients used to build the final
+/// projection operators.
 #[derive(Clone, Debug)]
 pub struct BalancedInternals<T: CompensatedField>
 where
@@ -146,6 +156,10 @@ where
 }
 
 /// Result of balanced truncation.
+///
+/// The reduced model is accompanied by the actual left/right projection
+/// operators used to assemble it. Those transforms are returned even at the
+/// summary level so callers can inspect or reuse the balancing map directly.
 #[derive(Clone, Debug)]
 pub struct BalancedTruncationResult<T: CompensatedField, Domain>
 where
@@ -247,6 +261,11 @@ where
 }
 
 /// Computes dense continuous-time balanced truncation.
+///
+/// This path solves the dense continuous controllability and observability
+/// Gramians, converts each Gramian into a PSD square-root factor, forms the
+/// balancing core `Ro^H Rc`, and then builds the reduced model from the
+/// resulting left/right projection operators.
 pub fn balanced_truncation_continuous_dense<T>(
     system: &ContinuousStateSpace<T>,
     params: &BalancedParams<T::Real>,
@@ -283,6 +302,10 @@ where
 }
 
 /// Computes dense discrete-time balanced truncation.
+///
+/// The balancing algebra is identical to the continuous-time path; only the
+/// source of the Gramians changes from Lyapunov solves to discrete Stein
+/// solves.
 pub fn balanced_truncation_discrete_dense<T>(
     system: &DiscreteStateSpace<T>,
     params: &BalancedParams<T::Real>,
@@ -320,6 +343,10 @@ where
 }
 
 /// Computes sparse continuous-time low-rank balanced truncation.
+///
+/// This path never forms dense full Gramians. It uses the low-rank factors
+/// returned by the sparse Lyapunov solver directly, so the only dense object
+/// introduced by the reduction step is the small balancing core `Zo^H Zc`.
 pub fn balanced_truncation_continuous_low_rank<I, T, ViewT>(
     a: SparseColMatRef<'_, I, ViewT>,
     b: MatRef<'_, T>,
@@ -362,6 +389,10 @@ where
 }
 
 /// Computes sparse discrete-time low-rank balanced truncation.
+///
+/// As in the sparse continuous-time path, the discrete solver contributes only
+/// low-rank Gramian factors. The reduction itself stays factor-based and avoids
+/// materializing any dense `n x n` discrete Gramian.
 pub fn balanced_truncation_discrete_low_rank<I, T, ViewT>(
     a: SparseColMatRef<'_, I, ViewT>,
     b: MatRef<'_, T>,
@@ -502,6 +533,9 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // Balanced truncation only needs a Gramian square root, not the Gramian
+    // itself. Using a self-adjoint eigendecomposition here is more robust than
+    // assuming strict positive definiteness and requiring Cholesky.
     let eig = dense_self_adjoint_eigen(gramian, &DenseDecompParams::<T>::new())?;
     let mut max_abs = <T::Real as Zero>::zero();
     for i in 0..eig.values.nrows() {
@@ -514,6 +548,9 @@ where
     let mut kept = Vec::new();
     for i in 0..eig.values.nrows() {
         let lambda = eig.values[i].real();
+        // Tiny negative eigenvalues are treated as roundoff noise; clearly
+        // negative ones mean the solved Gramian is not PSD enough to support a
+        // meaningful balancing factor.
         if lambda < -eig_tol {
             return Err(BalancedError::IndefiniteGramian {
                 which,
@@ -549,6 +586,9 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // The dense balancing core is small even when the original system is
+    // sparse, because it is built from Gramian factors rather than from the
+    // full Gramians themselves.
     let core = dense_mul_adjoint_lhs(observability_factor, controllability_factor);
     let svd = dense_svd(core.as_ref(), &DenseDecompParams::<T>::new())?;
     let hankel_singular_values = Col::from_fn(svd.s.nrows(), |i| svd.s[i].abs());
@@ -563,6 +603,9 @@ where
     let sigma_tol = params
         .sigma_tol
         .unwrap_or_else(|| <T::Real as Float>::epsilon().sqrt() * max_sigma);
+    // `available` counts the modes that still look numerically meaningful after
+    // applying the retention threshold. Callers can either request an explicit
+    // order or let the solver keep this whole retained set.
     let available = (0..hankel_singular_values.nrows())
         .take_while(|&i| hankel_singular_values[i] > sigma_tol)
         .count();
@@ -594,6 +637,11 @@ where
             * tail_sum(hankel_singular_values.as_ref(), reduced_order),
     );
 
+    // The final projection factors are exactly the square-root balanced
+    // truncation formulas:
+    //
+    // T_r = Rc V_r Sigma_r^{-1/2}
+    // S_r = Ro U_r Sigma_r^{-1/2}
     let right_projection = build_projection(
         controllability_factor,
         svd.v.as_ref(),
@@ -640,6 +688,9 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // Scale the retained singular-vector basis by Sigma_r^{-1/2} before
+    // applying the controllability/observability factor. This is the step that
+    // converts the core SVD into a state-space projection.
     let scaled_basis = Mat::from_fn(basis.nrows(), order, |row, col| {
         let sigma_inv_sqrt = hankel_singular_values[col].sqrt().recip();
         basis[(row, col)].mul_real(sigma_inv_sqrt)
@@ -699,6 +750,9 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // The reduced sparse paths still return ordinary dense reduced models. The
+    // expensive sparse object is only used while applying `A` to the retained
+    // right projection.
     let ar = dense_mul_adjoint_lhs(
         left_projection,
         sparse_matmul_dense(a, right_projection).as_ref(),
@@ -830,6 +884,9 @@ where
             let start = col_ptr[lhs_col].zx();
             let end = col_ptr[lhs_col + 1].zx();
             for idx in start..end {
+                // Accumulate each output row with compensated sums so the
+                // projection step is consistent with the full-accuracy policy
+                // used throughout the control module.
                 acc[row_idx[idx].zx()].add(values[idx] * rhs_value);
             }
         }
