@@ -1,0 +1,48 @@
+use core::fmt;
+
+use faer::linalg::solvers::{EvdError, SvdError};
+
+/// Errors produced by LTI analysis and representation-conversion routines.
+#[derive(Debug)]
+pub enum LtiError {
+    /// Dense eigendecomposition failed while extracting poles or roots.
+    Eigen(EvdError),
+    /// Dense SVD failed while making a numerical rank decision.
+    Svd(SvdError),
+    /// A discrete-time representation was given a nonpositive or nonfinite
+    /// sample interval.
+    InvalidSampleTime,
+    /// A polynomial representation was missing required coefficients.
+    EmptyPolynomial { which: &'static str },
+    /// The leading coefficient of a polynomial must be nonzero.
+    ZeroLeadingCoefficient { which: &'static str },
+    /// A conversion expected a single-input single-output state-space system.
+    NonSisoStateSpace { ninputs: usize, noutputs: usize },
+    /// A conversion from complex roots back to real coefficients requires the
+    /// root set to be closed under complex conjugation.
+    NotConjugateClosed { which: &'static str },
+    /// A response or conversion formula produced non-finite values.
+    NonFiniteResult { which: &'static str },
+    /// A second-order-section cascade must contain at least one section.
+    EmptySos,
+}
+
+impl fmt::Display for LtiError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
+}
+
+impl std::error::Error for LtiError {}
+
+impl From<EvdError> for LtiError {
+    fn from(value: EvdError) -> Self {
+        Self::Eigen(value)
+    }
+}
+
+impl From<SvdError> for LtiError {
+    fn from(value: SvdError) -> Self {
+        Self::Svd(value)
+    }
+}

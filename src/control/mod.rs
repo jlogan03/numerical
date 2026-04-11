@@ -1,5 +1,6 @@
 pub mod balanced;
 pub mod hsvd;
+pub mod lti;
 pub mod lyapunov;
 pub mod state_space;
 pub mod stein;
