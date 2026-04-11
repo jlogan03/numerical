@@ -38,12 +38,23 @@ use std::fmt;
 
 /// Alias of the shared HSVD internal-detail policy used by balanced
 /// truncation.
+///
+/// Balanced truncation intentionally reuses the HSVD detail policy unchanged,
+/// because the retained factors and core SVD are exactly the same objects the
+/// reduction step consumes.
 pub use super::hsvd::HsvdInternalsLevel as InternalsLevel;
 
 /// Alias of the shared HSVD parameter type used by balanced truncation.
+///
+/// The truncation policy is shared with the standalone HSVD interface so that
+/// callers see the same `order` / `sigma_tol` behavior whether they are asking
+/// for just the projections or for a full reduced model.
 pub use super::hsvd::HsvdParams as BalancedParams;
 
 /// Alias of the shared HSVD internals retained by balanced truncation.
+///
+/// Balanced truncation does not add any additional internal balancing algebra
+/// beyond what HSVD already exposes, so the internals type is reused directly.
 pub use super::hsvd::HsvdInternals as BalancedInternals;
 
 /// Result of balanced truncation.
@@ -80,7 +91,7 @@ pub enum BalancedError<R> {
     /// Dense or sparse discrete Gramian solve failed.
     Stein(SteinError),
     /// Hankel singular value decomposition or balancing-core construction
-    /// failed.
+    /// failed. This is a direct passthrough of the reusable HSVD layer.
     Hsvd(HsvdError<R>),
     /// Reduced state-space construction failed.
     StateSpace(super::state_space::StateSpaceError),
@@ -132,6 +143,8 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // Once HSVD has produced `S_r` and `T_r`, balanced truncation only has to
+    // assemble the reduced state-space blocks with those projections.
     let wc = controllability_gramian_dense(system.a(), system.b())?;
     let wo = observability_gramian_dense(system.a(), system.c())?;
     let hsvd = hsvd_from_dense_gramians(wc.solution.as_ref(), wo.solution.as_ref(), params)?;
@@ -168,6 +181,8 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // Discrete balanced truncation uses the same projection algebra as the
+    // continuous case; only the Gramian source differs.
     let wc = controllability_gramian_discrete_dense(system.a(), system.b())?;
     let wo = observability_gramian_discrete_dense(system.a(), system.c())?;
     let hsvd = hsvd_from_dense_gramians(wc.solution.as_ref(), wo.solution.as_ref(), params)?;
@@ -214,6 +229,8 @@ where
 {
     validate_sparse_system_dims(a.nrows().unbound(), b, c, d)?;
 
+    // The sparse path still reduces through the small dense HSVD core; the
+    // sparse matrix only appears again when assembling the reduced `A_r`.
     let wc = controllability_gramian_low_rank(a, b, shifts, gramian_params)?;
     let wo = observability_gramian_low_rank(a, c, shifts, gramian_params)?;
     let hsvd = hsvd_from_factors(wc.factor.z.as_ref(), wo.factor.z.as_ref(), params)?;
@@ -265,6 +282,8 @@ where
         ));
     }
 
+    // As in the continuous sparse path, the discrete low-rank factors feed the
+    // same dense HSVD machinery before the reduced model is assembled.
     let wc = controllability_gramian_discrete_low_rank(a, b, shifts, gramian_params)?;
     let wo = observability_gramian_discrete_low_rank(a, c, shifts, gramian_params)?;
     let hsvd = hsvd_from_factors(wc.factor.z.as_ref(), wo.factor.z.as_ref(), params)?;
@@ -329,6 +348,8 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // The reduced dense model is assembled by the usual Petrov-Galerkin
+    // formulas: `A_r = S_r^H A T_r`, `B_r = S_r^H B`, `C_r = C T_r`.
     let ar = dense_mul_adjoint_lhs(left_projection, dense_mul(a, right_projection).as_ref());
     let br = dense_mul_adjoint_lhs(left_projection, b);
     let cr = dense_mul(c, right_projection);
@@ -349,6 +370,8 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // The discrete assembly is identical to the continuous case apart from
+    // preserving the sample time in the returned model metadata.
     let ar = dense_mul_adjoint_lhs(left_projection, dense_mul(a, right_projection).as_ref());
     let br = dense_mul_adjoint_lhs(left_projection, b);
     let cr = dense_mul(c, right_projection);
@@ -396,6 +419,8 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // The sparse discrete path mirrors the sparse continuous one, but the
+    // sample time must be preserved in the returned reduced model.
     let ar = dense_mul_adjoint_lhs(
         left_projection,
         sparse_matmul_dense(a, right_projection).as_ref(),
@@ -416,6 +441,9 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // Sparse balanced truncation still assembles an ordinary dense reduced
+    // state-space system, so the same `A/B/C/D` compatibility rules apply at
+    // the wrapper boundary before any projection work begins.
     if b.nrows() != nstates {
         return Err(BalancedError::StateSpace(
             super::state_space::StateSpaceError::DimensionMismatch {
@@ -460,6 +488,9 @@ where
     Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
         for k in 0..lhs.ncols() {
+            // Keep even the reduced-model assembly sums compensated so the
+            // balancing layer preserves the same accumulation policy used by
+            // the Gramian and HSVD code underneath it.
             acc.add(lhs[(row, k)] * rhs[(k, col)]);
         }
         acc.finish()
@@ -474,6 +505,8 @@ where
     Mat::from_fn(lhs.ncols(), rhs.ncols(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
         for k in 0..lhs.nrows() {
+            // This forms `lhs^H rhs`, so complex systems require conjugation on
+            // the left projection.
             acc.add(lhs[(k, row)].conj() * rhs[(k, col)]);
         }
         acc.finish()

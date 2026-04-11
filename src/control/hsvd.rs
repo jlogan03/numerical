@@ -47,6 +47,12 @@ impl HsvdInternalsLevel {
 }
 
 /// Builder-style parameters for Hankel singular value decomposition.
+///
+/// `order` controls how many balanced modes are retained in the returned
+/// projections. `sigma_tol` provides an alternate numerical cut-off based on
+/// the Hankel singular values themselves. When both are present, the explicit
+/// order is still honored, but the tolerance can cap how many singular
+/// directions are treated as numerically available.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HsvdParams<R> {
     /// Requested retained order. `None` keeps all numerically retained modes.
@@ -98,6 +104,11 @@ impl<R> HsvdParams<R> {
 }
 
 /// Optional retained internal HSVD data.
+///
+/// These values expose the algebra behind the returned projections. In
+/// particular, `controllability_factor`, `observability_factor`, and the core
+/// SVD describe exactly how `right_projection` and `left_projection` were
+/// built.
 #[derive(Clone, Debug)]
 pub struct HsvdInternals<T: CompensatedField>
 where
@@ -126,6 +137,11 @@ where
 }
 
 /// Result of Hankel singular value decomposition.
+///
+/// This is not a full system reduction by itself. It is the reusable middle
+/// layer between Gramian computation and reduced-model assembly: the Hankel
+/// singular values plus the projection factors that a caller such as balanced
+/// truncation can apply to `A/B/C/D`.
 #[derive(Clone, Debug)]
 pub struct HsvdResult<T: CompensatedField>
 where
@@ -147,6 +163,9 @@ where
 }
 
 /// Errors produced by HSVD front-ends.
+///
+/// These cover only HSVD-specific failures. System-specific operations such as
+/// state-space construction are intentionally left to the caller.
 #[derive(Debug)]
 pub enum HsvdError<R> {
     /// Dense SVD or self-adjoint eigen decomposition failed.
@@ -213,6 +232,11 @@ where
 ///
 /// This path first constructs PSD square-root factors for each dense Gramian
 /// and then delegates to the shared balancing-core logic.
+///
+/// The dense inputs are expected to be controllability and observability
+/// Gramians for the same state dimension. They do not need to be strictly
+/// positive definite; the HSVD path tolerates tiny negative eigenvalues caused
+/// by roundoff when constructing the square-root factors.
 pub fn hsvd_from_dense_gramians<T>(
     controllability_gramian: MatRef<'_, T>,
     observability_gramian: MatRef<'_, T>,
@@ -242,6 +266,9 @@ where
 /// This is the natural entry point for sparse low-rank Gramian solvers, where
 /// the factors already exist and forming full dense Gramians would be
 /// unnecessary and expensive.
+///
+/// The factors are interpreted as `Wc = Rc Rc^H` and `Wo = Ro Ro^H`. Only the
+/// row dimension has to agree; the factor column counts may differ.
 pub fn hsvd_from_factors<T>(
     controllability_factor: MatRef<'_, T>,
     observability_factor: MatRef<'_, T>,
@@ -277,6 +304,9 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // The dense path expects square Gramians for the same underlying state
+    // dimension. A mismatch here means the caller is not actually supplying a
+    // controllability/observability pair for one system.
     let wc_ok = controllability_gramian.nrows() == controllability_gramian.ncols();
     let wo_ok = observability_gramian.nrows() == observability_gramian.ncols();
     let same = controllability_gramian.nrows() == observability_gramian.nrows();
@@ -298,6 +328,8 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // Factor widths may differ because controllability and observability ranks
+    // are not required to match. Only the shared state dimension matters here.
     if controllability_factor.nrows() == observability_factor.nrows() {
         Ok(())
     } else {
@@ -322,6 +354,8 @@ where
         return None;
     }
 
+    // The dense path can optionally retain both the solved Gramians and the
+    // PSD square-root factors built from them.
     Some(HsvdInternals {
         controllability_factor: wc.factor,
         observability_factor: wo.factor,
@@ -350,6 +384,8 @@ where
         return None;
     }
 
+    // Factor-based HSVD has no full dense Gramian to retain, so the internals
+    // surface only includes the provided factors and the balancing-core data.
     Some(HsvdInternals {
         controllability_factor,
         observability_factor,
@@ -386,6 +422,9 @@ where
     let mut kept = Vec::new();
     for i in 0..eig.values.nrows() {
         let lambda = eig.values[i].real();
+        // Tiny negative eigenvalues are treated as numerical noise. A clearly
+        // negative value means the input is not PSD enough to support a valid
+        // Hankel singular value decomposition.
         if lambda < -eig_tol {
             return Err(HsvdError::IndefiniteGramian {
                 which,
@@ -436,6 +475,8 @@ where
     let sigma_tol = params
         .sigma_tol
         .unwrap_or_else(|| <T::Real as Float>::epsilon().sqrt() * max_sigma);
+    // `available` counts the singular directions that still look numerically
+    // meaningful after the retention threshold is applied.
     let available = (0..hankel_singular_values.nrows())
         .take_while(|&i| hankel_singular_values[i] > sigma_tol)
         .count();
@@ -521,6 +562,8 @@ where
         let sigma_inv_sqrt = hankel_singular_values[col].sqrt().recip();
         basis[(row, col)].mul_real(sigma_inv_sqrt)
     });
+    // The final multiplication by the Gramian factor turns the retained core
+    // singular vectors into state-space projections.
     dense_mul(factor, scaled_basis.as_ref())
 }
 
@@ -532,6 +575,9 @@ where
     Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
         for k in 0..lhs.ncols() {
+            // Keep these dense products compensated so the HSVD path follows
+            // the same full-accuracy accumulation policy as the rest of the
+            // control module.
             acc.add(lhs[(row, k)] * rhs[(k, col)]);
         }
         acc.finish()
@@ -546,6 +592,9 @@ where
     Mat::from_fn(lhs.ncols(), rhs.ncols(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
         for k in 0..lhs.nrows() {
+            // This forms `lhs^H rhs`, so conjugation is required for complex
+            // systems. The compensated sum keeps the small dense core products
+            // numerically consistent with the surrounding solvers.
             acc.add(lhs[(k, row)].conj() * rhs[(k, col)]);
         }
         acc.finish()
@@ -556,6 +605,8 @@ fn dense_adjoint<T>(matrix: MatRef<'_, T>) -> Mat<T>
 where
     T: ComplexField + Copy,
 {
+    // Materialize an owned adjoint so the retained HSVD internals can keep the
+    // right singular-vector adjoint without borrowing the decomposition object.
     Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
         matrix[(col, row)].conj()
     })
