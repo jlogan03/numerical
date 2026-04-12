@@ -189,6 +189,19 @@ where
         Self::new(zeros, poles, gain, ContinuousTime)
     }
 
+    /// Returns the steady-state gain `G(0)`.
+    ///
+    /// This evaluates the factored transfer map directly at `s = 0` and
+    /// rejects poles at the origin through `NonFiniteResult`.
+    pub fn dc_gain(&self) -> Result<Complex<R>, LtiError> {
+        let gain = self.evaluate(Complex::new(R::zero(), R::zero()));
+        if gain.re.is_finite() && gain.im.is_finite() {
+            Ok(gain)
+        } else {
+            Err(LtiError::NonFiniteResult { which: "dc_gain" })
+        }
+    }
+
     /// Converts zero/pole/gain form to continuous-time state space through
     /// `TransferFunction`.
     ///
@@ -218,6 +231,19 @@ where
     #[must_use]
     pub fn sample_time(&self) -> R {
         self.domain.sample_time()
+    }
+
+    /// Returns the steady-state gain `G(1)`.
+    ///
+    /// This evaluates the factored transfer map directly at the discrete
+    /// steady-state point `z = 1`.
+    pub fn dc_gain(&self) -> Result<Complex<R>, LtiError> {
+        let gain = self.evaluate(Complex::new(R::one(), R::zero()));
+        if gain.re.is_finite() && gain.im.is_finite() {
+            Ok(gain)
+        } else {
+            Err(LtiError::NonFiniteResult { which: "dc_gain" })
+        }
     }
 
     /// Converts zero/pole/gain form to discrete-time state space through

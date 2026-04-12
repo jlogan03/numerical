@@ -218,6 +218,21 @@ where
         Self::new(numerator, denominator, ContinuousTime)
     }
 
+    /// Returns the steady-state gain `G(0)`.
+    ///
+    /// For continuous-time transfer functions this evaluates the rational map
+    /// at `s = 0`. If the transfer function has a pole at the origin, the
+    /// resulting non-finite value is reported as an error instead of being
+    /// passed through to the caller.
+    pub fn dc_gain(&self) -> Result<Complex<R>, LtiError> {
+        let gain = self.evaluate(Complex::new(R::zero(), R::zero()));
+        if gain.re.is_finite() && gain.im.is_finite() {
+            Ok(gain)
+        } else {
+            Err(LtiError::NonFiniteResult { which: "dc_gain" })
+        }
+    }
+
     /// Realizes the proper transfer function as a dense continuous-time
     /// state-space model in controllable companion form.
     ///
@@ -249,6 +264,20 @@ where
     #[must_use]
     pub fn sample_time(&self) -> R {
         self.domain.sample_time()
+    }
+
+    /// Returns the steady-state gain `G(1)`.
+    ///
+    /// For discrete-time transfer functions the steady-state point lies at
+    /// `z = 1`. As in the continuous-time path, poles at the evaluation point
+    /// are reported through `NonFiniteResult`.
+    pub fn dc_gain(&self) -> Result<Complex<R>, LtiError> {
+        let gain = self.evaluate(Complex::new(R::one(), R::zero()));
+        if gain.re.is_finite() && gain.im.is_finite() {
+            Ok(gain)
+        } else {
+            Err(LtiError::NonFiniteResult { which: "dc_gain" })
+        }
     }
 
     /// Realizes the proper transfer function as a dense discrete-time
@@ -760,6 +789,57 @@ mod tests {
         assert_coeffs_close(back.numerator(), tf.numerator(), 1.0e-10);
         assert_coeffs_close(back.denominator(), tf.denominator(), 1.0e-10);
         assert_eq!(back.sample_time(), 0.2);
+    }
+
+    #[test]
+    fn dc_gain_helpers_match_across_siso_representations() {
+        let cont =
+            ContinuousTransferFunction::continuous(vec![2.0, 1.0], vec![1.0, 4.0, 3.0]).unwrap();
+        let disc = DiscreteTransferFunction::discrete(vec![1.0, 0.5], vec![1.0, -0.25, 0.125], 0.1)
+            .unwrap();
+
+        let cont_gain = cont.dc_gain().unwrap();
+        let cont_zpk_gain = cont.to_zpk().unwrap().dc_gain().unwrap();
+        let cont_sos_gain = cont.to_sos().unwrap().dc_gain().unwrap();
+        let disc_gain = disc.dc_gain().unwrap();
+        let disc_zpk_gain = disc.to_zpk().unwrap().dc_gain().unwrap();
+        let disc_sos_gain = disc.to_sos().unwrap().dc_gain().unwrap();
+
+        assert!((cont_gain - cont_zpk_gain).norm() <= 1.0e-12);
+        assert!((cont_gain - cont_sos_gain).norm() <= 1.0e-12);
+        assert!((disc_gain - disc_zpk_gain).norm() <= 1.0e-12);
+        assert!((disc_gain - disc_sos_gain).norm() <= 1.0e-12);
+    }
+
+    #[test]
+    fn dc_gain_rejects_poles_at_steady_state_point() {
+        let cont = ContinuousTransferFunction::continuous(vec![1.0], vec![1.0, 0.0]).unwrap();
+        let disc = DiscreteTransferFunction::discrete(vec![1.0], vec![1.0, -1.0], 0.1).unwrap();
+
+        assert!(matches!(
+            cont.dc_gain().unwrap_err(),
+            LtiError::NonFiniteResult { which: "dc_gain" }
+        ));
+        assert!(matches!(
+            cont.to_zpk().unwrap().dc_gain().unwrap_err(),
+            LtiError::NonFiniteResult { which: "dc_gain" }
+        ));
+        assert!(matches!(
+            cont.to_sos().unwrap().dc_gain().unwrap_err(),
+            LtiError::NonFiniteResult { which: "dc_gain" }
+        ));
+        assert!(matches!(
+            disc.dc_gain().unwrap_err(),
+            LtiError::NonFiniteResult { which: "dc_gain" }
+        ));
+        assert!(matches!(
+            disc.to_zpk().unwrap().dc_gain().unwrap_err(),
+            LtiError::NonFiniteResult { which: "dc_gain" }
+        ));
+        assert!(matches!(
+            disc.to_sos().unwrap().dc_gain().unwrap_err(),
+            LtiError::NonFiniteResult { which: "dc_gain" }
+        ));
     }
 
     #[test]
