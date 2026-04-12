@@ -23,6 +23,7 @@ pub mod lqg;
 pub mod lqr;
 pub mod lti;
 pub mod lyapunov;
+pub mod nonlinear_estimator;
 pub mod pid;
 pub mod pid_design;
 pub mod realization;
@@ -54,6 +55,11 @@ pub use lyapunov::{
     DenseLyapunovSolve, LowRankFactor, LowRankLyapunovSolve, LyapunovError, LyapunovParams,
     ShiftStrategy, controllability_gramian_dense, controllability_gramian_low_rank,
     observability_gramian_dense, observability_gramian_low_rank, solve_continuous_lyapunov_dense,
+};
+pub use nonlinear_estimator::{
+    DiscreteExtendedKalmanModel, DiscreteNonlinearModel, ExtendedKalmanFilter,
+    NonlinearEstimatorError, NonlinearKalmanPrediction, NonlinearKalmanUpdate, SigmaPointProvider,
+    SigmaPointSet, SigmaPointStrategy, UkfStage, UnscentedKalmanFilter, UnscentedParams,
 };
 pub use pid::{AntiWindup, Pid, PidError, PidOutput, PidState};
 pub use pid_design::{
