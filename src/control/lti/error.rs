@@ -1,6 +1,7 @@
 use core::fmt;
 
 use crate::control::state_space::StateSpaceError;
+use crate::decomp::DecompError;
 use crate::sparse::lu::SparseLuError;
 use faer::linalg::solvers::{EvdError, SvdError};
 use faer::sparse::{CreationError, FaerError};
@@ -33,6 +34,8 @@ pub enum LtiError {
     },
     /// A polynomial representation was missing required coefficients.
     EmptyPolynomial { which: &'static str },
+    /// An FIR representation must contain at least one tap.
+    EmptyFir,
     /// The leading coefficient of a polynomial must be nonzero.
     ZeroLeadingCoefficient { which: &'static str },
     /// A conversion expected a single-input single-output state-space system.
@@ -70,6 +73,10 @@ pub enum LtiError {
         expected: usize,
         actual: usize,
     },
+    /// A Savitzky-Golay design specification is invalid.
+    InvalidSavGolSpec { which: &'static str },
+    /// A decomposition used by an LTI helper failed.
+    Decomp(DecompError),
     /// A dense state-space helper used underneath an LTI analysis routine
     /// failed.
     StateSpace(StateSpaceError),
@@ -104,6 +111,12 @@ impl From<SvdError> for LtiError {
 impl From<StateSpaceError> for LtiError {
     fn from(value: StateSpaceError) -> Self {
         Self::StateSpace(value)
+    }
+}
+
+impl From<DecompError> for LtiError {
+    fn from(value: DecompError) -> Self {
+        Self::Decomp(value)
     }
 }
 

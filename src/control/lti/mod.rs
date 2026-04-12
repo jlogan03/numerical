@@ -26,6 +26,7 @@
 mod analysis;
 mod error;
 mod filter_design;
+mod fir;
 mod plot_data;
 mod response;
 mod sim;
@@ -41,6 +42,7 @@ pub use filter_design::{
     design_analog_filter_zpk, design_digital_filter_sos, design_digital_filter_tf,
     design_digital_filter_zpk,
 };
+pub use fir::{Fir, FirFilterState, SavGolSpec, design_savgol};
 pub use plot_data::{BodeData, PoleZeroData};
 pub use response::{
     ContinuousImpulseResponse, ContinuousSimulation, DiscreteSimulation, SampledResponse,

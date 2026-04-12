@@ -347,7 +347,7 @@ where
     }
 }
 
-fn resolve_pad_len(input_len: usize, params: &FiltFiltParams, auto_len: usize) -> usize {
+pub(crate) fn resolve_pad_len(input_len: usize, params: &FiltFiltParams, auto_len: usize) -> usize {
     // The public API exposes `Auto` or `Exact`, but the runtime always works
     // with a concrete effective padding length after representation-specific
     // defaulting and input-length clamping.
@@ -358,7 +358,7 @@ fn resolve_pad_len(input_len: usize, params: &FiltFiltParams, auto_len: usize) -
     clamp_pad_len(input_len, params.mode, requested)
 }
 
-fn clamp_pad_len(input_len: usize, mode: FiltFiltPadMode, requested: usize) -> usize {
+pub(crate) fn clamp_pad_len(input_len: usize, mode: FiltFiltPadMode, requested: usize) -> usize {
     // Reflection needs one interior sample beyond the endpoint, so it can use
     // at most `input.len() - 1`. Constant padding can extend by the full input
     // length because it does not dereference interior reflected samples.
@@ -372,7 +372,7 @@ fn clamp_pad_len(input_len: usize, mode: FiltFiltPadMode, requested: usize) -> u
     requested.min(max_len)
 }
 
-fn padded_sample<R>(input: &[R], mode: FiltFiltPadMode, pad_len: usize, idx: usize) -> R
+pub(crate) fn padded_sample<R>(input: &[R], mode: FiltFiltPadMode, pad_len: usize, idx: usize) -> R
 where
     R: Float + Copy,
 {
