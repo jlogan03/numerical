@@ -24,6 +24,8 @@
 
 mod analysis;
 mod error;
+mod filter_design;
+mod plot_data;
 mod response;
 mod sos;
 mod transfer_function;
@@ -31,6 +33,13 @@ mod util;
 mod zpk;
 
 pub use error::LtiError;
+pub use filter_design::{
+    AnalogFilterFamily, AnalogFilterSpec, DigitalFilterFamily, DigitalFilterSpec,
+    FilterDesignError, FilterShape, design_analog_filter_sos, design_analog_filter_tf,
+    design_analog_filter_zpk, design_digital_filter_sos, design_digital_filter_tf,
+    design_digital_filter_zpk,
+};
+pub use plot_data::{BodeData, PoleZeroData};
 pub use response::{
     ContinuousImpulseResponse, ContinuousSimulation, DiscreteSimulation, SampledResponse,
 };
