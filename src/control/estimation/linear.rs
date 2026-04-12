@@ -15,8 +15,8 @@
 //! - [`SteadyStateKalmanFilter`] for discrete-time fixed-gain observation
 //! - [`ContinuousObserver`] for continuous-time fixed-gain observation
 
-use super::super::lti::{ContinuousStateSpace, DiscreteStateSpace};
-use super::super::riccati::{RiccatiError, solve_care_dense, solve_dare_dense};
+use crate::control::lti::{ContinuousStateSpace, DiscreteStateSpace};
+use crate::control::matrix_equations::{RiccatiError, solve_care_dense, solve_dare_dense};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use core::fmt;
 use faer::prelude::Solve;

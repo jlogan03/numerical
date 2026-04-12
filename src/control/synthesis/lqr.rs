@@ -1,7 +1,7 @@
 //! Dense infinite-horizon linear quadratic regulator design.
 //!
 //! This module is the controller-design layer that sits directly on top of the
-//! dense Riccati solvers in [`super::riccati`]. It does not reimplement CARE or
+//! dense Riccati solvers in [`crate::control::matrix_equations::riccati`]. It does not reimplement CARE or
 //! DARE; it packages those solves into a controller-oriented result:
 //!
 //! - feedback gain `K`
@@ -9,7 +9,7 @@
 //! - closed-loop state matrix `A - B K`
 //! - residual and stabilizing diagnostics
 
-use super::riccati::{RiccatiError, solve_care_dense, solve_dare_dense};
+use crate::control::matrix_equations::{RiccatiError, solve_care_dense, solve_dare_dense};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use core::fmt;
 use faer::{Mat, MatRef};

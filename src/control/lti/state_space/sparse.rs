@@ -12,16 +12,16 @@
 //! forcing the user to densify the full model.
 
 use super::{ContinuousTime, DiscreteTime, StateSpaceError, validate_blocks};
-use crate::control::balanced::{
-    BalancedError, BalancedParams, BalancedTruncationResult,
-    balanced_truncation_continuous_low_rank, balanced_truncation_discrete_low_rank,
-};
-use crate::control::lyapunov::{
+use crate::control::matrix_equations::lyapunov::{
     LowRankLyapunovSolve, LyapunovError, LyapunovParams, ShiftStrategy,
     controllability_gramian_low_rank, observability_gramian_low_rank,
 };
-use crate::control::stein::{
+use crate::control::matrix_equations::stein::{
     SteinError, controllability_gramian_discrete_low_rank, observability_gramian_discrete_low_rank,
+};
+use crate::control::reduction::{
+    BalancedError, BalancedParams, BalancedTruncationResult,
+    balanced_truncation_continuous_low_rank, balanced_truncation_discrete_low_rank,
 };
 use crate::sparse::compensated::CompensatedField;
 use faer::sparse::{SparseColMat, SparseColMatRef};

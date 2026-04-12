@@ -4,17 +4,17 @@
 //! composes:
 //!
 //! - `LQR` / `DLQR` from [`super::lqr`]
-//! - `LQE` / `DLQE` from [`super::estimation`]
+//! - `LQE` / `DLQE` from [`crate::control::estimation`]
 //! - observer/controller interconnection from
-//!   [`super::lti::state_space::ObserverControllerComposition`]
+//!   [`crate::control::lti::state_space::ObserverControllerComposition`]
 //!
 //! The design follows the standard steady-state separation-principle layout:
 //! compute a state-feedback gain `K`, compute an observer gain `L`, then wire
 //! them together into the dynamic controller that uses `u = r - K x_hat`.
 
-use super::estimation::{EstimatorError, LqeSolve, dlqe_dense, lqe_dense};
 use super::lqr::{LqrError, LqrSolve, dlqr_dense, lqr_dense};
-use super::lti::{
+use crate::control::estimation::{EstimatorError, LqeSolve, dlqe_dense, lqe_dense};
+use crate::control::lti::{
     ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime, StateSpace,
     StateSpaceError, state_space::ObserverControllerComposition,
 };

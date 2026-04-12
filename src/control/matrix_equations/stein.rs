@@ -802,7 +802,7 @@ mod test {
         solve_discrete_stein_dense,
     };
     use crate::control::LyapunovParams;
-    use crate::control::lyapunov::ShiftStrategy;
+    use crate::control::matrix_equations::lyapunov::ShiftStrategy;
     use faer::sparse::{SparseColMat, Triplet};
     use faer::{Mat, c64};
     use faer_traits::ext::ComplexFieldExt;
@@ -836,7 +836,7 @@ mod test {
     }
 
     fn assert_factor_close<T>(
-        factor: &crate::control::lyapunov::LowRankFactor<T>,
+        factor: &crate::control::matrix_equations::lyapunov::LowRankFactor<T>,
         expected: &Mat<T>,
         tol: T::Real,
     ) where
