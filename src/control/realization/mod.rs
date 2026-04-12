@@ -15,6 +15,20 @@
 //! functions of time rather than finite recurrence blocks, so a continuous
 //! Markov abstraction would need an explicit sampling policy that belongs in a
 //! later layer.
+//!
+//! Literature:
+//!
+//! - Juang and Pappa, "An Eigensystem Realization Algorithm for Modal
+//!   Parameter Identification and Model Reduction," Journal of Guidance,
+//!   Control, and Dynamics, 1985.
+//! - Juang, Phan, Horta, and Longman, "Identification of Observer/Kalman
+//!   Filter Markov Parameters: Theory and Experiments," Journal of Guidance,
+//!   Control, and Dynamics, 1993.
+//! - Van Overschee and De Moor, *Subspace Identification for Linear Systems*,
+//!   Kluwer, 1996.
+//! - Brunton and Kutz, *Data-Driven Science and Engineering*, 2nd ed.,
+//!   Cambridge University Press, 2022, especially the realization and
+//!   identification material in Section 9.3.
 
 mod error;
 mod hankel;

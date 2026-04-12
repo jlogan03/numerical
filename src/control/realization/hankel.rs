@@ -8,6 +8,9 @@ use faer::{Mat, MatRef};
 /// `H_{start_index + i + j}`. The matrix is materialized densely because that
 /// is the right trade for first-pass ERA/OKID support and keeps later SVD
 /// calls straightforward.
+///
+/// For ERA specifically, the common choice is `start_index = 1`, so the first
+/// block row begins with `H_1` rather than the direct term `H_0 = D`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BlockHankel<T> {
     start_index: usize,
@@ -20,6 +23,10 @@ pub struct BlockHankel<T> {
 
 impl<T> BlockHankel<T> {
     /// Assembles a dense block-Hankel matrix from a validated Markov sequence.
+    ///
+    /// The builder preserves the explicit block layout in the returned type so
+    /// higher-level realization code does not need to infer `(row_blocks,
+    /// col_blocks, noutputs, ninputs)` back from the raw dense matrix shape.
     pub fn from_markov(
         sequence: &MarkovSequence<T>,
         start_index: usize,
@@ -38,6 +45,9 @@ impl<T> BlockHankel<T> {
             let row_in_block = row % noutputs;
             let block_col = col / ninputs;
             let col_in_block = col % ninputs;
+            // Dense assembly is simple because each scalar entry belongs to
+            // exactly one Markov block selected by the Hankel anti-diagonal
+            // rule `start + i + j`.
             sequence.block(start_index + block_row + block_col)[(row_in_block, col_in_block)]
         });
 
@@ -91,6 +101,9 @@ impl<T> BlockHankel<T> {
 /// Standard one-step-shifted block-Hankel pair used by ERA.
 ///
 /// `h0` starts at `H_1`, while `h1` starts at `H_2`.
+///
+/// This is the standard shifted pair used in both Ho-Kalman-style realization
+/// formulas and the Juang-Pappa ERA construction.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ShiftedBlockHankelPair<T> {
     h0: BlockHankel<T>,
@@ -130,6 +143,9 @@ impl<T> ShiftedBlockHankelPair<T> {
 
 /// Returns the dense matrix shape of a block-Hankel matrix with the requested
 /// block layout.
+///
+/// This is a small bookkeeping helper, but centralizing it keeps later ERA
+/// code from duplicating block-to-dense shape conversions.
 #[must_use]
 pub fn hankel_matrix_shape(
     noutputs: usize,
@@ -145,6 +161,9 @@ pub fn hankel_matrix_shape(
 ///
 /// For a top-left block `H_start_index`, the bottom-right block is
 /// `H_{start_index + row_blocks + col_blocks - 2}`.
+///
+/// The returned value is a sequence length, not the largest required index, so
+/// it can be compared directly against `MarkovSequence::len()`.
 #[must_use]
 pub fn required_markov_len(start_index: usize, row_blocks: usize, col_blocks: usize) -> usize {
     start_index + row_blocks + col_blocks - 1
@@ -155,6 +174,9 @@ pub fn required_markov_len(start_index: usize, row_blocks: usize, col_blocks: us
 ///
 /// Since `H0` and `H1` require indices through `H_{2q}`, the sequence must
 /// contain at least `2q + 1` blocks including `H_0`.
+///
+/// This is the simplest admissibility rule for the common square-window ERA
+/// case.
 #[must_use]
 pub fn max_square_era_block_dim(markov_len: usize) -> usize {
     markov_len.saturating_sub(1) / 2
@@ -165,11 +187,19 @@ pub fn max_square_era_block_dim(markov_len: usize) -> usize {
 /// The first implementation simply returns the largest admissible square size.
 /// Higher-level algorithms are free to choose smaller dimensions if they want
 /// a thinner identification window.
+///
+/// Later heuristics can become more conservative without changing the caller
+/// contract.
 #[must_use]
 pub fn recommended_square_era_block_dim(markov_len: usize) -> usize {
     max_square_era_block_dim(markov_len)
 }
 
+/// Validates that a Markov sequence is long enough to support the requested
+/// block-Hankel layout.
+///
+/// This keeps the indexing rule in one place so `BlockHankel` and
+/// `ShiftedBlockHankelPair` cannot drift apart on their admissibility checks.
 fn validate_hankel_request(
     sequence_len: usize,
     start_index: usize,

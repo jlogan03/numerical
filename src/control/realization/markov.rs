@@ -21,6 +21,11 @@ use num_traits::Float;
 ///
 /// Each block is stored as a dense `noutputs x ninputs` matrix. This is the
 /// shared currency for data-driven realization methods such as ERA and OKID.
+///
+/// The convention here matches the standard discrete-time impulse-response
+/// blocks used in Ho-Kalman-style realization and later ERA/OKID variants:
+/// one dense block per sample, with the full output-by-input map retained at
+/// each lag.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MarkovSequence<T> {
     noutputs: usize,
@@ -44,6 +49,9 @@ impl<T> MarkovSequence<T> {
 
     /// Builds a Markov sequence from owned dense blocks after validating that
     /// every block has the same `output x input` shape.
+    ///
+    /// The container is intentionally strict here because later block-Hankel
+    /// assembly assumes a rectangular block grid with one fixed block shape.
     pub fn from_blocks(blocks: Vec<Mat<T>>) -> Result<Self, RealizationError> {
         let Some(first) = blocks.first() else {
             return Err(RealizationError::EmptySequence);
@@ -129,6 +137,9 @@ impl<T> MarkovSequence<T> {
     ///
     /// The top-left block is `H_start_index`, so the block at `(i, j)` is
     /// `H_{start_index + i + j}`.
+    ///
+    /// This is the canonical block layout used by Ho-Kalman-style realization
+    /// and by ERA once the sequence is shifted to start at `H_1`.
     pub fn block_hankel(
         &self,
         start_index: usize,
@@ -147,6 +158,10 @@ impl<T> MarkovSequence<T> {
     ///
     /// - `H0` with top-left block `H_1`
     /// - `H1` with top-left block `H_2`
+    ///
+    /// This keeps the storage layer aligned with the textbook ERA convention
+    /// so the eventual algorithm layer can work directly from the returned
+    /// pair without reindexing.
     pub fn shifted_hankel_pair(
         &self,
         row_blocks: usize,
@@ -170,6 +185,10 @@ where
     ///
     /// - block `0`: `D`
     /// - block `k >= 1`: `C A^(k-1) B`
+    ///
+    /// The implementation intentionally delegates to the public impulse
+    /// response path so the response layer and realization layer share one
+    /// MIMO block convention.
     pub fn markov_parameters(&self, n_blocks: usize) -> MarkovSequence<T> {
         if n_blocks == 0 {
             return MarkovSequence::empty(self.noutputs(), self.ninputs());
@@ -189,6 +208,10 @@ where
     /// The sparse state matrix is never densified; the sequence is generated
     /// through the existing sparse impulse-response path and stored as dense
     /// `noutputs x ninputs` blocks.
+    ///
+    /// That keeps the sparse model path aligned with the dense identification
+    /// APIs, since ERA and OKID usually work with moderate dense Hankel
+    /// matrices even when the source state operator is sparse.
     pub fn markov_parameters(&self, n_blocks: usize) -> MarkovSequence<T> {
         if n_blocks == 0 {
             return MarkovSequence::empty(self.noutputs(), self.ninputs());

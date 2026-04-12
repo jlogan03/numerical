@@ -534,6 +534,10 @@ where
 /// This keeps the MIMO semantics explicit: each returned block is an
 /// `noutputs x ninputs` matrix, not the response to all unit inputs injected
 /// simultaneously.
+///
+/// The public realization layer consumes these blocks directly, so this helper
+/// is the single place where the dense discrete impulse convention is turned
+/// into the block sequence `D, C B, C A B, ...`.
 fn dense_discrete_markov_blocks<T>(system: &DiscreteStateSpace<T>, n_steps: usize) -> Vec<Mat<T>>
 where
     T: CompensatedField,
@@ -560,6 +564,10 @@ where
 ///
 /// Column `j` of each returned matrix is the output trajectory produced by a
 /// unit step applied to input channel `j`.
+///
+/// This is intentionally not built from the general simulation output, because
+/// simulation stores one output column per time sample, while the public
+/// response API stores one full output-by-input block per sample.
 fn dense_discrete_step_blocks<T>(system: &DiscreteStateSpace<T>, n_steps: usize) -> Vec<Mat<T>>
 where
     T: CompensatedField,
@@ -579,6 +587,10 @@ where
 
 /// Returns the first `n_steps` discrete-time Markov blocks for a sparse
 /// system.
+///
+/// The returned blocks are still dense because the identification layer works
+/// on dense block-Hankel matrices even when the underlying state operator is
+/// sparse.
 fn sparse_discrete_markov_blocks<T>(
     system: &SparseDiscreteStateSpace<T>,
     n_steps: usize,
@@ -605,6 +617,10 @@ where
 }
 
 /// Returns the first `n_steps` sparse discrete-time step-response blocks.
+///
+/// As in the dense path, each sample stores the full output-by-input map so
+/// MIMO step responses stay consistent with the block conventions used later
+/// by realization utilities.
 fn sparse_discrete_step_blocks<T>(
     system: &SparseDiscreteStateSpace<T>,
     n_steps: usize,
@@ -632,6 +648,9 @@ where
 ///
 /// Each matrix maps the per-input unit step to the output vector at the
 /// corresponding sample time.
+///
+/// This keeps the continuous step-response wrapper MIMO-correct without
+/// routing through the more general trajectory storage shape.
 fn dense_continuous_step_blocks<T>(
     system: &ContinuousStateSpace<T>,
     sample_times: &[T::Real],
@@ -661,6 +680,10 @@ where
 ///
 /// This is the small dense-column analogue of sparse matvec and is enough for
 /// block responses such as Markov sequences and per-input step responses.
+///
+/// Keeping this as a dedicated helper avoids duplicating the same
+/// column-by-column sparse application logic across sparse impulse, sparse
+/// step, and later realization-facing routines.
 fn sparse_apply_columns<T>(a: impl SparseMatVec<T> + Copy, rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
