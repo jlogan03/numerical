@@ -76,6 +76,8 @@ where
     T: CompensatedField,
     T::Real: Float + Copy + RealField,
 {
+    // LQR is intentionally thin over the Riccati layer: solve CARE once, then
+    // package the controller-oriented quantities callers actually need.
     let riccati = solve_care_dense(a, b, q, r)?;
     Ok(LqrSolve {
         closed_loop_a: closed_loop_matrix(a, b, riccati.gain.as_ref()),
@@ -104,6 +106,7 @@ where
     T: CompensatedField,
     T::Real: Float + Copy + RealField,
 {
+    // DLQR is the same packaging step on top of the discrete Riccati solve.
     let riccati = solve_dare_dense(a, b, q, r)?;
     Ok(LqrSolve {
         closed_loop_a: closed_loop_matrix(a, b, riccati.gain.as_ref()),
@@ -122,6 +125,9 @@ where
     let bk = dense_mul(b, k);
     Mat::from_fn(a.nrows(), a.ncols(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
+        // The public controller result always returns the closed-loop state
+        // matrix explicitly so later response/simulation code does not need to
+        // recompute `A - B K` on its own.
         acc.add(a[(row, col)]);
         acc.add(-bk[(row, col)]);
         acc.finish()

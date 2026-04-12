@@ -124,6 +124,9 @@ where
     validate_riccati_dims(a, b, q, r)?;
     let tol = default_tolerance::<T>();
 
+    // `G = B R^-1 B^H` is the quadratic control-weight term that appears in
+    // the Hamiltonian matrix. Forming it once keeps the subsequent invariant-
+    // subspace step close to the textbook CARE derivation.
     let r_inv_bh = solve_left_checked(
         r,
         dense_adjoint(b).as_ref(),
@@ -140,14 +143,21 @@ where
     let eig = hamiltonian.eigen()?;
 
     let eig_values = diag_values(eig.S().column_vector());
+    // The stabilizing CARE solution is determined by the invariant subspace
+    // associated with the Hamiltonian eigenvalues in the open left half-plane.
     let stable = stable_columns_from_eigen(&eig_values, tol);
     let (u1, u2) = partition_subspace(eig.U(), a.nrows(), &stable)?;
+    // Writing the stable basis as `[U1; U2]` gives the Riccati solution
+    // through the graph relation `X = U2 U1^-1`.
     let mut solution_c = solve_right_checked(
         u1.as_ref(),
         u2.as_ref(),
         tol,
         RiccatiError::SingularInvariantSubspace,
     )?;
+    // The exact stabilizing solution is Hermitian. The invariant-subspace solve
+    // can introduce a small skew-Hermitian component, so project it away before
+    // checking residuals or recovering the gain.
     hermitianize_in_place(&mut solution_c);
 
     let solution = from_complex_mat(solution_c.as_ref(), tol, "care.solution")?;
@@ -191,6 +201,8 @@ where
     validate_riccati_dims(a, b, q, r)?;
     let tol = default_tolerance::<T>();
 
+    // As in the CARE path, factor the quadratic input term once so the DARE
+    // pencil can be assembled directly from `A`, `Q`, and `G = B R^-1 B^H`.
     let r_inv_bh = solve_left_checked(
         r,
         dense_adjoint(b).as_ref(),
@@ -207,6 +219,9 @@ where
     let gevd = h.generalized_eigen(j.as_ref())?;
     let alpha = diag_values(gevd.S_a().column_vector());
     let beta = diag_values(gevd.S_b().column_vector());
+    // For the symplectic pencil, the stabilizing solution is determined by the
+    // invariant subspace whose generalized eigenvalues lie strictly inside the
+    // unit disk.
     let stable = stable_columns_from_generalized_eigen(&alpha, &beta, tol);
     let (u1, u2) = partition_subspace(gevd.U(), a.nrows(), &stable)?;
     let mut solution_c = solve_right_checked(
@@ -338,6 +353,17 @@ where
     eps::<T::Real>().sqrt()
 }
 
+/// Builds the Hamiltonian matrix whose stable invariant subspace encodes the
+/// stabilizing CARE solution.
+///
+/// With `G = B R^-1 B^H`, the standard Hamiltonian form is
+///
+/// ```text
+/// [  A  -G ]
+/// [ -Q -A^H]
+/// ```
+///
+/// and the graph of its stable invariant subspace yields `X`.
 fn build_care_hamiltonian<R>(
     a: MatRef<'_, Complex<R>>,
     g: MatRef<'_, Complex<R>>,
@@ -355,6 +381,27 @@ where
     })
 }
 
+/// Builds the symplectic generalized-eigen pencil used for the stabilizing
+/// DARE solution.
+///
+/// In this first dense implementation the pencil is written as
+///
+/// ```text
+/// H - λ J
+/// ```
+///
+/// with
+///
+/// ```text
+/// H = [ A  0]
+///     [-Q  I]
+///
+/// J = [ I  G ]
+///     [ 0  A^H]
+/// ```
+///
+/// so that the invariant subspace inside the unit disk determines the desired
+/// Riccati graph.
 fn build_dare_pencil<R>(
     a: MatRef<'_, Complex<R>>,
     g: MatRef<'_, Complex<R>>,
@@ -395,6 +442,9 @@ fn stable_columns_from_eigen<R>(values: &[Complex<R>], tol: R) -> Vec<usize>
 where
     R: Float + Copy + RealField,
 {
+    // CARE wants the Hamiltonian subspace in the open left half-plane. A small
+    // tolerance keeps numerically marginal eigenvalues from being accepted as
+    // safely stable.
     values
         .iter()
         .enumerate()
@@ -410,6 +460,8 @@ fn stable_columns_from_generalized_eigen<R>(
 where
     R: Float + Copy + RealField,
 {
+    // DARE uses generalized eigenvalues of the symplectic pencil. The
+    // stabilizing subspace is the one strictly inside the unit disk.
     alpha
         .iter()
         .zip(beta.iter())
@@ -436,11 +488,20 @@ where
         return Err(RiccatiError::NoStabilizingSolution);
     }
 
+    // The invariant-subspace basis is partitioned as `[U1; U2]`, where `U1`
+    // is the top state block and `U2` is the bottom state block. Recovering
+    // `X` then reduces to one dense solve with `U1`.
     let u1 = Mat::from_fn(n, n, |row, col| vectors[(row, cols[col])]);
     let u2 = Mat::from_fn(n, n, |row, col| vectors[(n + row, cols[col])]);
     Ok((u1, u2))
 }
 
+/// Solves `lhs * X = rhs` and rejects numerically unusable results.
+///
+/// The Riccati implementation only needs small dense solves at this layer, but
+/// it still checks the residual explicitly so obviously singular `R`, `R +
+/// B^H X B`, or invariant-subspace partitions are surfaced as targeted Riccati
+/// errors instead of leaking NaNs into later steps.
 fn solve_left_checked<T>(
     lhs: MatRef<'_, T>,
     rhs: MatRef<'_, T>,
@@ -468,6 +529,11 @@ where
     Ok(solution)
 }
 
+/// Solves `X * lhs = rhs` by transposing into the left-solve helper.
+///
+/// The Riccati recovery step naturally produces `X U1 = U2`, so the public
+/// helper stays in that form and this wrapper handles the dense transpose
+/// bookkeeping.
 fn solve_right_checked<T>(
     lhs: MatRef<'_, T>,
     rhs: MatRef<'_, T>,
@@ -509,6 +575,9 @@ where
     let xbk = dense_mul(xb.as_ref(), k);
     Mat::from_fn(x.nrows(), x.ncols(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
+        // Recompute the Riccati equation directly in matrix form instead of
+        // inferring accuracy from the invariant-subspace solve. That gives a
+        // more meaningful post-solve diagnostic for downstream controller code.
         acc.add(a_h_x[(row, col)]);
         acc.add(x_a[(row, col)]);
         acc.add(-xbk[(row, col)]);
@@ -534,6 +603,8 @@ where
     let a_h_x_b_k = dense_mul(a_h_x_b.as_ref(), k);
     Mat::from_fn(x.nrows(), x.ncols(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
+        // As in the CARE path, the residual is recomputed in the original DARE
+        // equation rather than inferred from the generalized-eigen solve.
         acc.add(a_h_x_a[(row, col)]);
         acc.add(-a_h_x_b_k[(row, col)]);
         acc.add(-x[(row, col)]);
@@ -594,6 +665,10 @@ where
     T: CompensatedField,
     T::Real: Float + Copy + RealField,
 {
+    // The invariant-subspace formulas are evaluated in complex arithmetic even
+    // for real problems. For real data, the true stabilizing solution should
+    // still be real, so reject projections that retain a materially imaginary
+    // part rather than silently discarding it.
     let mut max_abs = <T::Real as Zero>::zero();
     let mut max_imag = <T::Real as Zero>::zero();
     for col in 0..matrix.ncols() {
@@ -643,6 +718,9 @@ where
     T: ComplexField + Copy,
     T::Real: Float + Copy,
 {
+    // Riccati solutions are Hermitian in exact arithmetic. Symmetrizing the
+    // dense result removes the small antisymmetric component introduced by
+    // finite-precision eigenspace recovery.
     let half = <T::Real as One>::one() / (<T::Real as One>::one() + <T::Real as One>::one());
     for col in 0..matrix.ncols() {
         for row in 0..=col.min(matrix.nrows().saturating_sub(1)) {
