@@ -2,11 +2,13 @@
 //!
 //! This module deliberately stops at data generation. Rendering stays outside
 //! the crate, but callers can reuse these helpers to produce consistent Bode
-//! and pole-zero inputs from any supported SISO LTI representation.
+//! and pole-zero inputs from any supported SISO LTI representation. Bode phase
+//! is returned in unwrapped form so downstream plotting code can decide
+//! whether to display continuity-preserving or wrapped traces.
 
 use super::{
     ContinuousSos, ContinuousStateSpace, ContinuousTransferFunction, ContinuousZpk, DiscreteSos,
-    DiscreteStateSpace, DiscreteTransferFunction, DiscreteZpk, LtiError,
+    DiscreteStateSpace, DiscreteTransferFunction, DiscreteZpk, LtiError, util::unwrap_phase_deg,
 };
 use faer::complex::Complex;
 use faer_traits::RealField;
@@ -19,7 +21,8 @@ pub struct BodeData<R> {
     pub angular_frequencies: Vec<R>,
     /// Magnitude in dB.
     pub magnitude_db: Vec<R>,
-    /// Phase in degrees, wrapped to `[-180, 180]`.
+    /// Phase in degrees, unwrapped to preserve continuity across `±180 deg`
+    /// branch cuts on the supplied frequency grid.
     pub phase_deg: Vec<R>,
 }
 
@@ -234,40 +237,24 @@ where
     R: Float + Copy + RealField,
     F: FnMut(R) -> Result<Complex<R>, LtiError>,
 {
-    // Keep the plotting layer opinionated but minimal: validate the grid, then
-    // turn complex samples into log-magnitude and wrapped phase.
+    // Keep the plotting layer opinionated but minimal: validate the grid, turn
+    // complex samples into magnitude/phase, then unwrap the phase trace once
+    // at the end so the result is continuous on the caller's grid.
     let mut magnitude_db = Vec::with_capacity(angular_frequencies.len());
-    let mut phase_deg = Vec::with_capacity(angular_frequencies.len());
+    let mut phase_deg_wrapped = Vec::with_capacity(angular_frequencies.len());
     for &omega in angular_frequencies {
         if !omega.is_finite() || omega < R::zero() {
             return Err(LtiError::InvalidSamplePoint { which: "bode_data" });
         }
         let value = evaluate(omega)?;
         magnitude_db.push(R::from(20.0).unwrap() * value.norm().log10());
-        phase_deg.push(wrap_phase_deg(value.im.atan2(value.re).to_degrees()));
+        phase_deg_wrapped.push(value.im.atan2(value.re).to_degrees());
     }
     Ok(BodeData {
         angular_frequencies: angular_frequencies.to_vec(),
         magnitude_db,
-        phase_deg,
+        phase_deg: unwrap_phase_deg(&phase_deg_wrapped),
     })
-}
-
-fn wrap_phase_deg<R>(phase_deg: R) -> R
-where
-    R: Float + Copy + RealField,
-{
-    // Generic `Float` does not provide `rem_euclid`, so wrap manually with a
-    // floor-based modulus.
-    let period = R::from(360.0).unwrap();
-    let half = R::from(180.0).unwrap();
-    let shifted = phase_deg + half;
-    let wrapped = shifted - period * (shifted / period).floor() - half;
-    if wrapped <= -half {
-        wrapped + period
-    } else {
-        wrapped
-    }
 }
 
 #[cfg(test)]
@@ -289,8 +276,23 @@ mod tests {
         assert_close(bode.magnitude_db[0], 20.0 * value.norm().log10(), 1.0e-12);
         assert_close(
             bode.phase_deg[0],
-            ((value.im.atan2(value.re).to_degrees() + 180.0).rem_euclid(360.0)) - 180.0,
+            value.im.atan2(value.re).to_degrees(),
             1.0e-12,
+        );
+    }
+
+    #[test]
+    fn bode_phase_is_unwrapped_across_frequency_grid() {
+        let tf =
+            ContinuousTransferFunction::continuous(vec![1.0], vec![1.0, 3.0, 3.0, 1.0]).unwrap();
+        let grid = vec![1.0e-2, 1.0e-1, 1.0, 10.0, 100.0];
+        let bode = tf.bode_data(&grid).unwrap();
+
+        assert!(bode.phase_deg.last().copied().unwrap() < -200.0);
+        assert!(
+            bode.phase_deg
+                .windows(2)
+                .all(|window| window[1] <= window[0])
         );
     }
 

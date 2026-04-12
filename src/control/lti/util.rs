@@ -153,6 +153,39 @@ pub(crate) fn sample_times_match<R: Float + Copy + RealField>(lhs: R, rhs: R) ->
     (lhs - rhs).abs() <= tol
 }
 
+/// Unwraps a phase trace expressed in degrees.
+///
+/// Both the plotting and loop-analysis layers start from pointwise
+/// `atan2`-based phase samples, which naturally live in `[-180, 180]`.
+/// Unwrapping preserves local continuity across those branch cuts so later
+/// callers can reason about trends, slopes, and `-180 deg` crossings on the
+/// supplied grid.
+pub(crate) fn unwrap_phase_deg<R>(wrapped: &[R]) -> Vec<R>
+where
+    R: Float + Copy + RealField,
+{
+    if wrapped.is_empty() {
+        return Vec::new();
+    }
+
+    let full_turn = from_f64::<R>(360.0);
+    let half_turn = from_f64::<R>(180.0);
+    let mut out = Vec::with_capacity(wrapped.len());
+    out.push(wrapped[0]);
+    for &phase in &wrapped[1..] {
+        let mut adjusted = phase;
+        let prev = *out.last().unwrap();
+        while adjusted - prev > half_turn {
+            adjusted = adjusted - full_turn;
+        }
+        while adjusted - prev < -half_turn {
+            adjusted = adjusted + full_turn;
+        }
+        out.push(adjusted);
+    }
+    out
+}
+
 /// Computes the roots of a real-coefficient polynomial through its companion
 /// matrix.
 ///
