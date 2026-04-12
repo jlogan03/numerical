@@ -15,6 +15,7 @@
 
 pub mod balanced;
 pub mod hsvd;
+pub mod identification;
 pub mod lti;
 pub mod lyapunov;
 pub mod realization;
@@ -29,6 +30,10 @@ pub use balanced::{
 pub use hsvd::{
     HsvdError, HsvdInternals, HsvdInternalsLevel, HsvdParams, HsvdResult, hsvd_from_dense_gramians,
     hsvd_from_factors,
+};
+pub use identification::{
+    EraError, EraInternals, EraInternalsLevel, EraParams, EraResult, OkidError, OkidParams,
+    OkidResult, era_from_markov, era_from_shifted_hankel, okid,
 };
 pub use lyapunov::{
     DenseLyapunovSolve, LowRankFactor, LowRankLyapunovSolve, LyapunovError, LyapunovParams,
