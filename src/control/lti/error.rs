@@ -61,6 +61,12 @@ pub enum LtiError {
     NonFiniteResult { which: &'static str },
     /// A second-order-section cascade must contain at least one section.
     EmptySos,
+    /// A supplied filter-runtime state object has the wrong structural length.
+    InvalidFilterStateLength {
+        which: &'static str,
+        expected: usize,
+        actual: usize,
+    },
     /// A dense state-space helper used underneath an LTI analysis routine
     /// failed.
     StateSpace(StateSpaceError),

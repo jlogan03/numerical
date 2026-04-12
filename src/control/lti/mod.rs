@@ -27,6 +27,7 @@ mod error;
 mod filter_design;
 mod plot_data;
 mod response;
+mod sim;
 mod sos;
 mod transfer_function;
 mod util;
@@ -42,6 +43,10 @@ pub use filter_design::{
 pub use plot_data::{BodeData, PoleZeroData};
 pub use response::{
     ContinuousImpulseResponse, ContinuousSimulation, DiscreteSimulation, SampledResponse,
+};
+pub use sim::{
+    FiltFiltPadLen, FiltFiltPadMode, FiltFiltParams, FilteredSignal, SosFilterState,
+    StatefulFilteredSignal,
 };
 pub use sos::{ContinuousSos, DiscreteSos, SecondOrderSection, Sos};
 pub use transfer_function::{
