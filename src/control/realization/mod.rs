@@ -16,6 +16,30 @@
 //! Markov abstraction would need an explicit sampling policy that belongs in a
 //! later layer.
 //!
+//! In this context, a "realization" means a specific state-space model
+//! `(A, B, C, D)` whose external input-output behavior matches some other
+//! system description such as:
+//!
+//! - Markov parameters
+//! - an impulse response
+//! - a transfer function
+//! - measured input/output data
+//!
+//! Realizations are not unique. If `(A, B, C, D)` is one realization and `T`
+//! is any invertible state-coordinate change, then
+//!
+//! - `A' = T A T^-1`
+//! - `B' = T B`
+//! - `C' = C T^-1`
+//! - `D' = D`
+//!
+//! is a different realization of the same external system. Identification and
+//! realization algorithms therefore recover a state-space representation only
+//! up to such internal coordinate changes. The role of the utilities in this
+//! module is to build the structured data objects, such as Markov sequences
+//! and shifted block-Hankel matrices, from which those equivalent
+//! state-space models can later be constructed.
+//!
 //! Literature:
 //!
 //! - Juang and Pappa, "An Eigensystem Realization Algorithm for Modal
