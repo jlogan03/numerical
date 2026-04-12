@@ -397,6 +397,65 @@ where
     T: ComplexField + Copy,
     T::Real: Float + Copy,
 {
+    /// Creates the exact `samples`-step pure delay with the requested channel
+    /// count.
+    ///
+    /// The returned system maps `u[k]` to `y[k] = u[k - samples]` and is
+    /// realized exactly as a per-channel shift register. For `samples = 0`,
+    /// the result is the zero-state identity map.
+    pub fn delay(
+        samples: usize,
+        sample_time: T::Real,
+        channels: usize,
+    ) -> Result<Self, StateSpaceError> {
+        if channels == 0 {
+            return Self::new(
+                Mat::zeros(0, 0),
+                Mat::zeros(0, 0),
+                Mat::zeros(0, 0),
+                Mat::zeros(0, 0),
+                sample_time,
+            );
+        }
+
+        if samples == 0 {
+            return Self::new(
+                Mat::zeros(0, 0),
+                Mat::zeros(0, channels),
+                Mat::zeros(channels, 0),
+                identity(channels),
+                sample_time,
+            );
+        }
+
+        let nstates = samples * channels;
+        let a = Mat::from_fn(nstates, nstates, |row, col| {
+            let row_block = row / channels;
+            let col_block = col / channels;
+            if row_block == col_block + 1 && row % channels == col % channels {
+                T::one()
+            } else {
+                T::zero()
+            }
+        });
+        let b = Mat::from_fn(nstates, channels, |row, col| {
+            if row < channels && row == col {
+                T::one()
+            } else {
+                T::zero()
+            }
+        });
+        let c = Mat::from_fn(channels, nstates, |row, col| {
+            if col / channels == samples - 1 && row == col % channels {
+                T::one()
+            } else {
+                T::zero()
+            }
+        });
+        let d = Mat::zeros(channels, channels);
+        Self::new(a, b, c, d, sample_time)
+    }
+
     /// Forms the parallel sum of two discrete-time systems.
     pub fn parallel_add(&self, rhs: &Self) -> Result<Self, StateSpaceError> {
         ensure_sample_time_match(self.sample_time(), rhs.sample_time())?;
@@ -425,6 +484,26 @@ where
         ensure_sample_time_match(self.sample_time(), rhs.sample_time())?;
         let (a, b, c, d) = append_parts(self, rhs);
         Self::new(a, b, c, d, self.sample_time())
+    }
+
+    /// Prepends an exact integer-sample delay to the plant input channels.
+    ///
+    /// This is equivalent to the series interconnection `delay -> self`.
+    pub fn with_input_delay(&self, samples: usize) -> Result<Self, StateSpaceError> {
+        if samples == 0 {
+            return Ok(self.clone());
+        }
+        Self::delay(samples, self.sample_time(), self.ninputs())?.series(self)
+    }
+
+    /// Appends an exact integer-sample delay to the plant output channels.
+    ///
+    /// This is equivalent to the series interconnection `self -> delay`.
+    pub fn with_output_delay(&self, samples: usize) -> Result<Self, StateSpaceError> {
+        if samples == 0 {
+            return Ok(self.clone());
+        }
+        self.series(&Self::delay(samples, self.sample_time(), self.noutputs())?)
     }
 
     /// Closes static state feedback with the convention `u = u_ext - K x`.
@@ -1248,6 +1327,91 @@ mod tests {
 
         let err = lhs.parallel_add(&rhs).unwrap_err();
         assert_eq!(err, StateSpaceError::MismatchedSampleTime);
+    }
+
+    #[test]
+    fn pure_discrete_delay_simulation_matches_shifted_signal() {
+        let delay = DiscreteStateSpace::<f64>::delay(2, 0.1, 2).unwrap();
+        let inputs = Mat::from_fn(2, 5, |row, col| match (row, col) {
+            (0, 0) => 1.0,
+            (0, 1) => 2.0,
+            (0, 2) => 3.0,
+            (0, 3) => 4.0,
+            (0, 4) => 5.0,
+            (1, 0) => -1.0,
+            (1, 1) => -2.0,
+            (1, 2) => -3.0,
+            (1, 3) => -4.0,
+            _ => -5.0,
+        });
+        let sim = delay
+            .simulate(&vec![0.0; delay.nstates()], inputs.as_ref())
+            .unwrap();
+        let expected = Mat::from_fn(
+            2,
+            5,
+            |row, col| {
+                if col < 2 { 0.0 } else { inputs[(row, col - 2)] }
+            },
+        );
+
+        assert_eq!(delay.sample_time(), 0.1);
+        assert_close(&sim.outputs, &expected, 1.0e-12);
+    }
+
+    #[test]
+    fn zero_sample_delay_is_identity_map() {
+        let delay = DiscreteStateSpace::<f64>::delay(0, 0.1, 1).unwrap();
+        let inputs = Mat::from_fn(1, 4, |_, col| [1.0, -2.0, 3.0, -4.0][col]);
+        let sim = delay.simulate(&[], inputs.as_ref()).unwrap();
+
+        assert_eq!(delay.nstates(), 0);
+        assert_close(&sim.outputs, &inputs, 1.0e-12);
+    }
+
+    #[test]
+    fn input_and_output_delay_helpers_match_shifted_reference_sequences() {
+        let plant = DiscreteStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| 0.5),
+            Mat::from_fn(1, 1, |_, _| 1.0),
+            Mat::from_fn(1, 1, |_, _| 1.0),
+            Mat::from_fn(1, 1, |_, _| 0.25),
+            0.1,
+        )
+        .unwrap();
+        let inputs = Mat::from_fn(1, 6, |_, col| [1.0, 2.0, -1.0, 0.5, 3.0, -2.0][col]);
+
+        let delayed_input = plant.with_input_delay(2).unwrap();
+        let shifted_inputs = Mat::from_fn(1, inputs.ncols(), |_, col| {
+            if col < 2 { 0.0 } else { inputs[(0, col - 2)] }
+        });
+        let delayed_input_sim = delayed_input
+            .simulate(&vec![0.0; delayed_input.nstates()], inputs.as_ref())
+            .unwrap();
+        let shifted_input_sim = plant
+            .simulate(&vec![0.0; plant.nstates()], shifted_inputs.as_ref())
+            .unwrap();
+        assert_close(
+            &delayed_input_sim.outputs,
+            &shifted_input_sim.outputs,
+            1.0e-12,
+        );
+
+        let delayed_output = plant.with_output_delay(2).unwrap();
+        let plant_sim = plant
+            .simulate(&vec![0.0; plant.nstates()], inputs.as_ref())
+            .unwrap();
+        let delayed_output_sim = delayed_output
+            .simulate(&vec![0.0; delayed_output.nstates()], inputs.as_ref())
+            .unwrap();
+        let expected_outputs = Mat::from_fn(1, plant_sim.outputs.ncols(), |_, col| {
+            if col < 2 {
+                0.0
+            } else {
+                plant_sim.outputs[(0, col - 2)]
+            }
+        });
+        assert_close(&delayed_output_sim.outputs, &expected_outputs, 1.0e-12);
     }
 
     #[test]

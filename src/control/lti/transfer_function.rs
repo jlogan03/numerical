@@ -266,6 +266,20 @@ where
         self.domain.sample_time()
     }
 
+    /// Creates the exact `samples`-step pure delay `z^-samples`.
+    ///
+    /// The discrete transfer-function layer stores coefficients in descending
+    /// powers of `z`, not `z^-1`, so a pure delay is represented as
+    ///
+    /// `1 / z^samples`
+    ///
+    /// with denominator coefficients `[1, 0, ..., 0]`.
+    pub fn delay(samples: usize, sample_time: R) -> Result<Self, LtiError> {
+        let mut denominator = vec![R::one()];
+        denominator.resize(samples + 1, R::zero());
+        Self::discrete(vec![R::one()], denominator, sample_time)
+    }
+
     /// Returns the steady-state gain `G(1)`.
     ///
     /// For discrete-time transfer functions the steady-state point lies at
@@ -675,8 +689,7 @@ mod tests {
         ContinuousStateSpace, ContinuousTransferFunction, DiscreteStateSpace,
         DiscreteTransferFunction,
     };
-    use crate::control::lti::LtiError;
-    use crate::control::lti::Sos;
+    use crate::control::lti::{DiscreteSos, DiscreteZpk, LtiError, Sos};
     use faer::Mat;
     use faer::complex::Complex;
 
@@ -753,6 +766,48 @@ mod tests {
             err,
             crate::control::lti::LtiError::InvalidSampleTime
         ));
+    }
+
+    #[test]
+    fn discrete_delay_constructors_match_exact_z_inverse_power() {
+        let tf = DiscreteTransferFunction::delay(3, 0.1).unwrap();
+        let zpk = DiscreteZpk::delay(3, 0.1).unwrap();
+        let sos = DiscreteSos::delay(3, 0.1).unwrap();
+        let point = Complex::new(0.8, 0.2);
+        let expected = Complex::new(1.0, 0.0) / (point * point * point);
+
+        assert_eq!(tf.numerator(), &[1.0]);
+        assert_eq!(tf.denominator(), &[1.0, 0.0, 0.0, 0.0]);
+        assert_eq!(tf.sample_time(), 0.1);
+        assert_eq!(zpk.sample_time(), 0.1);
+        assert_eq!(sos.sample_time(), 0.1);
+        assert!((tf.evaluate(point) - expected).norm() <= 1.0e-12);
+        assert!((zpk.evaluate(point) - expected).norm() <= 1.0e-12);
+        assert!((sos.evaluate(point) - expected).norm() <= 1.0e-12);
+        assert_coeffs_close(
+            zpk.to_transfer_function().unwrap().denominator(),
+            tf.denominator(),
+            1.0e-12,
+        );
+        assert_coeffs_close(
+            sos.to_transfer_function().unwrap().denominator(),
+            tf.denominator(),
+            1.0e-12,
+        );
+    }
+
+    #[test]
+    fn zero_sample_delay_is_identity_across_representations() {
+        let tf = DiscreteTransferFunction::delay(0, 0.2).unwrap();
+        let zpk = DiscreteZpk::delay(0, 0.2).unwrap();
+        let sos = DiscreteSos::delay(0, 0.2).unwrap();
+        let point = Complex::new(0.3, -0.4);
+
+        assert_eq!(tf.numerator(), &[1.0]);
+        assert_eq!(tf.denominator(), &[1.0]);
+        assert!((tf.evaluate(point) - Complex::new(1.0, 0.0)).norm() <= 1.0e-12);
+        assert!((zpk.evaluate(point) - Complex::new(1.0, 0.0)).norm() <= 1.0e-12);
+        assert!((sos.evaluate(point) - Complex::new(1.0, 0.0)).norm() <= 1.0e-12);
     }
 
     #[test]

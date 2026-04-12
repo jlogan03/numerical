@@ -313,6 +313,15 @@ where
         self.domain.sample_time()
     }
 
+    /// Creates the exact `samples`-step pure delay `z^-samples`.
+    ///
+    /// The section cascade is built from the exact zero/pole description of
+    /// the delay so the result stays aligned with the crate's other discrete
+    /// LTI representations.
+    pub fn delay(samples: usize, sample_time: R) -> Result<Self, LtiError> {
+        super::DiscreteZpk::delay(samples, sample_time)?.to_sos()
+    }
+
     /// Returns the steady-state gain `G(1)`.
     ///
     /// This evaluates the cascade directly at the discrete steady-state point

@@ -233,6 +233,15 @@ where
         self.domain.sample_time()
     }
 
+    /// Creates the exact `samples`-step pure delay `z^-samples`.
+    ///
+    /// In zero/pole/gain form this is represented by `samples` repeated poles
+    /// at the origin, no zeros, and unit gain.
+    pub fn delay(samples: usize, sample_time: R) -> Result<Self, LtiError> {
+        let zero = Complex::new(R::zero(), R::zero());
+        Self::discrete(Vec::new(), vec![zero; samples], R::one(), sample_time)
+    }
+
     /// Returns the steady-state gain `G(1)`.
     ///
     /// This evaluates the factored transfer map directly at the discrete
