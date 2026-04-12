@@ -1,6 +1,7 @@
 use crate::sum::twosum::TwoSum;
-use faer::{c32, c64};
+use faer::complex::Complex;
 use faer_traits::ComplexField;
+use faer_traits::RealField;
 use faer_traits::ext::ComplexFieldExt;
 use num_traits::Float;
 
@@ -72,14 +73,10 @@ impl CompensatedField for f64 {
     }
 }
 
-impl CompensatedField for c32 {
-    #[inline]
-    fn from_real_imag(real: Self::Real, imag: Self::Real) -> Self {
-        Self::new(real, imag)
-    }
-}
-
-impl CompensatedField for c64 {
+impl<R> CompensatedField for Complex<R>
+where
+    R: Float + Copy + RealField,
+{
     #[inline]
     fn from_real_imag(real: Self::Real, imag: Self::Real) -> Self {
         Self::new(real, imag)

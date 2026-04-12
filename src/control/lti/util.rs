@@ -1,5 +1,6 @@
 use super::error::LtiError;
 use super::{ContinuousTime, DiscreteTime};
+use crate::decomp::dense_eigenvalues;
 use faer::Mat;
 use faer::complex::Complex;
 use faer_traits::RealField;
@@ -185,7 +186,11 @@ pub(crate) fn poly_roots<R: Float + Copy + RealField>(
     for row in 0..degree {
         companion[(row, degree - 1)] = -(coeffs[degree - row] * lead_inv);
     }
-    let mut roots = companion.eigenvalues()?;
+    let mut roots = dense_eigenvalues(companion.as_ref())?
+        .try_as_col_major()
+        .unwrap()
+        .as_slice()
+        .to_vec();
     roots.sort_by(compare_roots);
     Ok(roots)
 }

@@ -3,6 +3,7 @@ use super::state_space::{
     ContinuousStateSpace, DiscreteStateSpace, SparseContinuousStateSpace, SparseDiscreteStateSpace,
     SparseStateSpace, StateSpace,
 };
+use crate::decomp::dense_eigenvalues;
 use crate::sparse::lu::SparseLu;
 use faer::complex::Complex;
 use faer::linalg::lu::partial_pivoting::factor::PartialPivLuParams;
@@ -26,7 +27,11 @@ where
     /// then by descending imaginary part. That gives deterministic output for
     /// testing and for later comparison across alternate representations.
     pub fn poles(&self) -> Result<Vec<Complex<T::Real>>, LtiError> {
-        let mut poles = self.a.eigenvalues()?;
+        let mut poles = dense_eigenvalues(self.a())?
+            .try_as_col_major()
+            .unwrap()
+            .as_slice()
+            .to_vec();
         poles.sort_by(|lhs, rhs| compare_poles(*lhs, *rhs));
         Ok(poles)
     }

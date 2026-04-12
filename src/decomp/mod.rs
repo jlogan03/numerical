@@ -26,8 +26,9 @@ pub mod operator;
 pub mod svd;
 
 pub use eigen::{
-    dense_self_adjoint_eigen, sparse_self_adjoint_eigen, sparse_self_adjoint_eigen_scratch_req,
-    sparse_self_adjoint_eigen_with_scratch,
+    dense_eigen, dense_eigenvalues, dense_generalized_eigen, dense_self_adjoint_eigen,
+    sparse_eigen, sparse_eigen_scratch_req, sparse_eigen_with_scratch, sparse_self_adjoint_eigen,
+    sparse_self_adjoint_eigen_scratch_req, sparse_self_adjoint_eigen_with_scratch,
 };
 pub use operator::{CompensatedApply, CompensatedBiApply, CompensatedBiLinOp, CompensatedLinOp};
 pub use svd::{dense_svd, sparse_svd, sparse_svd_scratch_req, sparse_svd_with_scratch};
@@ -130,6 +131,23 @@ impl<T: ComplexField> PartialEigen<T> {
         }
         lambda
     }
+}
+
+/// Generalized eigendecomposition result.
+///
+/// The columns of `vectors` are ordered to match the generalized eigenpairs
+/// `(alpha, beta)`. The implied generalized eigenvalues are `alpha / beta`
+/// wherever `beta` is nonzero.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PartialGeneralizedEigen<T: ComplexField> {
+    /// Generalized eigen numerator factors.
+    pub alpha: Col<T>,
+    /// Generalized eigen denominator factors.
+    pub beta: Col<T>,
+    /// Corresponding right generalized eigenvectors, one per column.
+    pub vectors: Mat<T>,
+    /// Convergence and quality diagnostics.
+    pub info: DecompInfo<T::Real>,
 }
 
 /// Builder-style parameters for dense decomposition entry points.
@@ -318,6 +336,8 @@ pub enum DecompError {
     DenseSvd(faer::linalg::solvers::SvdError),
     /// The dense eigendecomposition backend failed.
     DenseEvd(faer::linalg::solvers::EvdError),
+    /// The dense generalized eigendecomposition backend failed.
+    DenseGevd(faer::linalg::solvers::GevdError),
 }
 
 impl fmt::Display for DecompError {
@@ -337,6 +357,12 @@ impl From<faer::linalg::solvers::SvdError> for DecompError {
 impl From<faer::linalg::solvers::EvdError> for DecompError {
     fn from(value: faer::linalg::solvers::EvdError) -> Self {
         Self::DenseEvd(value)
+    }
+}
+
+impl From<faer::linalg::solvers::GevdError> for DecompError {
+    fn from(value: faer::linalg::solvers::GevdError) -> Self {
+        Self::DenseGevd(value)
     }
 }
 

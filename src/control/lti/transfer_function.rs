@@ -6,6 +6,7 @@ use super::util::{
 };
 use super::zpk::Zpk;
 use super::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
+use crate::decomp::dense_eigenvalues;
 use faer::complex::Complex;
 use faer::prelude::Solve;
 use faer::{Mat, MatRef};
@@ -438,7 +439,11 @@ where
         return TransferFunction::new(vec![d[(0, 0)]], vec![R::one()], domain);
     }
 
-    let poles = a.eigenvalues()?;
+    let poles = dense_eigenvalues(a)?
+        .try_as_col_major()
+        .unwrap()
+        .as_slice()
+        .to_vec();
     let denominator = real_poly_from_roots(&poles, "state_space_poles")?;
     let numerator = interpolate_numerator(a, b, c, d, &denominator)?;
     TransferFunction::new(numerator, denominator, domain)

@@ -14,6 +14,10 @@
 //! state-feedback gain and a post-solve stabilizing check on the recovered
 //! closed-loop matrix.
 
+use crate::decomp::{
+    DecompError, DenseDecompParams, dense_eigen, dense_eigenvalues, dense_generalized_eigen,
+};
+use crate::sparse::col::col_slice;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use crate::sum::twosum::TwoSum;
 use core::fmt;
@@ -102,6 +106,22 @@ impl From<GevdError> for RiccatiError {
     }
 }
 
+fn expect_dense_evd(err: DecompError) -> RiccatiError {
+    match err {
+        DecompError::DenseEvd(err) => RiccatiError::Eigen(err),
+        other => unreachable!("unexpected dense_eigen error in Riccati solver: {other:?}"),
+    }
+}
+
+fn expect_dense_gevd(err: DecompError) -> RiccatiError {
+    match err {
+        DecompError::DenseGevd(err) => RiccatiError::GeneralizedEigen(err),
+        other => {
+            unreachable!("unexpected dense_generalized_eigen error in Riccati solver: {other:?}")
+        }
+    }
+}
+
 /// Solves the dense continuous-time algebraic Riccati equation
 ///
 /// `A^H X + X A - X B R^-1 B^H X + Q = 0`
@@ -140,13 +160,16 @@ where
         to_complex_mat(g.as_ref()).as_ref(),
         to_complex_mat(q).as_ref(),
     );
-    let eig = hamiltonian.eigen()?;
+    let eig = dense_eigen(
+        hamiltonian.as_ref(),
+        &DenseDecompParams::<Complex<T::Real>>::new(),
+    )
+    .map_err(expect_dense_evd)?;
 
-    let eig_values = diag_values(eig.S().column_vector());
     // The stabilizing CARE solution is determined by the invariant subspace
     // associated with the Hamiltonian eigenvalues in the open left half-plane.
-    let stable = stable_columns_from_eigen(&eig_values, tol);
-    let (u1, u2) = partition_subspace(eig.U(), a.nrows(), &stable)?;
+    let stable = stable_columns_from_eigen(col_slice(&eig.values), tol);
+    let (u1, u2) = partition_subspace(eig.vectors.as_ref(), a.nrows(), &stable)?;
     // Writing the stable basis as `[U1; U2]` gives the Riccati solution
     // through the graph relation `X = U2 U1^-1`.
     let mut solution_c = solve_right_checked(
@@ -216,14 +239,13 @@ where
         to_complex_mat(g.as_ref()).as_ref(),
         to_complex_mat(q).as_ref(),
     );
-    let gevd = h.generalized_eigen(j.as_ref())?;
-    let alpha = diag_values(gevd.S_a().column_vector());
-    let beta = diag_values(gevd.S_b().column_vector());
+    let gevd = dense_generalized_eigen(h.as_ref(), j.as_ref()).map_err(expect_dense_gevd)?;
     // For the symplectic pencil, the stabilizing solution is determined by the
     // invariant subspace whose generalized eigenvalues lie strictly inside the
     // unit disk.
-    let stable = stable_columns_from_generalized_eigen(&alpha, &beta, tol);
-    let (u1, u2) = partition_subspace(gevd.U(), a.nrows(), &stable)?;
+    let stable =
+        stable_columns_from_generalized_eigen(col_slice(&gevd.alpha), col_slice(&gevd.beta), tol);
+    let (u1, u2) = partition_subspace(gevd.vectors.as_ref(), a.nrows(), &stable)?;
     let mut solution_c = solve_right_checked(
         u1.as_ref(),
         u2.as_ref(),
@@ -624,7 +646,12 @@ where
     T::Real: Float + Copy + RealField,
 {
     let closed_loop = dense_sub(a, dense_mul(b, k).as_ref());
-    let poles = closed_loop.eigenvalues().map_err(RiccatiError::Eigen)?;
+    let poles = dense_eigenvalues(closed_loop.as_ref())
+        .map_err(expect_dense_evd)?
+        .try_as_col_major()
+        .unwrap()
+        .as_slice()
+        .to_vec();
     Ok(poles.into_iter().all(|pole| pole.re < -tol))
 }
 
@@ -639,7 +666,12 @@ where
     T::Real: Float + Copy + RealField,
 {
     let closed_loop = dense_sub(a, dense_mul(b, k).as_ref());
-    let poles = closed_loop.eigenvalues().map_err(RiccatiError::Eigen)?;
+    let poles = dense_eigenvalues(closed_loop.as_ref())
+        .map_err(expect_dense_evd)?
+        .try_as_col_major()
+        .unwrap()
+        .as_slice()
+        .to_vec();
     Ok(poles
         .into_iter()
         .all(|pole| pole.norm() < <T::Real as One>::one() - tol))
@@ -844,10 +876,6 @@ where
         }
     }
     acc.sqrt()
-}
-
-fn diag_values<T: Copy>(diag: faer::ColRef<'_, T>) -> Vec<T> {
-    (0..diag.nrows()).map(|i| diag[i]).collect()
 }
 
 #[cfg(test)]
