@@ -15,10 +15,10 @@
 //! - Bessel, analog only
 //! - lowpass / highpass / bandpass / bandstop
 //!
-//! Digital Bessel design is intentionally rejected. A bilinear-transformed
-//! Bessel filter is mathematically possible, but the current API refuses it so
-//! users are not misled into expecting classical Bessel group-delay behavior
-//! from the resulting digital filter.
+//! Digital Bessel design is intentionally not exposed in the digital family
+//! enum. A bilinear-transformed Bessel filter is mathematically possible, but
+//! the current API omits it so users are not misled into expecting classical
+//! Bessel group-delay behavior from the resulting digital filter.
 
 mod digital;
 mod error;
@@ -43,6 +43,10 @@ use faer_traits::RealField;
 use num_traits::Float;
 
 /// Designs an analog IIR filter and returns it in `Zpk` form.
+///
+/// This is the numerically preferred internal representation because prototype
+/// generation and frequency transformations operate directly on roots instead
+/// of high-order polynomials.
 pub fn design_analog_filter_zpk<R>(
     spec: &AnalogFilterSpec<R>,
 ) -> Result<ContinuousZpk<R>, FilterDesignError>
@@ -54,6 +58,9 @@ where
 }
 
 /// Designs an analog IIR filter and returns it in `Sos` form.
+///
+/// `Sos` is usually the best practical representation for realized high-order
+/// filters because it localizes rounding error section by section.
 pub fn design_analog_filter_sos<R>(
     spec: &AnalogFilterSpec<R>,
 ) -> Result<ContinuousSos<R>, FilterDesignError>
@@ -64,6 +71,9 @@ where
 }
 
 /// Designs an analog IIR filter and returns it in coefficient form.
+///
+/// This is mainly an interoperability view. High-order direct-form
+/// coefficients are more numerically fragile than `Zpk` or `Sos`.
 pub fn design_analog_filter_tf<R>(
     spec: &AnalogFilterSpec<R>,
 ) -> Result<ContinuousTransferFunction<R>, FilterDesignError>
@@ -74,6 +84,10 @@ where
 }
 
 /// Designs a digital IIR filter and returns it in `Zpk` form.
+///
+/// The implementation builds an analog prototype, applies the requested analog
+/// frequency transformation, optionally prewarps the cutoff frequencies, then
+/// maps the result through the bilinear transform.
 pub fn design_digital_filter_zpk<R>(
     spec: &DigitalFilterSpec<R>,
 ) -> Result<DiscreteZpk<R>, FilterDesignError>
@@ -85,7 +99,6 @@ where
         DigitalFilterFamily::Chebyshev1 { ripple_db } => {
             AnalogFilterFamily::Chebyshev1 { ripple_db }
         }
-        DigitalFilterFamily::Bessel => return Err(FilterDesignError::UnsupportedDigitalBessel),
     };
     let analog_spec = AnalogFilterSpec::new(
         spec.order,
@@ -97,6 +110,8 @@ where
 }
 
 /// Designs a digital IIR filter and returns it in `Sos` form.
+///
+/// This is the recommended output form for practical digital filtering.
 pub fn design_digital_filter_sos<R>(
     spec: &DigitalFilterSpec<R>,
 ) -> Result<DiscreteSos<R>, FilterDesignError>
@@ -107,6 +122,9 @@ where
 }
 
 /// Designs a digital IIR filter and returns it in coefficient form.
+///
+/// This is kept for interoperability and inspection. For numerically sensitive
+/// high-order filters, prefer `design_digital_filter_sos`.
 pub fn design_digital_filter_tf<R>(
     spec: &DigitalFilterSpec<R>,
 ) -> Result<DiscreteTransferFunction<R>, FilterDesignError>
@@ -119,9 +137,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        AnalogFilterFamily, AnalogFilterSpec, DigitalFilterFamily, DigitalFilterSpec,
-        FilterDesignError, FilterShape, design_analog_filter_sos, design_analog_filter_tf,
-        design_analog_filter_zpk, design_digital_filter_tf, design_digital_filter_zpk,
+        AnalogFilterFamily, AnalogFilterSpec, DigitalFilterFamily, DigitalFilterSpec, FilterShape,
+        design_analog_filter_sos, design_analog_filter_tf, design_analog_filter_zpk,
+        design_digital_filter_tf, design_digital_filter_zpk,
     };
     use faer::complex::Complex;
 
@@ -215,17 +233,5 @@ mod tests {
         let phase = center_omega / 100.0;
         let center = tf.evaluate(Complex::new(phase.cos(), phase.sin())).norm();
         assert!(center > dc);
-    }
-
-    #[test]
-    fn digital_bessel_is_rejected_explicitly() {
-        let spec = DigitalFilterSpec::new(
-            3,
-            DigitalFilterFamily::Bessel,
-            FilterShape::Lowpass { cutoff: 10.0 },
-            100.0,
-        )
-        .unwrap_err();
-        assert!(matches!(spec, FilterDesignError::UnsupportedDigitalBessel));
     }
 }

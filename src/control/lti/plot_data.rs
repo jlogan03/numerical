@@ -1,3 +1,9 @@
+//! Plotting-oriented LTI data helpers.
+//!
+//! This module deliberately stops at data generation. Rendering stays outside
+//! the crate, but callers can reuse these helpers to produce consistent Bode
+//! and pole-zero inputs from any supported SISO LTI representation.
+
 use super::{
     ContinuousSos, ContinuousStateSpace, ContinuousTransferFunction, ContinuousZpk, DiscreteSos,
     DiscreteStateSpace, DiscreteTransferFunction, DiscreteZpk, LtiError,
@@ -31,6 +37,9 @@ where
     R: Float + Copy + RealField,
 {
     /// Evaluates bode magnitude and phase on an angular-frequency grid.
+    ///
+    /// The grid is interpreted in continuous-time angular frequency units and
+    /// evaluated at `s = j * omega`.
     pub fn bode_data(&self, angular_frequencies: &[R]) -> Result<BodeData<R>, LtiError> {
         bode_from_evaluator(angular_frequencies, |omega| {
             Ok(self.evaluate(Complex::new(R::zero(), omega)))
@@ -52,6 +61,9 @@ where
     R: Float + Copy + RealField,
 {
     /// Evaluates bode magnitude and phase on an angular-frequency grid.
+    ///
+    /// The grid is interpreted in physical angular frequency units and mapped
+    /// to the unit circle as `z = exp(j * omega * dt)`.
     pub fn bode_data(&self, angular_frequencies: &[R]) -> Result<BodeData<R>, LtiError> {
         let dt = self.sample_time();
         bode_from_evaluator(angular_frequencies, |omega| {
@@ -155,6 +167,9 @@ where
     R: Float + Copy + RealField,
 {
     /// Evaluates bode magnitude and phase for a dense real SISO model.
+    ///
+    /// The state-space helper stays SISO-only because the plotting-oriented
+    /// output format here is a single complex response value per frequency.
     pub fn bode_data(&self, angular_frequencies: &[R]) -> Result<BodeData<R>, LtiError> {
         if !self.is_siso() {
             return Err(LtiError::NonSisoStateSpace {
@@ -183,6 +198,9 @@ where
     R: Float + Copy + RealField,
 {
     /// Evaluates bode magnitude and phase for a dense real SISO model.
+    ///
+    /// The discrete path uses the same unit-circle mapping as the transfer-
+    /// function and ZPK helpers.
     pub fn bode_data(&self, angular_frequencies: &[R]) -> Result<BodeData<R>, LtiError> {
         if !self.is_siso() {
             return Err(LtiError::NonSisoStateSpace {
@@ -216,6 +234,8 @@ where
     R: Float + Copy + RealField,
     F: FnMut(R) -> Result<Complex<R>, LtiError>,
 {
+    // Keep the plotting layer opinionated but minimal: validate the grid, then
+    // turn complex samples into log-magnitude and wrapped phase.
     let mut magnitude_db = Vec::with_capacity(angular_frequencies.len());
     let mut phase_deg = Vec::with_capacity(angular_frequencies.len());
     for &omega in angular_frequencies {
@@ -237,6 +257,8 @@ fn wrap_phase_deg<R>(phase_deg: R) -> R
 where
     R: Float + Copy + RealField,
 {
+    // Generic `Float` does not provide `rem_euclid`, so wrap manually with a
+    // floor-based modulus.
     let period = R::from(360.0).unwrap();
     let half = R::from(180.0).unwrap();
     let shifted = phase_deg + half;

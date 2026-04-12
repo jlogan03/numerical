@@ -1,3 +1,9 @@
+//! Analog lowpass prototype generation.
+//!
+//! The public design layer builds every supported filter from one of these
+//! normalized lowpass prototypes before applying the requested analog shape
+//! transform.
+
 use super::error::FilterDesignError;
 use super::spec::AnalogFilterFamily;
 use crate::control::lti::util::poly_roots;
@@ -31,6 +37,8 @@ where
     let mut poles = Vec::with_capacity(order);
     for k in 0..order {
         let k = R::from(k).unwrap();
+        // Butterworth poles lie uniformly on the unit semicircle in the left
+        // half-plane after normalization.
         let theta = pi * (two * k + n + R::one()) / (two * n);
         poles.push(Complex::new(theta.cos(), theta.sin()));
     }
@@ -46,6 +54,8 @@ where
     R: Float + Copy + RealField,
 {
     let n = R::from(order).unwrap();
+    // Type-I Chebyshev prototypes are parameterized by passband ripple via the
+    // standard epsilon / asinh transform of the Butterworth pole angles.
     let epsilon = (R::from(10.0)
         .unwrap()
         .powf(ripple_db / R::from(10.0).unwrap())
@@ -76,6 +86,8 @@ fn bessel_prototype<R>(order: usize) -> Result<ContinuousZpk<R>, FilterDesignErr
 where
     R: Float + Copy + RealField,
 {
+    // Reverse Bessel polynomials are tabulated in coefficient form. The roots
+    // of that polynomial are the normalized Bessel poles.
     let denominator = reverse_bessel_denominator::<R>(order);
     let poles = poly_roots(&denominator)?;
     let gain = gain_for_dc_target::<R>(&[], &poles, R::one())?;
@@ -107,6 +119,9 @@ fn gain_for_dc_target<R>(
 where
     R: Float + Copy + RealField,
 {
+    // The prototype builders naturally determine poles, but not always the
+    // real scalar gain convention we want. Normalize here so the lowpass
+    // response has the requested value at s = 0.
     let num = zeros
         .iter()
         .fold(Complex::new(R::one(), R::zero()), |acc, &zero| acc * -zero);

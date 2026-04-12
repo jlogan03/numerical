@@ -1,3 +1,9 @@
+//! Analog frequency-shape and bilinear transforms.
+//!
+//! These helpers keep the design pipeline in root form for as long as
+//! possible, which is materially more stable than repeatedly converting
+//! through high-order polynomials.
+
 use super::error::FilterDesignError;
 use super::spec::FilterShape;
 use crate::control::lti::{ContinuousTime, ContinuousZpk, DiscreteTime, DiscreteZpk};
@@ -33,6 +39,9 @@ pub(super) fn bilinear_transform_zpk<R>(
 where
     R: Float + Copy + RealField,
 {
+    // The bilinear transform maps the stable left half-plane to the unit disk.
+    // Degree-balancing zeros land at z = -1 when the analog numerator has
+    // lower degree than the denominator.
     let fs2 = sample_rate + sample_rate;
     let fs2_c = Complex::new(fs2, R::zero());
     let z_degree = analog.poles().len().saturating_sub(analog.zeros().len());
@@ -144,6 +153,7 @@ where
         .saturating_sub(prototype.zeros().len());
     let mut zeros = Vec::with_capacity(prototype.zeros().len() * 2 + degree);
     for &zero in prototype.zeros() {
+        // Each lowpass root lifts to two bandpass roots.
         let root = zero * half_bw_c;
         let radical = (root * root - Complex::new(w0 * w0, R::zero())).sqrt();
         zeros.push(root + radical);
@@ -182,6 +192,8 @@ where
 
     let mut zeros = Vec::with_capacity(prototype.zeros().len() * 2 + degree * 2);
     for &zero in prototype.zeros() {
+        // Each lowpass root lifts to two bandstop roots; missing numerator
+        // degree is supplied by zeros at +/- j*w0.
         let root = Complex::new(half_bw, R::zero()) / zero;
         let radical = (root * root - Complex::new(w0 * w0, R::zero())).sqrt();
         zeros.push(root + radical);

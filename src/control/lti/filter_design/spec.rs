@@ -38,11 +38,6 @@ pub enum DigitalFilterFamily<R> {
     Butterworth,
     /// Equiripple passband with ripple specified in dB.
     Chebyshev1 { ripple_db: R },
-    /// Intentionally unsupported in the digital path.
-    ///
-    /// This variant exists so the API can reject digital Bessel design
-    /// explicitly instead of leaving the omission implicit.
-    Bessel,
 }
 
 /// Specification for analog filter design.
@@ -80,6 +75,9 @@ where
 ///
 /// The cutoff frequencies in `shape` are interpreted as physical angular
 /// frequencies. `sample_rate` is the sampling rate in samples per unit time.
+///
+/// The digital first pass intentionally supports only Butterworth and
+/// Chebyshev Type I families. Bessel remains analog-only.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DigitalFilterSpec<R> {
     /// Filter order.
@@ -179,7 +177,6 @@ fn validate_digital_family<R: Float + Copy + RealField>(
     match family {
         DigitalFilterFamily::Butterworth => Ok(()),
         DigitalFilterFamily::Chebyshev1 { ripple_db } => validate_ripple(ripple_db),
-        DigitalFilterFamily::Bessel => Err(FilterDesignError::UnsupportedDigitalBessel),
     }
 }
 

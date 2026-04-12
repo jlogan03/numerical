@@ -14,8 +14,6 @@ pub enum FilterDesignError {
     InvalidBandEdges,
     /// Sample rate must be positive and finite.
     InvalidSampleRate,
-    /// The requested digital Bessel design is intentionally unsupported.
-    UnsupportedDigitalBessel,
     /// A lower-level LTI conversion or root-extraction helper failed.
     Lti(LtiError),
 }
