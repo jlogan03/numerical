@@ -19,6 +19,7 @@ pub mod identification;
 pub mod lti;
 pub mod lyapunov;
 pub mod realization;
+pub mod riccati;
 pub mod state_space;
 pub mod stein;
 
@@ -43,6 +44,10 @@ pub use lyapunov::{
 pub use realization::{
     BlockHankel, MarkovSequence, RealizationError, ShiftedBlockHankelPair, hankel_matrix_shape,
     max_square_era_block_dim, recommended_square_era_block_dim, required_markov_len,
+};
+pub use riccati::{
+    RiccatiError, RiccatiSolve, care_gain_from_solution, dare_gain_from_solution, solve_care_dense,
+    solve_dare_dense,
 };
 pub use state_space::{
     ContinuousStateSpace, ContinuousTime, ContinuousizationMethod, DiscreteStateSpace,
