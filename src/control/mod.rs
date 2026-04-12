@@ -6,6 +6,8 @@
 //! - `lyapunov`, `stein`, and `hsvd` provide reusable matrix-equation and
 //!   balancing-core numerics
 //! - `balanced` builds reduced-order models on top of those lower-level pieces
+//! - `riccati`, `lqr`, `estimator`, `lqg`, and `pid` provide controller and
+//!   estimator design plus practical runtime controller wrappers
 //!
 //! The current public surface is still dense-first for higher-level model
 //! manipulation, but it now includes selected sparse state-space workflows on
@@ -21,6 +23,7 @@ pub mod lqg;
 pub mod lqr;
 pub mod lti;
 pub mod lyapunov;
+pub mod pid;
 pub mod realization;
 pub mod riccati;
 pub mod state_space;
@@ -51,6 +54,7 @@ pub use lyapunov::{
     ShiftStrategy, controllability_gramian_dense, controllability_gramian_low_rank,
     observability_gramian_dense, observability_gramian_low_rank, solve_continuous_lyapunov_dense,
 };
+pub use pid::{AntiWindup, Pid, PidError, PidOutput, PidState};
 pub use realization::{
     BlockHankel, MarkovSequence, RealizationError, ShiftedBlockHankelPair, hankel_matrix_shape,
     max_square_era_block_dim, recommended_square_era_block_dim, required_markov_len,
