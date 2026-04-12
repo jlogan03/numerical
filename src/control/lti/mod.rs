@@ -11,6 +11,7 @@
 //!
 //! - dense state-space analysis lives in `analysis`
 //! - dense sampled responses live in `response`
+//! - fixed-timestep digital filtering helpers live in `sim`
 //! - real-coefficient SISO alternate representations live in
 //!   `transfer_function`, `zpk`, and `sos`
 //! - sparse CSC-backed state-space models support transfer evaluation,

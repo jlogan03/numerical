@@ -62,6 +62,9 @@ pub enum LtiError {
     /// A second-order-section cascade must contain at least one section.
     EmptySos,
     /// A supplied filter-runtime state object has the wrong structural length.
+    ///
+    /// This is used by the stateful SOS simulation path, where callers can
+    /// retain and reuse per-section delay state across multiple chunks.
     InvalidFilterStateLength {
         which: &'static str,
         expected: usize,

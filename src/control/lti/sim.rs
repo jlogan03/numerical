@@ -68,6 +68,9 @@ pub struct FiltFiltParams {
 
 impl Default for FiltFiltParams {
     fn default() -> Self {
+        // Odd reflection is the practical default for IIR `filtfilt` because
+        // it suppresses endpoint transients better than constant extension or
+        // no padding, without growing the public API too much.
         Self {
             mode: FiltFiltPadMode::OddReflection,
             len: FiltFiltPadLen::Auto,
@@ -122,6 +125,10 @@ where
     R: Float + Copy + RealField + CompensatedField,
 {
     /// Filters one input slice causally with zero initial section state.
+    ///
+    /// This is the simple one-shot path. Use
+    /// [`filter_forward_stateful`](Self::filter_forward_stateful) when chunked
+    /// processing needs to preserve section delay state across calls.
     pub fn filter_forward(&self, input: &[R]) -> Result<FilteredSignal<R>, LtiError> {
         let mut state = SosFilterState::zeros(self.sections().len());
         self.filter_forward_stateful(&mut state, input)
@@ -129,6 +136,10 @@ where
 
     /// Filters one input slice causally while updating a caller-supplied SOS
     /// runtime state.
+    ///
+    /// The runtime form is direct-form II transposed per section. That keeps
+    /// the state compact and matches the numerically sensible execution model
+    /// for high-order IIR filters represented as SOS cascades.
     pub fn filter_forward_stateful(
         &self,
         state: &mut SosFilterState<R>,
@@ -150,6 +161,11 @@ where
 
     /// Runs forward-backward zero-phase filtering with explicit padding
     /// control.
+    ///
+    /// The first implementation deliberately uses zero initial state on both
+    /// passes and relies on endpoint padding to reduce startup transients. It
+    /// also shortens the requested padding automatically when the input is too
+    /// short to support the nominal length.
     pub fn filtfilt_with_params(
         &self,
         input: &[R],
@@ -165,6 +181,8 @@ where
         let mut first_pass = Vec::with_capacity(total_len);
         let mut state = SosFilterState::zeros(self.sections().len());
         for idx in 0..total_len {
+            // Materialize only one padded sample at a time instead of building
+            // a fully padded copy of the input signal.
             let sample = padded_sample(input, params.mode, pad_len, idx);
             first_pass.push(sos_step(self, &mut state.section_state, sample));
         }
@@ -189,6 +207,9 @@ where
     R: Float + Copy + RealField + CompensatedField,
 {
     /// Creates a zero-initialized state sized for a particular filter.
+    ///
+    /// This avoids forcing callers to reach into the filter to size the state
+    /// vector manually.
     #[must_use]
     pub fn for_filter(filter: &DiscreteSos<R>) -> Self {
         Self::zeros(filter.sections().len())
@@ -200,6 +221,9 @@ where
     R: Float + Copy + RealField + CompensatedField,
 {
     /// Filters one input slice causally with zero initial state.
+    ///
+    /// The returned `final_state` is useful for manual chunked workflows even
+    /// though the first pass does not expose a dedicated streaming wrapper.
     pub fn filter_forward(
         &self,
         input: &[R],
@@ -209,6 +233,10 @@ where
     }
 
     /// Filters one input slice causally from a caller-supplied initial state.
+    ///
+    /// This path intentionally reuses the same state-update law as the broader
+    /// discrete simulation layer, but returns only the SISO output sequence and
+    /// final state instead of a full trajectory matrix.
     pub fn filter_forward_with_state(
         &self,
         x0: &[R],
@@ -233,6 +261,9 @@ where
 
     /// Runs forward-backward zero-phase filtering with explicit padding
     /// control.
+    ///
+    /// As in the SOS path, padding is shortened automatically on short input
+    /// records instead of producing a dedicated "input too short" error.
     pub fn filtfilt_with_params(
         &self,
         input: &[R],
@@ -317,6 +348,9 @@ where
 }
 
 fn resolve_pad_len(input_len: usize, params: &FiltFiltParams, auto_len: usize) -> usize {
+    // The public API exposes `Auto` or `Exact`, but the runtime always works
+    // with a concrete effective padding length after representation-specific
+    // defaulting and input-length clamping.
     let requested = match params.len {
         FiltFiltPadLen::Auto => auto_len,
         FiltFiltPadLen::Exact(value) => value,
@@ -325,6 +359,9 @@ fn resolve_pad_len(input_len: usize, params: &FiltFiltParams, auto_len: usize) -
 }
 
 fn clamp_pad_len(input_len: usize, mode: FiltFiltPadMode, requested: usize) -> usize {
+    // Reflection needs one interior sample beyond the endpoint, so it can use
+    // at most `input.len() - 1`. Constant padding can extend by the full input
+    // length because it does not dereference interior reflected samples.
     let max_len = match mode {
         FiltFiltPadMode::None => 0,
         FiltFiltPadMode::OddReflection | FiltFiltPadMode::EvenReflection => {
@@ -344,6 +381,8 @@ where
         let reflected = pad_len - idx;
         match mode {
             FiltFiltPadMode::None => input[idx],
+            // Odd reflection preserves endpoint value and approximately
+            // preserves local slope, which is why it is the default.
             FiltFiltPadMode::OddReflection => input[0] + (input[0] - input[reflected]),
             FiltFiltPadMode::EvenReflection => input[reflected],
             FiltFiltPadMode::Constant => input[0],
@@ -381,6 +420,8 @@ where
     R: Float + Copy + RealField + CompensatedField,
     F: FnMut(usize) -> R,
 {
+    // The generator-based form lets the `filtfilt` path feed logically padded
+    // samples without allocating a second full input buffer.
     let mut output = Vec::with_capacity(len);
     let mut next_state = vec![R::zero(); system.nstates()];
     for idx in 0..len {
@@ -399,6 +440,9 @@ fn state_space_step<R>(
 where
     R: Float + Copy + RealField + CompensatedField,
 {
+    // Keep the state-space runtime aligned with the general discrete
+    // simulation semantics: output is evaluated from the current state before
+    // the state update is applied.
     let mut output_acc = CompensatedSum::<R>::default();
     for col in 0..system.nstates() {
         output_acc.add(system.c()[(0, col)] * state[col]);
@@ -426,6 +470,13 @@ where
     for (section, state) in system.sections().iter().zip(section_state.iter_mut()) {
         let [b0, b1, b2] = section.numerator();
         let [_one, a1, a2] = section.denominator();
+        // Direct-form II transposed:
+        //
+        // y[n]   = b0 x[n] + s1[n-1]
+        // s1[n]  = b1 x[n] - a1 y[n] + s2[n-1]
+        // s2[n]  = b2 x[n] - a2 y[n]
+        //
+        // The section output becomes the next section input.
         let y = sum2(b0 * sample, state[0]);
         let next_s1 = sum3(b1 * sample, -(a1 * y), state[1]);
         let next_s2 = b2 * sample - a2 * y;
