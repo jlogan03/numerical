@@ -24,6 +24,7 @@ pub mod lqr;
 pub mod lti;
 pub mod lyapunov;
 pub mod pid;
+pub mod pid_design;
 pub mod realization;
 pub mod riccati;
 pub mod state_space;
@@ -55,6 +56,13 @@ pub use lyapunov::{
     observability_gramian_dense, observability_gramian_low_rank, solve_continuous_lyapunov_dense,
 };
 pub use pid::{AntiWindup, Pid, PidError, PidOutput, PidState};
+pub use pid_design::{
+    FopdtModel, PidControllerKind, PidDesignError, ProcessFitResult, ProcessPidDesign,
+    SimcPidParams, SopdtModel, StepFitPidDesign, StepResponseData, design_pid_from_fopdt,
+    design_pid_from_sopdt, design_pid_from_step_response_fopdt,
+    design_pid_from_step_response_sopdt, fit_fopdt_from_step_response,
+    fit_sopdt_from_step_response,
+};
 pub use realization::{
     BlockHankel, MarkovSequence, RealizationError, ShiftedBlockHankelPair, hankel_matrix_shape,
     max_square_era_block_dim, recommended_square_era_block_dim, required_markov_len,
