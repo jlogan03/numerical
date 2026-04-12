@@ -22,6 +22,12 @@ pub enum StateSpaceError {
     },
     /// A discrete-time sample interval must be positive and finite.
     InvalidSampleTime,
+    /// Two discrete-time systems cannot be composed because their sample
+    /// intervals do not match closely enough.
+    ///
+    /// Composition helpers intentionally reject mixed sample times instead of
+    /// silently treating nearly-related sampled systems as equivalent models.
+    MismatchedSampleTime,
     /// A bilinear prewarp frequency must be finite and nonnegative.
     InvalidPrewarpFrequency,
     /// A conversion required solving against a singular or numerically

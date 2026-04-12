@@ -33,6 +33,7 @@ use super::stein::{
 use crate::sparse::compensated::CompensatedField;
 use faer::{Mat, MatRef};
 use faer_traits::ComplexField;
+use faer_traits::ext::ComplexFieldExt;
 use num_traits::{Float, Zero};
 
 /// Dense linear time-invariant state-space system.
@@ -58,6 +59,21 @@ pub type ContinuousStateSpace<T> = StateSpace<T, ContinuousTime>;
 
 /// Dense discrete-time state-space system.
 pub type DiscreteStateSpace<T> = StateSpace<T, DiscreteTime<<T as ComplexField>::Real>>;
+
+/// Result of composing a plant with an observer-based state-feedback
+/// controller.
+///
+/// `controller` is the standalone dynamic controller realization driven by the
+/// concatenated input `[r; y]`, where `r` is the external reference/disturbance
+/// input and `y` is the measured plant output. `closed_loop` is the resulting
+/// plant-plus-controller closed-loop system driven only by `r`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ObserverControllerComposition<T, Domain> {
+    /// Standalone dynamic controller realization.
+    pub controller: StateSpace<T, Domain>,
+    /// Augmented closed-loop plant/controller realization.
+    pub closed_loop: StateSpace<T, Domain>,
+}
 
 impl<T, Domain> StateSpace<T, Domain> {
     /// Number of states.
@@ -174,6 +190,102 @@ where
 
 impl<T> ContinuousStateSpace<T>
 where
+    T: ComplexField + Copy,
+{
+    /// Forms the parallel sum of two continuous-time systems.
+    ///
+    /// Both systems must have the same input and output dimensions. The result
+    /// preserves the shared input and sums the two output channels.
+    pub fn parallel_add(&self, rhs: &Self) -> Result<Self, StateSpaceError> {
+        let (a, b, c, d) = parallel_parts(self, rhs, false)?;
+        Self::new(a, b, c, d)
+    }
+
+    /// Forms the parallel difference `self - rhs` of two continuous-time
+    /// systems.
+    pub fn parallel_sub(&self, rhs: &Self) -> Result<Self, StateSpaceError> {
+        let (a, b, c, d) = parallel_parts(self, rhs, true)?;
+        Self::new(a, b, c, d)
+    }
+
+    /// Forms the series interconnection `u -> self -> next`.
+    ///
+    /// The output dimension of `self` must match the input dimension of
+    /// `next`. The resulting system keeps the input channels of `self` and the
+    /// output channels of `next`.
+    pub fn series(&self, next: &Self) -> Result<Self, StateSpaceError> {
+        let (a, b, c, d) = series_parts(self, next)?;
+        Self::new(a, b, c, d)
+    }
+
+    /// Forms the side-by-side block-diagonal append of two systems.
+    ///
+    /// The appended system has independent input and output channels for the
+    /// two subsystems and is useful as a structural building block for larger
+    /// interconnections.
+    pub fn append(&self, rhs: &Self) -> Result<Self, StateSpaceError> {
+        let (a, b, c, d) = append_parts(self, rhs);
+        Self::new(a, b, c, d)
+    }
+
+    /// Closes static state feedback with the convention `u = u_ext - K x`.
+    ///
+    /// The returned system preserves the original external input channels
+    /// `u_ext`; it does not eliminate them. This makes the helper suitable for
+    /// disturbance/reference analysis as well as controller assembly.
+    pub fn with_state_feedback(&self, k: MatRef<'_, T>) -> Result<Self, StateSpaceError> {
+        validate_state_feedback_gain(self, k)?;
+        let bk = dense_mul(self.b(), k)?;
+        let dk = dense_mul(self.d(), k)?;
+        let a = dense_sub(self.a(), bk.as_ref())?;
+        let c = dense_sub(self.c(), dk.as_ref())?;
+        Self::new(a, clone_mat(self.b()), c, clone_mat(self.d()))
+    }
+
+    /// Applies observer-style output injection with innovation gain `L`.
+    ///
+    /// The returned system uses the concatenated external input `[u; y_ext]`
+    /// and evolves according to
+    ///
+    /// `x' = (A - L C) x + (B - L D) u + L y_ext`
+    ///
+    /// while reporting the estimated output `C x + D u`.
+    pub fn with_output_injection(&self, l: MatRef<'_, T>) -> Result<Self, StateSpaceError> {
+        let (a, b, c, d) = output_injection_parts(self, l)?;
+        Self::new(a, b, c, d)
+    }
+
+    /// Builds the observer-based controller realization and the corresponding
+    /// augmented plant/controller closed-loop model.
+    ///
+    /// The controller implements `u = r - K x_hat` with observer gain `L`. The
+    /// returned `controller` takes the concatenated input `[r; y]`, while the
+    /// returned `closed_loop` is driven only by `r`.
+    pub fn observer_controller_augmented(
+        &self,
+        k: MatRef<'_, T>,
+        l: MatRef<'_, T>,
+    ) -> Result<ObserverControllerComposition<T, ContinuousTime>, StateSpaceError> {
+        let (controller, closed_loop) = observer_controller_parts(self, k, l)?;
+        Ok(ObserverControllerComposition {
+            controller: ContinuousStateSpace::new(
+                controller.0,
+                controller.1,
+                controller.2,
+                controller.3,
+            )?,
+            closed_loop: ContinuousStateSpace::new(
+                closed_loop.0,
+                closed_loop.1,
+                closed_loop.2,
+                closed_loop.3,
+            )?,
+        })
+    }
+}
+
+impl<T> ContinuousStateSpace<T>
+where
     T: CompensatedField,
     T::Real: Float + Copy + faer_traits::RealField,
 {
@@ -247,7 +359,7 @@ where
             d.nrows(),
             d.ncols(),
         )?;
-        if !sample_time.is_finite() || sample_time <= T::Real::zero() {
+        if !sample_time.is_finite() || sample_time <= <T::Real as Zero>::zero() {
             return Err(StateSpaceError::InvalidSampleTime);
         }
         Ok(Self {
@@ -277,6 +389,95 @@ where
     #[must_use]
     pub fn sample_time(&self) -> T::Real {
         self.domain.sample_time()
+    }
+}
+
+impl<T> DiscreteStateSpace<T>
+where
+    T: ComplexField + Copy,
+    T::Real: Float + Copy,
+{
+    /// Forms the parallel sum of two discrete-time systems.
+    pub fn parallel_add(&self, rhs: &Self) -> Result<Self, StateSpaceError> {
+        ensure_sample_time_match(self.sample_time(), rhs.sample_time())?;
+        let (a, b, c, d) = parallel_parts(self, rhs, false)?;
+        Self::new(a, b, c, d, self.sample_time())
+    }
+
+    /// Forms the parallel difference `self - rhs` of two discrete-time
+    /// systems.
+    pub fn parallel_sub(&self, rhs: &Self) -> Result<Self, StateSpaceError> {
+        ensure_sample_time_match(self.sample_time(), rhs.sample_time())?;
+        let (a, b, c, d) = parallel_parts(self, rhs, true)?;
+        Self::new(a, b, c, d, self.sample_time())
+    }
+
+    /// Forms the series interconnection `u -> self -> next`.
+    pub fn series(&self, next: &Self) -> Result<Self, StateSpaceError> {
+        ensure_sample_time_match(self.sample_time(), next.sample_time())?;
+        let (a, b, c, d) = series_parts(self, next)?;
+        Self::new(a, b, c, d, self.sample_time())
+    }
+
+    /// Forms the side-by-side block-diagonal append of two discrete-time
+    /// systems.
+    pub fn append(&self, rhs: &Self) -> Result<Self, StateSpaceError> {
+        ensure_sample_time_match(self.sample_time(), rhs.sample_time())?;
+        let (a, b, c, d) = append_parts(self, rhs);
+        Self::new(a, b, c, d, self.sample_time())
+    }
+
+    /// Closes static state feedback with the convention `u = u_ext - K x`.
+    pub fn with_state_feedback(&self, k: MatRef<'_, T>) -> Result<Self, StateSpaceError> {
+        validate_state_feedback_gain(self, k)?;
+        let bk = dense_mul(self.b(), k)?;
+        let dk = dense_mul(self.d(), k)?;
+        let a = dense_sub(self.a(), bk.as_ref())?;
+        let c = dense_sub(self.c(), dk.as_ref())?;
+        Self::new(
+            a,
+            clone_mat(self.b()),
+            c,
+            clone_mat(self.d()),
+            self.sample_time(),
+        )
+    }
+
+    /// Applies predictor-form output injection with innovation gain `L`.
+    ///
+    /// The returned system uses the concatenated external input `[u; y_ext]`
+    /// and evolves according to
+    ///
+    /// `x[k+1] = (A - L C) x[k] + (B - L D) u[k] + L y_ext[k]`.
+    pub fn with_output_injection(&self, l: MatRef<'_, T>) -> Result<Self, StateSpaceError> {
+        let (a, b, c, d) = output_injection_parts(self, l)?;
+        Self::new(a, b, c, d, self.sample_time())
+    }
+
+    /// Builds the observer-based controller realization and the corresponding
+    /// augmented plant/controller closed-loop model.
+    pub fn observer_controller_augmented(
+        &self,
+        k: MatRef<'_, T>,
+        l: MatRef<'_, T>,
+    ) -> Result<ObserverControllerComposition<T, DiscreteTime<T::Real>>, StateSpaceError> {
+        let (controller, closed_loop) = observer_controller_parts(self, k, l)?;
+        Ok(ObserverControllerComposition {
+            controller: DiscreteStateSpace::new(
+                controller.0,
+                controller.1,
+                controller.2,
+                controller.3,
+                self.sample_time(),
+            )?,
+            closed_loop: DiscreteStateSpace::new(
+                closed_loop.0,
+                closed_loop.1,
+                closed_loop.2,
+                closed_loop.3,
+                self.sample_time(),
+            )?,
+        })
     }
 }
 
@@ -379,12 +580,460 @@ fn validate_blocks(
     Ok(())
 }
 
+fn ensure_sample_time_match<R: Float + Copy>(lhs: R, rhs: R) -> Result<(), StateSpaceError> {
+    // Sample times are stored as floating scalars, so a tiny tolerance avoids
+    // turning harmless roundoff from conversions into composition failures.
+    let scale = R::one().max(lhs.abs()).max(rhs.abs());
+    let tol = R::epsilon() * scale * R::from(128.0).unwrap_or_else(R::one);
+    if (lhs - rhs).abs() <= tol {
+        Ok(())
+    } else {
+        Err(StateSpaceError::MismatchedSampleTime)
+    }
+}
+
+fn parallel_parts<T, Domain>(
+    lhs: &StateSpace<T, Domain>,
+    rhs: &StateSpace<T, Domain>,
+    subtract_rhs: bool,
+) -> Result<(Mat<T>, Mat<T>, Mat<T>, Mat<T>), StateSpaceError>
+where
+    T: ComplexField + Copy,
+{
+    ensure_same_io(
+        lhs,
+        rhs,
+        if subtract_rhs {
+            "parallel_sub"
+        } else {
+            "parallel_add"
+        },
+    )?;
+    let a = block_diag(lhs.a(), rhs.a());
+    let b = vcat(lhs.b(), rhs.b())?;
+    let rhs_c = if subtract_rhs {
+        negated(rhs.c())
+    } else {
+        clone_mat(rhs.c())
+    };
+    let rhs_d = if subtract_rhs {
+        negated(rhs.d())
+    } else {
+        clone_mat(rhs.d())
+    };
+    // Parallel composition keeps a shared input and stacks the two internal
+    // state vectors. The output map is then the horizontal concatenation of
+    // the two output maps, with the right side optionally negated.
+    let c = hcat(lhs.c(), rhs_c.as_ref())?;
+    let d = dense_add(lhs.d(), rhs_d.as_ref())?;
+    Ok((a, b, c, d))
+}
+
+fn series_parts<T, Domain>(
+    lhs: &StateSpace<T, Domain>,
+    rhs: &StateSpace<T, Domain>,
+) -> Result<(Mat<T>, Mat<T>, Mat<T>, Mat<T>), StateSpaceError>
+where
+    T: ComplexField + Copy,
+{
+    if lhs.noutputs() != rhs.ninputs() {
+        return Err(StateSpaceError::DimensionMismatch {
+            which: "series.io",
+            expected_nrows: lhs.noutputs(),
+            expected_ncols: 1,
+            actual_nrows: rhs.ninputs(),
+            actual_ncols: 1,
+        });
+    }
+
+    let top_right = Mat::zeros(lhs.nstates(), rhs.nstates());
+    let bottom_left = dense_mul(rhs.b(), lhs.c())?;
+    // The series state is `[x_lhs; x_rhs]`. The lower-left block carries the
+    // fact that the second subsystem is driven by the first subsystem's output
+    // `y_lhs = C_lhs x_lhs + D_lhs u`.
+    let a = block_matrix2x2(lhs.a(), top_right.as_ref(), bottom_left.as_ref(), rhs.a())?;
+    let b_lower = dense_mul(rhs.b(), lhs.d())?;
+    let b = vcat(lhs.b(), b_lower.as_ref())?;
+    let c_left = dense_mul(rhs.d(), lhs.c())?;
+    let c = hcat(c_left.as_ref(), rhs.c())?;
+    let d = dense_mul(rhs.d(), lhs.d())?;
+    Ok((a, b, c, d))
+}
+
+fn append_parts<T, Domain>(
+    lhs: &StateSpace<T, Domain>,
+    rhs: &StateSpace<T, Domain>,
+) -> (Mat<T>, Mat<T>, Mat<T>, Mat<T>)
+where
+    T: ComplexField + Copy,
+{
+    // Append is the pure block-diagonal structural primitive: it keeps the two
+    // systems independent and simply concatenates their state, input, and
+    // output channels.
+    (
+        block_diag(lhs.a(), rhs.a()),
+        block_diag(lhs.b(), rhs.b()),
+        block_diag(lhs.c(), rhs.c()),
+        block_diag(lhs.d(), rhs.d()),
+    )
+}
+
+fn output_injection_parts<T, Domain>(
+    system: &StateSpace<T, Domain>,
+    l: MatRef<'_, T>,
+) -> Result<(Mat<T>, Mat<T>, Mat<T>, Mat<T>), StateSpaceError>
+where
+    T: ComplexField + Copy,
+{
+    validate_output_injection_gain(system, l)?;
+    let lc = dense_mul(l, system.c())?;
+    let ld = dense_mul(l, system.d())?;
+    let a = dense_sub(system.a(), lc.as_ref())?;
+    let u_block = dense_sub(system.b(), ld.as_ref())?;
+    let y_block = clone_mat(l);
+    // The injected system is driven by `[u; y_ext]`, not just `u`. This keeps
+    // the innovation input explicit instead of hiding the measurement channel
+    // inside a special estimator-only type.
+    let b = hcat(u_block.as_ref(), y_block.as_ref())?;
+    let d = hcat(
+        system.d(),
+        Mat::<T>::zeros(system.noutputs(), system.noutputs()).as_ref(),
+    )?;
+    Ok((a, b, clone_mat(system.c()), d))
+}
+
+type Parts<T> = (Mat<T>, Mat<T>, Mat<T>, Mat<T>);
+
+fn observer_controller_parts<T, Domain>(
+    plant: &StateSpace<T, Domain>,
+    k: MatRef<'_, T>,
+    l: MatRef<'_, T>,
+) -> Result<(Parts<T>, Parts<T>), StateSpaceError>
+where
+    T: ComplexField + Copy,
+{
+    validate_state_feedback_gain(plant, k)?;
+    validate_output_injection_gain(plant, l)?;
+
+    let bk = dense_mul(plant.b(), k)?;
+    let lc = dense_mul(l, plant.c())?;
+    let ld = dense_mul(l, plant.d())?;
+    let ldk = dense_mul(ld.as_ref(), k)?;
+
+    // The standalone controller state is the observer state `x_hat`, driven by
+    // reference `r` and measurement `y`, with control law `u = r - K x_hat`.
+    let controller_a = dense_add(
+        dense_sub(dense_sub(plant.a(), bk.as_ref())?.as_ref(), lc.as_ref())?.as_ref(),
+        ldk.as_ref(),
+    )?;
+    let controller_b_r = dense_sub(plant.b(), ld.as_ref())?;
+    let controller_b = hcat(controller_b_r.as_ref(), l)?;
+    let controller_c = negated(k);
+    let controller_d = hcat(
+        identity(plant.ninputs()).as_ref(),
+        Mat::<T>::zeros(plant.ninputs(), plant.noutputs()).as_ref(),
+    )?;
+
+    let top_right = negated(bk.as_ref());
+    let bottom_right = dense_sub(dense_sub(plant.a(), bk.as_ref())?.as_ref(), lc.as_ref())?;
+    // The closed-loop augmented state is `[x; x_hat]`, driven only by the
+    // external reference/disturbance input `r`. The plant sees the estimated
+    // state through `u = r - K x_hat`, while the observer sees the true plant
+    // output through the innovation term.
+    let closed_loop_a = block_matrix2x2(
+        plant.a(),
+        top_right.as_ref(),
+        lc.as_ref(),
+        bottom_right.as_ref(),
+    )?;
+    let closed_loop_b = vcat(plant.b(), plant.b())?;
+    let closed_loop_c = hcat(
+        plant.c(),
+        negated(dense_mul(plant.d(), k)?.as_ref()).as_ref(),
+    )?;
+    let closed_loop_d = clone_mat(plant.d());
+
+    Ok((
+        (controller_a, controller_b, controller_c, controller_d),
+        (closed_loop_a, closed_loop_b, closed_loop_c, closed_loop_d),
+    ))
+}
+
+fn validate_state_feedback_gain<T, Domain>(
+    system: &StateSpace<T, Domain>,
+    k: MatRef<'_, T>,
+) -> Result<(), StateSpaceError> {
+    // State feedback always maps state to input, so `K` has shape
+    // `ninputs x nstates`.
+    if k.nrows() != system.ninputs() || k.ncols() != system.nstates() {
+        return Err(StateSpaceError::DimensionMismatch {
+            which: "state_feedback_gain",
+            expected_nrows: system.ninputs(),
+            expected_ncols: system.nstates(),
+            actual_nrows: k.nrows(),
+            actual_ncols: k.ncols(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_output_injection_gain<T, Domain>(
+    system: &StateSpace<T, Domain>,
+    l: MatRef<'_, T>,
+) -> Result<(), StateSpaceError> {
+    // Output injection maps measured output back into state coordinates, so
+    // `L` has shape `nstates x noutputs`.
+    if l.nrows() != system.nstates() || l.ncols() != system.noutputs() {
+        return Err(StateSpaceError::DimensionMismatch {
+            which: "output_injection_gain",
+            expected_nrows: system.nstates(),
+            expected_ncols: system.noutputs(),
+            actual_nrows: l.nrows(),
+            actual_ncols: l.ncols(),
+        });
+    }
+    Ok(())
+}
+
+fn ensure_same_io<T, Domain>(
+    lhs: &StateSpace<T, Domain>,
+    rhs: &StateSpace<T, Domain>,
+    which: &'static str,
+) -> Result<(), StateSpaceError> {
+    if lhs.ninputs() != rhs.ninputs() {
+        return Err(StateSpaceError::DimensionMismatch {
+            which,
+            expected_nrows: lhs.ninputs(),
+            expected_ncols: 1,
+            actual_nrows: rhs.ninputs(),
+            actual_ncols: 1,
+        });
+    }
+    if lhs.noutputs() != rhs.noutputs() {
+        return Err(StateSpaceError::DimensionMismatch {
+            which,
+            expected_nrows: lhs.noutputs(),
+            expected_ncols: 1,
+            actual_nrows: rhs.noutputs(),
+            actual_ncols: 1,
+        });
+    }
+    Ok(())
+}
+
+fn dense_add<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
+where
+    T: ComplexField + Copy,
+{
+    ensure_same_shape("dense_add", lhs, rhs)?;
+    Ok(Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
+        lhs[(row, col)] + rhs[(row, col)]
+    }))
+}
+
+fn dense_sub<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
+where
+    T: ComplexField + Copy,
+{
+    ensure_same_shape("dense_sub", lhs, rhs)?;
+    Ok(Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
+        lhs[(row, col)] - rhs[(row, col)]
+    }))
+}
+
+fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
+where
+    T: ComplexField + Copy,
+{
+    if lhs.ncols() != rhs.nrows() {
+        return Err(StateSpaceError::DimensionMismatch {
+            which: "dense_mul",
+            expected_nrows: lhs.ncols(),
+            expected_ncols: 1,
+            actual_nrows: rhs.nrows(),
+            actual_ncols: 1,
+        });
+    }
+    // The composition layer uses straightforward dense kernels here because
+    // these helpers are only for assembling modest dense interconnections, not
+    // for replacing the lower-level optimized linear algebra stack.
+    Ok(Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
+        let mut acc = T::zero();
+        for k in 0..lhs.ncols() {
+            acc = acc + lhs[(row, k)] * rhs[(k, col)];
+        }
+        acc
+    }))
+}
+
+fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
+    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
+        matrix[(row, col)]
+    })
+}
+
+fn negated<T>(matrix: MatRef<'_, T>) -> Mat<T>
+where
+    T: ComplexField + Copy,
+{
+    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
+        -matrix[(row, col)]
+    })
+}
+
+fn identity<T>(dim: usize) -> Mat<T>
+where
+    T: ComplexField + Copy,
+{
+    Mat::from_fn(
+        dim,
+        dim,
+        |row, col| {
+            if row == col { T::one() } else { T::zero() }
+        },
+    )
+}
+
+fn ensure_same_shape<T>(
+    which: &'static str,
+    lhs: MatRef<'_, T>,
+    rhs: MatRef<'_, T>,
+) -> Result<(), StateSpaceError> {
+    if lhs.nrows() != rhs.nrows() || lhs.ncols() != rhs.ncols() {
+        return Err(StateSpaceError::DimensionMismatch {
+            which,
+            expected_nrows: lhs.nrows(),
+            expected_ncols: lhs.ncols(),
+            actual_nrows: rhs.nrows(),
+            actual_ncols: rhs.ncols(),
+        });
+    }
+    Ok(())
+}
+
+fn hcat<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
+where
+    T: ComplexField + Copy,
+{
+    if lhs.nrows() != rhs.nrows() {
+        return Err(StateSpaceError::DimensionMismatch {
+            which: "hcat",
+            expected_nrows: lhs.nrows(),
+            expected_ncols: 1,
+            actual_nrows: rhs.nrows(),
+            actual_ncols: 1,
+        });
+    }
+    Ok(Mat::from_fn(
+        lhs.nrows(),
+        lhs.ncols() + rhs.ncols(),
+        |row, col| {
+            if col < lhs.ncols() {
+                lhs[(row, col)]
+            } else {
+                rhs[(row, col - lhs.ncols())]
+            }
+        },
+    ))
+}
+
+fn vcat<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
+where
+    T: ComplexField + Copy,
+{
+    if lhs.ncols() != rhs.ncols() {
+        return Err(StateSpaceError::DimensionMismatch {
+            which: "vcat",
+            expected_nrows: 1,
+            expected_ncols: lhs.ncols(),
+            actual_nrows: 1,
+            actual_ncols: rhs.ncols(),
+        });
+    }
+    Ok(Mat::from_fn(
+        lhs.nrows() + rhs.nrows(),
+        lhs.ncols(),
+        |row, col| {
+            if row < lhs.nrows() {
+                lhs[(row, col)]
+            } else {
+                rhs[(row - lhs.nrows(), col)]
+            }
+        },
+    ))
+}
+
+fn block_diag<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
+where
+    T: ComplexField + Copy,
+{
+    Mat::from_fn(
+        lhs.nrows() + rhs.nrows(),
+        lhs.ncols() + rhs.ncols(),
+        |row, col| {
+            if row < lhs.nrows() && col < lhs.ncols() {
+                lhs[(row, col)]
+            } else if row >= lhs.nrows() && col >= lhs.ncols() {
+                rhs[(row - lhs.nrows(), col - lhs.ncols())]
+            } else {
+                T::zero()
+            }
+        },
+    )
+}
+
+fn block_matrix2x2<T>(
+    top_left: MatRef<'_, T>,
+    top_right: MatRef<'_, T>,
+    bottom_left: MatRef<'_, T>,
+    bottom_right: MatRef<'_, T>,
+) -> Result<Mat<T>, StateSpaceError>
+where
+    T: ComplexField + Copy,
+{
+    // The structural composition formulas naturally produce 2x2 block
+    // matrices. Centralizing that assembly here keeps the public methods
+    // readable and makes the dimension checks uniform.
+    if top_left.nrows() != top_right.nrows()
+        || bottom_left.nrows() != bottom_right.nrows()
+        || top_left.ncols() != bottom_left.ncols()
+        || top_right.ncols() != bottom_right.ncols()
+    {
+        return Err(StateSpaceError::DimensionMismatch {
+            which: "block_matrix2x2",
+            expected_nrows: top_left.nrows() + bottom_left.nrows(),
+            expected_ncols: top_left.ncols() + top_right.ncols(),
+            actual_nrows: top_right.nrows() + bottom_right.nrows(),
+            actual_ncols: bottom_left.ncols() + bottom_right.ncols(),
+        });
+    }
+
+    Ok(Mat::from_fn(
+        top_left.nrows() + bottom_left.nrows(),
+        top_left.ncols() + top_right.ncols(),
+        |row, col| {
+            if row < top_left.nrows() {
+                if col < top_left.ncols() {
+                    top_left[(row, col)]
+                } else {
+                    top_right[(row, col - top_left.ncols())]
+                }
+            } else if col < top_left.ncols() {
+                bottom_left[(row - top_left.nrows(), col)]
+            } else {
+                bottom_right[(row - top_left.nrows(), col - top_left.ncols())]
+            }
+        },
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
         ContinuousStateSpace, ContinuousizationMethod, DiscreteStateSpace, DiscretizationMethod,
         StateSpaceError,
     };
+    use crate::control::lti::ContinuousTransferFunction;
     use faer::{Mat, c64};
     use faer_traits::ext::ComplexFieldExt;
 
@@ -518,6 +1167,208 @@ mod tests {
         assert_close(&recovered.b, &sys.b, 1e-11);
         assert_close(&recovered.c, &sys.c, 1e-11);
         assert_close(&recovered.d, &sys.d, 1e-11);
+    }
+
+    #[test]
+    fn continuous_parallel_and_series_match_transfer_function_arithmetic() {
+        let lhs = ContinuousTransferFunction::continuous(vec![1.0], vec![1.0, 1.0]).unwrap();
+        let rhs = ContinuousTransferFunction::continuous(vec![2.0], vec![1.0, 2.0]).unwrap();
+
+        let lhs_ss = lhs.to_state_space().unwrap();
+        let rhs_ss = rhs.to_state_space().unwrap();
+
+        let parallel = lhs_ss
+            .parallel_add(&rhs_ss)
+            .unwrap()
+            .to_transfer_function()
+            .unwrap();
+        let series = lhs_ss
+            .series(&rhs_ss)
+            .unwrap()
+            .to_transfer_function()
+            .unwrap();
+
+        let parallel_tf = lhs.add(&rhs).unwrap();
+        let series_tf = lhs.mul(&rhs).unwrap();
+
+        assert_close(
+            &Mat::from_fn(parallel.numerator().len(), 1, |row, _| {
+                parallel.numerator()[row]
+            }),
+            &Mat::from_fn(parallel_tf.numerator().len(), 1, |row, _| {
+                parallel_tf.numerator()[row]
+            }),
+            1.0e-10,
+        );
+        assert_close(
+            &Mat::from_fn(parallel.denominator().len(), 1, |row, _| {
+                parallel.denominator()[row]
+            }),
+            &Mat::from_fn(parallel_tf.denominator().len(), 1, |row, _| {
+                parallel_tf.denominator()[row]
+            }),
+            1.0e-10,
+        );
+        assert_close(
+            &Mat::from_fn(series.numerator().len(), 1, |row, _| {
+                series.numerator()[row]
+            }),
+            &Mat::from_fn(series_tf.numerator().len(), 1, |row, _| {
+                series_tf.numerator()[row]
+            }),
+            1.0e-10,
+        );
+        assert_close(
+            &Mat::from_fn(series.denominator().len(), 1, |row, _| {
+                series.denominator()[row]
+            }),
+            &Mat::from_fn(series_tf.denominator().len(), 1, |row, _| {
+                series_tf.denominator()[row]
+            }),
+            1.0e-10,
+        );
+    }
+
+    #[test]
+    fn discrete_structural_composition_rejects_sample_time_mismatch() {
+        let lhs = DiscreteStateSpace::with_zero_feedthrough(
+            Mat::from_fn(1, 1, |_, _| 0.5f64),
+            Mat::from_fn(1, 1, |_, _| 1.0),
+            Mat::from_fn(1, 1, |_, _| 1.0),
+            0.1,
+        )
+        .unwrap();
+        let rhs = DiscreteStateSpace::with_zero_feedthrough(
+            Mat::from_fn(1, 1, |_, _| 0.25f64),
+            Mat::from_fn(1, 1, |_, _| 1.0),
+            Mat::from_fn(1, 1, |_, _| 1.0),
+            0.2,
+        )
+        .unwrap();
+
+        let err = lhs.parallel_add(&rhs).unwrap_err();
+        assert_eq!(err, StateSpaceError::MismatchedSampleTime);
+    }
+
+    #[test]
+    fn state_feedback_matches_lqr_closed_loop_matrix() {
+        let a = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let b = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let c = Mat::from_fn(1, 1, |_, _| 3.0f64);
+        let d = Mat::from_fn(1, 1, |_, _| 2.0f64);
+        let sys = ContinuousStateSpace::new(a, b, c, d).unwrap();
+        let q = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let r = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let lqr = sys.lqr(q.as_ref(), r.as_ref()).unwrap();
+
+        let closed = sys.with_state_feedback(lqr.gain.as_ref()).unwrap();
+        assert_close(&closed.a, &lqr.closed_loop_a, 1.0e-12);
+        assert_close(&closed.b, &sys.b, 1.0e-12);
+        assert_close(
+            &closed.c,
+            &Mat::from_fn(1, 1, |_, _| {
+                sys.c[(0, 0)] - sys.d[(0, 0)] * lqr.gain[(0, 0)]
+            }),
+            1.0e-12,
+        );
+        assert_close(&closed.d, &sys.d, 1.0e-12);
+    }
+
+    #[test]
+    fn output_injection_matches_lqe_estimator_dynamics() {
+        let a = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let b = Mat::from_fn(1, 1, |_, _| 2.0f64);
+        let c = Mat::from_fn(1, 1, |_, _| 3.0f64);
+        let d = Mat::from_fn(1, 1, |_, _| 4.0f64);
+        let sys = ContinuousStateSpace::new(a, b, c, d).unwrap();
+        let w = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let v = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let lqe = sys.lqe(w.as_ref(), v.as_ref()).unwrap();
+
+        let injected = sys.with_output_injection(lqe.gain.as_ref()).unwrap();
+        assert_close(&injected.a, &lqe.estimator_a, 1.0e-12);
+        assert_close(
+            &injected.b,
+            &Mat::from_fn(1, 2, |_, col| {
+                if col == 0 {
+                    sys.b[(0, 0)] - lqe.gain[(0, 0)] * sys.d[(0, 0)]
+                } else {
+                    lqe.gain[(0, 0)]
+                }
+            }),
+            1.0e-12,
+        );
+        assert_close(&injected.c, &sys.c, 1.0e-12);
+        assert_close(
+            &injected.d,
+            &Mat::from_fn(1, 2, |_, col| if col == 0 { sys.d[(0, 0)] } else { 0.0 }),
+            1.0e-12,
+        );
+    }
+
+    #[test]
+    fn observer_controller_augmented_matches_scalar_manual_formula() {
+        let plant = ContinuousStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 2.0f64),
+            Mat::from_fn(1, 1, |_, _| 3.0f64),
+            Mat::from_fn(1, 1, |_, _| 4.0f64),
+        )
+        .unwrap();
+        let k = Mat::from_fn(1, 1, |_, _| 5.0f64);
+        let l = Mat::from_fn(1, 1, |_, _| 6.0f64);
+
+        let composed = plant
+            .observer_controller_augmented(k.as_ref(), l.as_ref())
+            .unwrap();
+
+        assert_close(
+            &composed.controller.a,
+            &Mat::from_fn(1, 1, |_, _| 93.0),
+            1.0e-12,
+        );
+        assert_close(
+            &composed.controller.b,
+            &Mat::from_fn(1, 2, |_, col| if col == 0 { -22.0 } else { 6.0 }),
+            1.0e-12,
+        );
+        assert_close(
+            &composed.controller.c,
+            &Mat::from_fn(1, 1, |_, _| -5.0),
+            1.0e-12,
+        );
+        assert_close(
+            &composed.controller.d,
+            &Mat::from_fn(1, 2, |_, col| if col == 0 { 1.0 } else { 0.0 }),
+            1.0e-12,
+        );
+
+        assert_close(
+            &composed.closed_loop.a,
+            &Mat::from_fn(2, 2, |row, col| match (row, col) {
+                (0, 0) => 1.0,
+                (0, 1) => -10.0,
+                (1, 0) => 18.0,
+                (1, 1) => -27.0,
+                _ => 0.0,
+            }),
+            1.0e-12,
+        );
+        assert_close(
+            &composed.closed_loop.b,
+            &Mat::from_fn(2, 1, |_, _| 2.0),
+            1.0e-12,
+        );
+        assert_close(
+            &composed.closed_loop.c,
+            &Mat::from_fn(1, 2, |_, col| if col == 0 { 3.0 } else { -20.0 }),
+            1.0e-12,
+        );
+        assert_close(
+            &composed.closed_loop.d,
+            &Mat::from_fn(1, 1, |_, _| 4.0),
+            1.0e-12,
+        );
     }
 
     #[test]

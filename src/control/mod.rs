@@ -58,8 +58,8 @@ pub use riccati::{
 };
 pub use state_space::{
     ContinuousStateSpace, ContinuousTime, ContinuousizationMethod, DiscreteStateSpace,
-    DiscreteTime, DiscretizationMethod, SparseContinuousStateSpace, SparseDiscreteStateSpace,
-    SparseStateSpace, StateSpace, StateSpaceError,
+    DiscreteTime, DiscretizationMethod, ObserverControllerComposition, SparseContinuousStateSpace,
+    SparseDiscreteStateSpace, SparseStateSpace, StateSpace, StateSpaceError,
 };
 pub use stein::{
     DenseSteinSolve, SteinError, controllability_gramian_discrete_dense,
