@@ -15,6 +15,9 @@ pub enum LtiError {
     /// A discrete-time representation was given a nonpositive or nonfinite
     /// sample interval.
     InvalidSampleTime,
+    /// Two discrete-time objects cannot be composed because their sample
+    /// intervals do not match closely enough.
+    MismatchedSampleTime,
     /// A response grid contained an invalid point.
     InvalidSamplePoint { which: &'static str },
     /// A sampling grid had inconsistent structure, such as mismatched lengths
@@ -49,6 +52,11 @@ pub enum LtiError {
     /// A conversion from complex roots back to real coefficients requires the
     /// root set to be closed under complex conjugation.
     NotConjugateClosed { which: &'static str },
+    /// Transfer-function inversion is undefined for the identically zero map.
+    ZeroTransferInverse,
+    /// Transfer-function division is undefined when the divisor is the
+    /// identically zero map.
+    ZeroTransferDivisor,
     /// A response or conversion formula produced non-finite values.
     NonFiniteResult { which: &'static str },
     /// A second-order-section cascade must contain at least one section.

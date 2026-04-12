@@ -1,8 +1,8 @@
 use super::error::LtiError;
 use super::sos::Sos;
 use super::util::{
-    normalize_ratio, poly_eval, poly_roots, real_poly_from_roots, trim_leading_zeros,
-    validate_sample_time,
+    CompositionDomain, is_zero_polynomial, normalize_ratio, poly_add_aligned, poly_eval, poly_mul,
+    poly_roots, poly_sub_aligned, real_poly_from_roots, trim_leading_zeros, validate_sample_time,
 };
 use super::zpk::Zpk;
 use crate::control::state_space::{
@@ -86,6 +86,124 @@ where
     /// Converts the transfer function into a second-order-section cascade.
     pub fn to_sos(&self) -> Result<Sos<R, Domain>, LtiError> {
         self.to_zpk()?.to_sos()
+    }
+}
+
+impl<R, Domain> TransferFunction<R, Domain>
+where
+    R: Float + Copy + RealField,
+    Domain: CompositionDomain<R>,
+{
+    /// Forms the parallel composition `self + rhs`.
+    ///
+    /// In transfer-function form this is done with a common denominator:
+    ///
+    /// `N₁ / D₁ + N₂ / D₂ = (N₁ D₂ + N₂ D₁) / (D₁ D₂)`.
+    pub fn add(&self, rhs: &Self) -> Result<Self, LtiError> {
+        let domain = Domain::composed(self.domain(), rhs.domain())?;
+        let lhs_num = poly_mul(self.numerator(), rhs.denominator());
+        let rhs_num = poly_mul(rhs.numerator(), self.denominator());
+        let numerator = poly_add_aligned(&lhs_num, &rhs_num);
+        let denominator = poly_mul(self.denominator(), rhs.denominator());
+        Self::new(numerator, denominator, domain)
+    }
+
+    /// Forms the parallel difference `self - rhs`.
+    ///
+    /// This is the same common-denominator construction as `add`, but with the
+    /// second numerator contribution subtracted instead of added.
+    pub fn sub(&self, rhs: &Self) -> Result<Self, LtiError> {
+        let domain = Domain::composed(self.domain(), rhs.domain())?;
+        let lhs_num = poly_mul(self.numerator(), rhs.denominator());
+        let rhs_num = poly_mul(rhs.numerator(), self.denominator());
+        let numerator = poly_sub_aligned(&lhs_num, &rhs_num);
+        let denominator = poly_mul(self.denominator(), rhs.denominator());
+        Self::new(numerator, denominator, domain)
+    }
+
+    /// Forms the series composition `self * rhs`.
+    ///
+    /// Since transfer functions compose multiplicatively in series, this is
+    /// just polynomial convolution on numerator and denominator.
+    pub fn mul(&self, rhs: &Self) -> Result<Self, LtiError> {
+        let domain = Domain::composed(self.domain(), rhs.domain())?;
+        let numerator = poly_mul(self.numerator(), rhs.numerator());
+        let denominator = poly_mul(self.denominator(), rhs.denominator());
+        Self::new(numerator, denominator, domain)
+    }
+
+    /// Returns the multiplicative inverse `1 / self`.
+    ///
+    /// This swaps numerator and denominator and therefore rejects the
+    /// identically zero transfer map.
+    pub fn inv(&self) -> Result<Self, LtiError> {
+        if is_zero_polynomial(self.numerator()) {
+            return Err(LtiError::ZeroTransferInverse);
+        }
+        Self::new(
+            self.denominator().to_vec(),
+            self.numerator().to_vec(),
+            self.domain().clone(),
+        )
+    }
+
+    /// Forms the quotient `self / rhs`.
+    ///
+    /// This is implemented as multiplication by `rhs.inv()`, so it shares the
+    /// same zero-divisor checks and domain-compatibility rules as the primitive
+    /// inverse and series-composition paths.
+    pub fn div(&self, rhs: &Self) -> Result<Self, LtiError> {
+        if is_zero_polynomial(rhs.numerator()) {
+            return Err(LtiError::ZeroTransferDivisor);
+        }
+        let rhs_inv = rhs.inv()?;
+        self.mul(&rhs_inv)
+    }
+
+    /// Forms the standard negative-feedback closure `self / (1 + self * rhs)`.
+    ///
+    /// Here `self` is the forward path and `rhs` is the return path. This
+    /// matches the common SISO control convention for closing a loop around a
+    /// plant and sensor/controller return path.
+    pub fn feedback(&self, rhs: &Self) -> Result<Self, LtiError> {
+        self.feedback_with_sign(rhs, false)
+    }
+
+    /// Forms the positive-feedback closure `self / (1 - self * rhs)`.
+    pub fn positive_feedback(&self, rhs: &Self) -> Result<Self, LtiError> {
+        self.feedback_with_sign(rhs, true)
+    }
+
+    /// Forms the standard unity negative-feedback closure `self / (1 + self)`.
+    pub fn unity_feedback(&self) -> Result<Self, LtiError> {
+        let one = unit_transfer(self.domain().clone())?;
+        self.feedback(&one)
+    }
+
+    /// Forms the unity positive-feedback closure `self / (1 - self)`.
+    pub fn positive_unity_feedback(&self) -> Result<Self, LtiError> {
+        let one = unit_transfer(self.domain().clone())?;
+        self.positive_feedback(&one)
+    }
+
+    /// Shared implementation for the two feedback signs.
+    ///
+    /// This deliberately uses the direct closed-loop polynomial formula instead
+    /// of composing `mul`, `add`/`sub`, and `div` naively. Algebraically the
+    /// two are equivalent, but the direct form avoids introducing an
+    /// avoidable extra factor of `D_g D_h` in the numerator and denominator
+    /// before normalization.
+    fn feedback_with_sign(&self, rhs: &Self, positive: bool) -> Result<Self, LtiError> {
+        let domain = Domain::composed(self.domain(), rhs.domain())?;
+        let numerator = poly_mul(self.numerator(), rhs.denominator());
+        let direct_denominator = poly_mul(self.denominator(), rhs.denominator());
+        let loop_numerator = poly_mul(self.numerator(), rhs.numerator());
+        let denominator = if positive {
+            poly_sub_aligned(&direct_denominator, &loop_numerator)
+        } else {
+            poly_add_aligned(&direct_denominator, &loop_numerator)
+        };
+        Self::new(numerator, denominator, domain)
     }
 }
 
@@ -378,6 +496,17 @@ where
     Ok(trim_small_leading_coeffs(&coeffs))
 }
 
+/// Returns the identity transfer function `1`.
+fn unit_transfer<R, Domain>(domain: Domain) -> Result<TransferFunction<R, Domain>, LtiError>
+where
+    R: Float + Copy + RealField,
+    Domain: Clone,
+{
+    // Using the ordinary constructor keeps the same normalization and domain
+    // bookkeeping path as user-provided transfer functions.
+    TransferFunction::new(vec![R::one()], vec![R::one()], domain)
+}
+
 /// Chooses real interpolation points away from denominator roots.
 ///
 /// The points are simple deterministic samples around the origin. Any sample
@@ -614,5 +743,91 @@ mod tests {
         assert_coeffs_close(tf_from_zpk.denominator(), tf.denominator(), 1.0e-10);
         assert_coeffs_close(tf_from_sos.numerator(), tf.numerator(), 1.0e-10);
         assert_coeffs_close(tf_from_sos.denominator(), tf.denominator(), 1.0e-10);
+    }
+
+    #[test]
+    fn transfer_function_add_sub_mul_div_follow_rational_arithmetic() {
+        let lhs = ContinuousTransferFunction::continuous(vec![1.0, 2.0], vec![1.0, 3.0]).unwrap();
+        let rhs = ContinuousTransferFunction::continuous(vec![2.0], vec![1.0, 4.0]).unwrap();
+
+        let sum = lhs.add(&rhs).unwrap();
+        let diff = lhs.sub(&rhs).unwrap();
+        let prod = lhs.mul(&rhs).unwrap();
+        let quot = lhs.div(&rhs).unwrap();
+
+        assert_coeffs_close(sum.numerator(), &[1.0, 8.0, 14.0], 1.0e-12);
+        assert_coeffs_close(sum.denominator(), &[1.0, 7.0, 12.0], 1.0e-12);
+        assert_coeffs_close(diff.numerator(), &[1.0, 4.0, 2.0], 1.0e-12);
+        assert_coeffs_close(diff.denominator(), &[1.0, 7.0, 12.0], 1.0e-12);
+        assert_coeffs_close(prod.numerator(), &[2.0, 4.0], 1.0e-12);
+        assert_coeffs_close(prod.denominator(), &[1.0, 7.0, 12.0], 1.0e-12);
+        assert_coeffs_close(quot.numerator(), &[0.5, 3.0, 4.0], 1.0e-12);
+        assert_coeffs_close(quot.denominator(), &[1.0, 3.0], 1.0e-12);
+    }
+
+    #[test]
+    fn transfer_function_feedback_matches_closed_form() {
+        let plant = ContinuousTransferFunction::continuous(vec![2.0], vec![1.0, 3.0]).unwrap();
+        let sensor = ContinuousTransferFunction::continuous(vec![1.0], vec![1.0, 1.0]).unwrap();
+
+        let closed_loop = plant.feedback(&sensor).unwrap();
+        let positive = plant.positive_feedback(&sensor).unwrap();
+        let unity = plant.unity_feedback().unwrap();
+
+        assert_coeffs_close(closed_loop.numerator(), &[2.0, 2.0], 1.0e-12);
+        assert_coeffs_close(closed_loop.denominator(), &[1.0, 4.0, 5.0], 1.0e-12);
+        assert_coeffs_close(positive.numerator(), &[2.0, 2.0], 1.0e-12);
+        assert_coeffs_close(positive.denominator(), &[1.0, 4.0, 1.0], 1.0e-12);
+        assert_coeffs_close(unity.numerator(), &[2.0], 1.0e-12);
+        assert_coeffs_close(unity.denominator(), &[1.0, 5.0], 1.0e-12);
+    }
+
+    #[test]
+    fn transfer_function_division_rejects_zero_divisor() {
+        let lhs = ContinuousTransferFunction::continuous(vec![1.0], vec![1.0, 1.0]).unwrap();
+        let rhs = ContinuousTransferFunction::continuous(vec![0.0], vec![1.0]).unwrap();
+        let err = lhs.div(&rhs).unwrap_err();
+        assert!(matches!(err, LtiError::ZeroTransferDivisor));
+    }
+
+    #[test]
+    fn discrete_arithmetic_rejects_sample_time_mismatch() {
+        let lhs = DiscreteTransferFunction::discrete(vec![1.0], vec![1.0, -0.5], 0.1).unwrap();
+        let rhs = DiscreteTransferFunction::discrete(vec![1.0], vec![1.0, -0.25], 0.2).unwrap();
+        let err = lhs.add(&rhs).unwrap_err();
+        assert!(matches!(err, LtiError::MismatchedSampleTime));
+    }
+
+    #[test]
+    fn zpk_and_sos_arithmetic_chain_through_transfer_function() {
+        let lhs = ContinuousTransferFunction::continuous(vec![1.0, 2.0], vec![1.0, 3.0]).unwrap();
+        let rhs = ContinuousTransferFunction::continuous(vec![2.0], vec![1.0, 4.0]).unwrap();
+
+        let zpk_sum = lhs
+            .to_zpk()
+            .unwrap()
+            .add(&rhs.to_zpk().unwrap())
+            .unwrap()
+            .to_transfer_function()
+            .unwrap();
+        let sos_feedback = lhs
+            .to_sos()
+            .unwrap()
+            .feedback(&rhs.to_sos().unwrap())
+            .unwrap()
+            .to_transfer_function()
+            .unwrap();
+
+        let tf_sum = lhs.add(&rhs).unwrap();
+        let tf_feedback = lhs.feedback(&rhs).unwrap();
+
+        assert_coeffs_close(zpk_sum.numerator(), tf_sum.numerator(), 1.0e-10);
+        assert_coeffs_close(zpk_sum.denominator(), tf_sum.denominator(), 1.0e-10);
+        assert_coeffs_close(sos_feedback.numerator(), tf_feedback.numerator(), 1.0e-10);
+        assert_coeffs_close(
+            sos_feedback.denominator(),
+            tf_feedback.denominator(),
+            1.0e-10,
+        );
     }
 }

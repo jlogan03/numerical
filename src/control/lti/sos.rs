@@ -1,6 +1,8 @@
 use super::error::LtiError;
 use super::transfer_function::TransferFunction;
-use super::util::{identity_section, poly_mul, root_sections, validate_sample_time};
+use super::util::{
+    CompositionDomain, identity_section, poly_mul, root_sections, validate_sample_time,
+};
 use super::zpk::Zpk;
 use crate::control::state_space::{
     ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime,
@@ -185,6 +187,76 @@ where
         }
 
         Self::new(sections, zpk.gain(), zpk.domain().clone())
+    }
+}
+
+impl<R, Domain> Sos<R, Domain>
+where
+    R: Float + Copy + RealField,
+    Domain: CompositionDomain<R>,
+{
+    /// Forms the parallel composition `self + rhs`.
+    ///
+    /// As with `Zpk`, the actual arithmetic is delegated to the
+    /// `TransferFunction` representation and then converted back into section
+    /// form. That keeps the algebra in one place and makes the section layer a
+    /// pure storage/conditioning choice.
+    pub fn add(&self, rhs: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .add(&rhs.to_transfer_function()?)?
+            .to_sos()
+    }
+
+    /// Forms the parallel difference `self - rhs`.
+    pub fn sub(&self, rhs: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .sub(&rhs.to_transfer_function()?)?
+            .to_sos()
+    }
+
+    /// Forms the series composition `self * rhs`.
+    pub fn mul(&self, rhs: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .mul(&rhs.to_transfer_function()?)?
+            .to_sos()
+    }
+
+    /// Forms the quotient `self / rhs`.
+    pub fn div(&self, rhs: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .div(&rhs.to_transfer_function()?)?
+            .to_sos()
+    }
+
+    /// Returns the inverse `1 / self`.
+    pub fn inv(&self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?.inv()?.to_sos()
+    }
+
+    /// Forms the standard negative-feedback closure `self / (1 + self * rhs)`.
+    pub fn feedback(&self, rhs: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .feedback(&rhs.to_transfer_function()?)?
+            .to_sos()
+    }
+
+    /// Forms the positive-feedback closure `self / (1 - self * rhs)`.
+    pub fn positive_feedback(&self, rhs: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .positive_feedback(&rhs.to_transfer_function()?)?
+            .to_sos()
+    }
+
+    /// Forms the standard unity negative-feedback closure `self / (1 + self)`.
+    pub fn unity_feedback(&self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?.unity_feedback()?.to_sos()
+    }
+
+    /// Forms the unity positive-feedback closure `self / (1 - self)`.
+    pub fn positive_unity_feedback(&self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .positive_unity_feedback()?
+            .to_sos()
     }
 }
 

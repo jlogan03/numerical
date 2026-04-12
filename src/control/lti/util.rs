@@ -1,9 +1,46 @@
 use super::error::LtiError;
+use crate::control::state_space::{ContinuousTime, DiscreteTime};
 use faer::Mat;
 use faer::complex::Complex;
 use faer_traits::RealField;
 use faer_traits::math_utils::{eps, from_f64};
 use num_traits::Float;
+
+/// Domain metadata that can validate whether two LTI representations may be
+/// composed directly.
+#[doc(hidden)]
+pub trait CompositionDomain<R>: Clone {
+    /// Returns the domain metadata carried by the result of a binary
+    /// composition.
+    ///
+    /// This is intentionally a small internal-facing hook rather than a full
+    /// public extension point. The arithmetic layer only needs one question
+    /// answered here: "may these two objects participate in the same
+    /// composition, and if so what domain metadata should the result carry?"
+    fn composed(lhs: &Self, rhs: &Self) -> Result<Self, LtiError>;
+}
+
+impl<R> CompositionDomain<R> for ContinuousTime
+where
+    R: Float + Copy + RealField,
+{
+    fn composed(lhs: &Self, _rhs: &Self) -> Result<Self, LtiError> {
+        Ok(*lhs)
+    }
+}
+
+impl<R> CompositionDomain<R> for DiscreteTime<R>
+where
+    R: Float + Copy + RealField,
+{
+    fn composed(lhs: &Self, rhs: &Self) -> Result<Self, LtiError> {
+        if sample_times_match(lhs.sample_time(), rhs.sample_time()) {
+            Ok(*lhs)
+        } else {
+            Err(LtiError::MismatchedSampleTime)
+        }
+    }
+}
 
 /// Validates the positive finite sample-time invariant shared by discrete LTI
 /// representations.
@@ -85,6 +122,34 @@ pub(crate) fn poly_mul<R: Float + Copy + RealField>(lhs: &[R], rhs: &[R]) -> Vec
         }
     }
     trim_leading_zeros(&out)
+}
+
+/// Adds two descending-power polynomials after aligning them by degree.
+pub(crate) fn poly_add_aligned<R: Float + Copy + RealField>(lhs: &[R], rhs: &[R]) -> Vec<R> {
+    poly_addsub_aligned(lhs, rhs, false)
+}
+
+/// Subtracts two descending-power polynomials after aligning them by degree.
+pub(crate) fn poly_sub_aligned<R: Float + Copy + RealField>(lhs: &[R], rhs: &[R]) -> Vec<R> {
+    poly_addsub_aligned(lhs, rhs, true)
+}
+
+/// Returns whether a polynomial is identically zero.
+pub(crate) fn is_zero_polynomial<R: Float + Copy + RealField>(coeffs: &[R]) -> bool {
+    coeffs.iter().all(|&value| value == R::zero())
+}
+
+/// Checks whether two discrete sample intervals agree to within a small
+/// relative/absolute tolerance.
+///
+/// Exact floating equality would make otherwise reasonable discrete-time
+/// compositions fail after round-trips through conversions or arithmetic. The
+/// tolerance here is intentionally small: it treats clearly different sample
+/// times as incompatible while still allowing numerically harmless drift.
+pub(crate) fn sample_times_match<R: Float + Copy + RealField>(lhs: R, rhs: R) -> bool {
+    let scale = R::one().max(lhs.abs()).max(rhs.abs());
+    let tol = from_f64::<R>(128.0) * eps::<R>() * scale;
+    (lhs - rhs).abs() <= tol
 }
 
 /// Computes the roots of a real-coefficient polynomial through its companion
@@ -271,4 +336,28 @@ fn compare_roots<R: Float + Copy + RealField>(
                 .partial_cmp(&lhs.im)
                 .unwrap_or(core::cmp::Ordering::Equal)
         })
+}
+
+/// Shared implementation for aligned polynomial addition and subtraction.
+fn poly_addsub_aligned<R: Float + Copy + RealField>(
+    lhs: &[R],
+    rhs: &[R],
+    subtract_rhs: bool,
+) -> Vec<R> {
+    // The coefficient vectors are stored in descending-power order, so aligning
+    // by degree means right-aligning the shorter vector before combining.
+    let len = lhs.len().max(rhs.len());
+    let lhs_offset = len - lhs.len();
+    let rhs_offset = len - rhs.len();
+    let mut out = vec![R::zero(); len];
+
+    for (idx, &value) in lhs.iter().enumerate() {
+        out[lhs_offset + idx] = out[lhs_offset + idx] + value;
+    }
+    for (idx, &value) in rhs.iter().enumerate() {
+        let value = if subtract_rhs { -value } else { value };
+        out[rhs_offset + idx] = out[rhs_offset + idx] + value;
+    }
+
+    trim_leading_zeros(&out)
 }
