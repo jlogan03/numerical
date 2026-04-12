@@ -278,6 +278,17 @@ where
         state_space_to_transfer_function(self.a(), self.b(), self.c(), self.d(), ContinuousTime)
     }
 
+    /// Re-realizes the dense real SISO system in controllable companion form.
+    ///
+    /// This first converts the current realization into coefficient form and
+    /// then realizes that transfer function again through the controllable
+    /// companion constructor. The result preserves the external transfer map
+    /// of the system, but it is not a similarity-transform API and does not
+    /// preserve the original internal state coordinates.
+    pub fn to_controllable_canonical(&self) -> Result<ContinuousStateSpace<R>, LtiError> {
+        self.to_transfer_function()?.to_state_space()
+    }
+
     /// Converts the continuous-time state-space model into zero/pole/gain
     /// form through `TransferFunction`.
     pub fn to_zpk(&self) -> Result<Zpk<R, ContinuousTime>, LtiError> {
@@ -310,6 +321,17 @@ where
             self.d(),
             DiscreteTime::new(self.sample_time()),
         )
+    }
+
+    /// Re-realizes the dense real SISO system in controllable companion form.
+    ///
+    /// As in the continuous-time path, this uses the transfer-function
+    /// roundtrip rather than an explicit similarity transform. The returned
+    /// system preserves the discrete transfer map and carries the same sample
+    /// time, but it may not retain the original realization order or internal
+    /// state coordinates.
+    pub fn to_controllable_canonical(&self) -> Result<DiscreteStateSpace<R>, LtiError> {
+        self.to_transfer_function()?.to_state_space()
     }
 
     /// Converts the discrete-time state-space model into zero/pole/gain form
@@ -620,9 +642,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{ContinuousTransferFunction, DiscreteTransferFunction};
+    use super::{
+        ContinuousStateSpace, ContinuousTransferFunction, DiscreteStateSpace,
+        DiscreteTransferFunction,
+    };
     use crate::control::lti::LtiError;
     use crate::control::lti::Sos;
+    use faer::Mat;
     use faer::complex::Complex;
 
     fn assert_coeffs_close(lhs: &[f64], rhs: &[f64], tol: f64) {
@@ -633,6 +659,22 @@ mod tests {
                 err <= tol,
                 "coefficient {idx} differs: lhs={lhs}, rhs={rhs}, err={err}, tol={tol}",
             );
+        }
+    }
+
+    fn assert_mat_close(lhs: &Mat<f64>, rhs: &Mat<f64>, tol: f64) {
+        assert_eq!(lhs.nrows(), rhs.nrows());
+        assert_eq!(lhs.ncols(), rhs.ncols());
+        for row in 0..lhs.nrows() {
+            for col in 0..lhs.ncols() {
+                let err = (lhs[(row, col)] - rhs[(row, col)]).abs();
+                assert!(
+                    err <= tol,
+                    "entry ({row}, {col}) differs: lhs={}, rhs={}, err={err}, tol={tol}",
+                    lhs[(row, col)],
+                    rhs[(row, col)]
+                );
+            }
         }
     }
 
@@ -718,6 +760,84 @@ mod tests {
         assert_coeffs_close(back.numerator(), tf.numerator(), 1.0e-10);
         assert_coeffs_close(back.denominator(), tf.denominator(), 1.0e-10);
         assert_eq!(back.sample_time(), 0.2);
+    }
+
+    #[test]
+    fn continuous_state_space_re_realizes_in_controllable_canonical_form() {
+        let ss = ContinuousStateSpace::new(
+            Mat::from_fn(2, 2, |row, col| match (row, col) {
+                (0, 0) => -4.0,
+                (0, 1) => 3.0,
+                (1, 0) => -1.0,
+                _ => 0.0,
+            }),
+            Mat::from_fn(2, 1, |row, _| if row == 0 { 2.0 } else { 1.0 }),
+            Mat::from_fn(1, 2, |_, col| if col == 0 { 1.5 } else { -0.75 }),
+            Mat::from_fn(1, 1, |_, _| 0.25),
+        )
+        .unwrap();
+
+        let canonical = ss.to_controllable_canonical().unwrap();
+        let expected = ss.to_transfer_function().unwrap().to_state_space().unwrap();
+        let back = canonical.to_transfer_function().unwrap();
+        let original = ss.to_transfer_function().unwrap();
+
+        assert_mat_close(&canonical.a().to_owned(), &expected.a().to_owned(), 1.0e-12);
+        assert_mat_close(&canonical.b().to_owned(), &expected.b().to_owned(), 1.0e-12);
+        assert_mat_close(&canonical.c().to_owned(), &expected.c().to_owned(), 1.0e-12);
+        assert_mat_close(&canonical.d().to_owned(), &expected.d().to_owned(), 1.0e-12);
+        assert_coeffs_close(back.numerator(), original.numerator(), 1.0e-10);
+        assert_coeffs_close(back.denominator(), original.denominator(), 1.0e-10);
+    }
+
+    #[test]
+    fn discrete_state_space_re_realizes_in_controllable_canonical_form() {
+        let ss = DiscreteStateSpace::new(
+            Mat::from_fn(2, 2, |row, col| match (row, col) {
+                (0, 0) => 0.4,
+                (0, 1) => -0.2,
+                (1, 0) => 1.0,
+                _ => 0.3,
+            }),
+            Mat::from_fn(2, 1, |row, _| if row == 0 { 0.5 } else { 1.0 }),
+            Mat::from_fn(1, 2, |_, col| if col == 0 { 1.0 } else { 0.2 }),
+            Mat::from_fn(1, 1, |_, _| -0.1),
+            0.05,
+        )
+        .unwrap();
+
+        let canonical = ss.to_controllable_canonical().unwrap();
+        let expected = ss.to_transfer_function().unwrap().to_state_space().unwrap();
+        let back = canonical.to_transfer_function().unwrap();
+        let original = ss.to_transfer_function().unwrap();
+
+        assert_mat_close(&canonical.a().to_owned(), &expected.a().to_owned(), 1.0e-12);
+        assert_mat_close(&canonical.b().to_owned(), &expected.b().to_owned(), 1.0e-12);
+        assert_mat_close(&canonical.c().to_owned(), &expected.c().to_owned(), 1.0e-12);
+        assert_mat_close(&canonical.d().to_owned(), &expected.d().to_owned(), 1.0e-12);
+        assert_coeffs_close(back.numerator(), original.numerator(), 1.0e-10);
+        assert_coeffs_close(back.denominator(), original.denominator(), 1.0e-10);
+        assert_eq!(canonical.sample_time(), ss.sample_time());
+    }
+
+    #[test]
+    fn controllable_canonical_rejects_mimo_state_space() {
+        let ss = ContinuousStateSpace::new(
+            Mat::from_fn(2, 2, |row, col| if row == col { -1.0 } else { 0.0 }),
+            Mat::from_fn(2, 2, |row, col| if row == col { 1.0 } else { 0.0 }),
+            Mat::from_fn(1, 2, |_, col| if col == 0 { 1.0 } else { 0.0 }),
+            Mat::from_fn(1, 2, |_, _| 0.0),
+        )
+        .unwrap();
+
+        let err = ss.to_controllable_canonical().unwrap_err();
+        assert!(matches!(
+            err,
+            LtiError::NonSisoStateSpace {
+                ninputs: 2,
+                noutputs: 1
+            }
+        ));
     }
 
     #[test]
