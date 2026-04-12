@@ -437,15 +437,28 @@ pub fn design_pid_from_step_response_sopdt(
 
 #[derive(Clone, Debug)]
 struct PreparedStepResponse {
+    /// Time grid shifted so the dominant input step occurs near `t = 0`.
     time_relative: Vec<f64>,
+    /// Measured output samples on that shifted grid.
     output: Vec<f64>,
+    /// Estimated pre-step output baseline.
     initial_output: f64,
+    /// Estimated input step amplitude.
     step_amplitude: f64,
+    /// Coarse steady-state process gain estimate from baseline/tail averages.
     gain_guess: f64,
+    /// Characteristic experiment time span used to scale positivity floors.
     time_scale: f64,
 }
 
 impl PreparedStepResponse {
+    /// Normalizes raw sampled step data into the quantities needed by the
+    /// landmark estimators and LM refinement.
+    ///
+    /// The preprocessing intentionally looks for one dominant input jump and
+    /// then computes pre-step and post-step averages around that detected
+    /// transition. That keeps the first fitting pass simple and robust for the
+    /// intended "single experiment, single step" workflow.
     fn from_data(data: &StepResponseData<f64>) -> Result<Self, PidDesignError> {
         let n = data.time.len();
         let step_index =
@@ -483,6 +496,10 @@ impl PreparedStepResponse {
     }
 }
 
+/// Forms the first FOPDT estimate from standard normalized step landmarks.
+///
+/// The `28.3%` and `63.2%` crossings give a coarse delay/lag split that is
+/// easy to compute and usually good enough to seed local nonlinear refinement.
 fn initial_fopdt_estimate(data: &PreparedStepResponse) -> Result<FopdtModel<f64>, PidDesignError> {
     let final_output = *data.output.last().ok_or(PidDesignError::InvalidData {
         which: "output.last",
@@ -524,6 +541,11 @@ fn initial_fopdt_estimate(data: &PreparedStepResponse) -> Result<FopdtModel<f64>
     })
 }
 
+/// Builds a physically plausible SOPDT seed from the coarser FOPDT estimate.
+///
+/// This does not try to solve the second-order fit in closed form. Instead it
+/// searches a small deterministic grid of lag splits and delay scalings and
+/// keeps the candidate with the smallest direct step-response residual.
 fn initial_sopdt_estimate(data: &PreparedStepResponse, fopdt: FopdtModel<f64>) -> SopdtModel<f64> {
     let floor = positive_floor(data.time_scale);
     let total_scales = [0.5, 0.75, 1.0, 1.25, 1.5];
@@ -562,6 +584,11 @@ fn initial_sopdt_estimate(data: &PreparedStepResponse, fopdt: FopdtModel<f64>) -
     best
 }
 
+/// Runs LM refinement for the FOPDT parameters.
+///
+/// The time constant and delay are optimized in log coordinates so the
+/// recovered model stays positive without adding explicit inequality
+/// constraints to the least-squares problem.
 fn refine_fopdt(
     data: &PreparedStepResponse,
     initial: FopdtModel<f64>,
@@ -590,6 +617,15 @@ fn refine_fopdt(
     Ok(model)
 }
 
+/// Runs LM refinement for the SOPDT parameters.
+///
+/// The parameterization uses:
+///
+/// - one base lag
+/// - one positive lag separation
+/// - one positive delay
+///
+/// so both time constants remain positive and ordered automatically.
 fn refine_sopdt(
     data: &PreparedStepResponse,
     initial: SopdtModel<f64>,
@@ -625,6 +661,7 @@ fn refine_sopdt(
     Ok(model)
 }
 
+/// Sum-of-squares objective used to compare FOPDT candidates.
 fn fopdt_objective(data: &PreparedStepResponse, model: FopdtModel<f64>) -> f64 {
     data.time_relative
         .iter()
@@ -637,6 +674,7 @@ fn fopdt_objective(data: &PreparedStepResponse, model: FopdtModel<f64>) -> f64 {
         .sum()
 }
 
+/// Sum-of-squares objective used to compare SOPDT candidates.
 fn sopdt_objective(data: &PreparedStepResponse, model: SopdtModel<f64>) -> f64 {
     data.time_relative
         .iter()
@@ -652,11 +690,13 @@ fn sopdt_objective(data: &PreparedStepResponse, model: SopdtModel<f64>) -> f64 {
 #[derive(Clone)]
 struct FopdtLmProblem<'a> {
     data: &'a PreparedStepResponse,
+    /// Parameters stored as `[gain, ln(tau), ln(delay)]`.
     params: Vector3<f64>,
     floor: f64,
 }
 
 impl<'a> FopdtLmProblem<'a> {
+    /// Maps the LM parameter vector back to a physical FOPDT model.
     fn model(&self) -> FopdtModel<f64> {
         FopdtModel {
             gain: self.params[0],
@@ -665,6 +705,7 @@ impl<'a> FopdtLmProblem<'a> {
         }
     }
 
+    /// Residual vector for the sampled delayed first-order step model.
     fn residual_vector(&self) -> OVector<f64, Dyn> {
         let model = self.model();
         let residuals = self
@@ -698,6 +739,8 @@ impl<'a> LeastSquaresProblem<f64, Dyn, U3> for FopdtLmProblem<'a> {
     }
 
     fn jacobian(&self) -> Option<OMatrix<f64, Dyn, U3>> {
+        // A numerical Jacobian keeps the first implementation compact. The
+        // fitted problems are small enough that this cost is acceptable.
         let mut clone = self.clone();
         differentiate_numerically(&mut clone)
     }
@@ -706,11 +749,13 @@ impl<'a> LeastSquaresProblem<f64, Dyn, U3> for FopdtLmProblem<'a> {
 #[derive(Clone)]
 struct SopdtLmProblem<'a> {
     data: &'a PreparedStepResponse,
+    /// Parameters stored as `[gain, ln(base_tau), ln(extra_tau), ln(delay)]`.
     params: Vector4<f64>,
     floor: f64,
 }
 
 impl<'a> SopdtLmProblem<'a> {
+    /// Maps the LM parameter vector back to a physical SOPDT model.
     fn model(&self) -> SopdtModel<f64> {
         let base = self.params[1].exp().max(self.floor);
         let extra = self.params[2].exp().max(self.floor);
@@ -722,6 +767,7 @@ impl<'a> SopdtLmProblem<'a> {
         }
     }
 
+    /// Residual vector for the sampled delayed second-order step model.
     fn residual_vector(&self) -> OVector<f64, Dyn> {
         let model = self.model();
         let residuals = self
@@ -755,11 +801,17 @@ impl<'a> LeastSquaresProblem<f64, Dyn, U4> for SopdtLmProblem<'a> {
     }
 
     fn jacobian(&self) -> Option<OMatrix<f64, Dyn, U4>> {
+        // As in the FOPDT path, numerical differentiation is enough for this
+        // small reference fitter and keeps the algebra out of the first pass.
         let mut clone = self.clone();
         differentiate_numerically(&mut clone)
     }
 }
 
+/// Step response of two cascaded first-order lags driven by a unit step.
+///
+/// When the lags nearly coincide, the ordinary distinct-pole formula suffers
+/// from cancellation, so the repeated-pole limit is used instead.
 fn second_order_lag_step<R>(time: R, tau1: R, tau2: R) -> R
 where
     R: Float + Copy,
@@ -776,6 +828,8 @@ where
     }
 }
 
+/// Finds the first crossing of `target` after `start_index` with the expected
+/// response direction.
 fn interpolate_crossing<R>(
     time: &[R],
     signal: &[R],
@@ -809,10 +863,15 @@ where
     None
 }
 
+/// Returns the first index whose shifted time is nonnegative.
 fn first_nonnegative_index(values: &[f64]) -> usize {
     values.iter().position(|&value| value >= 0.0).unwrap_or(0)
 }
 
+/// Finds the dominant single input jump in the sampled command record.
+///
+/// The current fitting path assumes one main step experiment, so the largest
+/// adjacent jump is treated as the step used for identification.
 fn dominant_step_index(signal: &[f64]) -> Option<usize> {
     let mut best_index = None;
     let mut best_jump = 0.0f64;
@@ -830,6 +889,7 @@ fn dominant_step_index(signal: &[f64]) -> Option<usize> {
     }
 }
 
+/// Interpolates the detected input step to a sub-sample transition time.
 fn interpolate_input_step_time(
     time: &[f64],
     input: &[f64],
@@ -850,18 +910,25 @@ fn interpolate_input_step_time(
     Ok(lhs_t + alpha * (rhs_t - lhs_t))
 }
 
+/// Heuristic tail length used for steady-state averaging.
 fn tail_count(n: usize) -> usize {
     (n / 10).max(3).min(n.max(1))
 }
 
+/// Arithmetic mean helper for baseline and tail estimates.
 fn mean(values: &[f64]) -> f64 {
     values.iter().sum::<f64>() / values.len() as f64
 }
 
+/// Positive floor derived from the experiment time scale.
+///
+/// This prevents zero or negative lag/delay values in the transformed LM
+/// parameters while staying small relative to the sampled experiment.
 fn positive_floor(scale: f64) -> f64 {
     (1.0e-9 * scale).max(1.0e-9)
 }
 
+/// Rejects zero or nonfinite process gains before applying a tuning rule.
 fn validate_process_gain<R>(gain: R) -> Result<(), PidDesignError>
 where
     R: Float + Copy,
@@ -873,6 +940,7 @@ where
     }
 }
 
+/// Validates a strictly positive tuning or process parameter.
 fn validate_positive<R>(value: R, which: &'static str) -> Result<(), PidDesignError>
 where
     R: Float + Copy,
@@ -884,6 +952,7 @@ where
     }
 }
 
+/// Validates a nonnegative tuning or process parameter.
 fn validate_nonnegative<R>(value: R, which: &'static str) -> Result<(), PidDesignError>
 where
     R: Float + Copy,
@@ -895,6 +964,7 @@ where
     }
 }
 
+/// Scalar minimum helper that keeps the generic tuning formulas readable.
 fn min_value<R>(lhs: R, rhs: R) -> R
 where
     R: Float + Copy,
@@ -902,6 +972,7 @@ where
     if lhs < rhs { lhs } else { rhs }
 }
 
+/// Returns the scalar constant `2`.
 fn two<R>() -> R
 where
     R: Float + Copy,
@@ -909,6 +980,7 @@ where
     R::from(2.0).unwrap()
 }
 
+/// Returns the scalar constant `4`.
 fn four<R>() -> R
 where
     R: Float + Copy,
