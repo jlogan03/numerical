@@ -16,6 +16,7 @@
 pub mod balanced;
 pub mod hsvd;
 pub mod identification;
+pub mod lqr;
 pub mod lti;
 pub mod lyapunov;
 pub mod realization;
@@ -36,6 +37,7 @@ pub use identification::{
     EraError, EraInternals, EraInternalsLevel, EraParams, EraResult, OkidError, OkidParams,
     OkidResult, era_from_markov, era_from_shifted_hankel, okid,
 };
+pub use lqr::{LqrError, LqrSolve, dlqr_dense, lqr_dense};
 pub use lyapunov::{
     DenseLyapunovSolve, LowRankFactor, LowRankLyapunovSolve, LyapunovError, LyapunovParams,
     ShiftStrategy, controllability_gramian_dense, controllability_gramian_low_rank,

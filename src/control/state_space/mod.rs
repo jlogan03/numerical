@@ -22,6 +22,7 @@ pub use domain::{ContinuousTime, DiscreteTime};
 pub use error::StateSpaceError;
 pub use sparse::{SparseContinuousStateSpace, SparseDiscreteStateSpace, SparseStateSpace};
 
+use super::lqr::{LqrError, LqrSolve, dlqr_dense, lqr_dense};
 use super::lyapunov::{
     DenseLyapunovSolve, LyapunovError, controllability_gramian_dense, observability_gramian_dense,
 };
@@ -174,7 +175,7 @@ where
 impl<T> ContinuousStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float + Copy + faer_traits::RealField,
 {
     /// Computes the dense continuous-time controllability Gramian of the model.
     ///
@@ -205,6 +206,14 @@ where
         method: DiscretizationMethod<T::Real>,
     ) -> Result<DiscreteStateSpace<T>, StateSpaceError> {
         convert::discretize(self, sample_time, method)
+    }
+
+    /// Designs the dense infinite-horizon continuous-time LQR controller.
+    ///
+    /// This is a convenience wrapper around [`super::lqr::lqr_dense`] using the
+    /// model's stored `A` and `B` blocks.
+    pub fn lqr(&self, q: MatRef<'_, T>, r: MatRef<'_, T>) -> Result<LqrSolve<T>, LqrError> {
+        lqr_dense(self.a.as_ref(), self.b.as_ref(), q, r)
     }
 }
 
@@ -274,7 +283,7 @@ where
 impl<T> DiscreteStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float + Copy + faer_traits::RealField,
 {
     /// Computes the dense discrete-time controllability Gramian of the model.
     ///
@@ -311,6 +320,14 @@ where
         method: ContinuousizationMethod<T::Real>,
     ) -> Result<ContinuousStateSpace<T>, StateSpaceError> {
         convert::continuousize(self, method)
+    }
+
+    /// Designs the dense infinite-horizon discrete-time DLQR controller.
+    ///
+    /// This is a convenience wrapper around [`super::lqr::dlqr_dense`] using
+    /// the model's stored `A` and `B` blocks.
+    pub fn dlqr(&self, q: MatRef<'_, T>, r: MatRef<'_, T>) -> Result<LqrSolve<T>, LqrError> {
+        dlqr_dense(self.a.as_ref(), self.b.as_ref(), q, r)
     }
 }
 
