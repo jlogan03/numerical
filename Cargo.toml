@@ -16,6 +16,7 @@ crunchy = "^0.2.4"
 num-traits = { version = "^0.2.19", default-features = false, features = ["libm"] }
 faer = { version = "^0.24.0", optional = true }
 faer-traits = { version = "^0.24.0", optional = true }
+levenberg-marquardt = "0.15.0"
 
 [features]
 default = ["std"]
