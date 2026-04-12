@@ -4,9 +4,7 @@ use super::util::{
     CompositionDomain, identity_section, poly_mul, root_sections, validate_sample_time,
 };
 use super::zpk::Zpk;
-use crate::control::state_space::{
-    ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime,
-};
+use super::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
 use faer::complex::Complex;
 use faer_traits::RealField;
 use num_traits::Float;

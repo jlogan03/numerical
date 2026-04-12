@@ -1,5 +1,5 @@
 use super::error::LtiError;
-use crate::control::state_space::{ContinuousTime, DiscreteTime};
+use super::{ContinuousTime, DiscreteTime};
 use faer::Mat;
 use faer::complex::Complex;
 use faer_traits::RealField;

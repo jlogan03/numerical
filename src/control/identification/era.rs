@@ -1,5 +1,5 @@
+use crate::control::lti::state_space::{DiscreteStateSpace, StateSpaceError};
 use crate::control::realization::{MarkovSequence, RealizationError, ShiftedBlockHankelPair};
-use crate::control::state_space::{DiscreteStateSpace, StateSpaceError};
 use crate::decomp::{DecompError, DenseDecompParams, dense_svd};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use faer::{Col, ColRef, Mat, MatRef};
@@ -468,8 +468,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::{EraInternalsLevel, EraParams, era_from_markov, era_from_shifted_hankel};
+    use crate::control::lti::state_space::DiscreteStateSpace;
     use crate::control::realization::MarkovSequence;
-    use crate::control::state_space::DiscreteStateSpace;
     use faer::{Mat, MatRef};
 
     fn assert_close(lhs: MatRef<'_, f64>, rhs: MatRef<'_, f64>, tol: f64) {

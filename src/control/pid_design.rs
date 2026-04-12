@@ -16,10 +16,10 @@
 //! - a pragmatic `OKID -> ERA -> PID` bridge for tuning from sampled I/O data
 
 use super::identification::{EraError, EraParams, OkidError, OkidParams, era_from_markov, okid};
+use super::lti::state_space::{ContinuousStateSpace, DiscreteStateSpace, StateSpaceError};
 use super::lti::{ContinuousTransferFunction, DiscreteTransferFunction, LtiError};
 use super::pid::{AntiWindup, Pid, PidError};
 use super::realization::recommended_square_era_block_dim;
-use super::state_space::{ContinuousStateSpace, DiscreteStateSpace, StateSpaceError};
 use core::fmt;
 use faer::Mat;
 use faer::complex::Complex;

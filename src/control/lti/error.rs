@@ -1,6 +1,6 @@
 use core::fmt;
 
-use crate::control::state_space::StateSpaceError;
+use super::state_space::StateSpaceError;
 use crate::decomp::DecompError;
 use crate::sparse::lu::SparseLuError;
 use faer::linalg::solvers::{EvdError, SvdError};

@@ -334,7 +334,7 @@ where
 mod tests {
     use super::{OkidError, OkidParams, okid};
     use crate::control::identification::{EraParams, era_from_markov};
-    use crate::control::state_space::DiscreteStateSpace;
+    use crate::control::lti::state_space::DiscreteStateSpace;
     use faer::{Mat, MatRef};
 
     fn assert_close(lhs: MatRef<'_, f64>, rhs: MatRef<'_, f64>, tol: f64) {

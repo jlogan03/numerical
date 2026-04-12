@@ -28,7 +28,6 @@ pub mod pid;
 pub mod pid_design;
 pub mod realization;
 pub mod riccati;
-pub mod state_space;
 pub mod stein;
 
 pub use balanced::{
@@ -51,6 +50,11 @@ pub use identification::{
 };
 pub use lqg::{LqgError, LqgSolve, dlqg_dense, lqg_dense};
 pub use lqr::{LqrError, LqrSolve, dlqr_dense, lqr_dense};
+pub use lti::state_space::{
+    ContinuousStateSpace, ContinuousTime, ContinuousizationMethod, DiscreteStateSpace,
+    DiscreteTime, DiscretizationMethod, ObserverControllerComposition, SparseContinuousStateSpace,
+    SparseDiscreteStateSpace, SparseStateSpace, StateSpace, StateSpaceError,
+};
 pub use lyapunov::{
     DenseLyapunovSolve, LowRankFactor, LowRankLyapunovSolve, LyapunovError, LyapunovParams,
     ShiftStrategy, controllability_gramian_dense, controllability_gramian_low_rank,
@@ -81,11 +85,6 @@ pub use realization::{
 pub use riccati::{
     RiccatiError, RiccatiSolve, care_gain_from_solution, dare_gain_from_solution, solve_care_dense,
     solve_dare_dense,
-};
-pub use state_space::{
-    ContinuousStateSpace, ContinuousTime, ContinuousizationMethod, DiscreteStateSpace,
-    DiscreteTime, DiscretizationMethod, ObserverControllerComposition, SparseContinuousStateSpace,
-    SparseDiscreteStateSpace, SparseStateSpace, StateSpace, StateSpaceError,
 };
 pub use stein::{
     DenseSteinSolve, SteinError, controllability_gramian_discrete_dense,

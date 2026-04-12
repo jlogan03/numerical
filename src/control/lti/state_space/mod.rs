@@ -22,11 +22,11 @@ pub use domain::{ContinuousTime, DiscreteTime};
 pub use error::StateSpaceError;
 pub use sparse::{SparseContinuousStateSpace, SparseDiscreteStateSpace, SparseStateSpace};
 
-use super::lqr::{LqrError, LqrSolve, dlqr_dense, lqr_dense};
-use super::lyapunov::{
+use crate::control::lqr::{LqrError, LqrSolve, dlqr_dense, lqr_dense};
+use crate::control::lyapunov::{
     DenseLyapunovSolve, LyapunovError, controllability_gramian_dense, observability_gramian_dense,
 };
-use super::stein::{
+use crate::control::stein::{
     DenseSteinSolve, SteinError, controllability_gramian_discrete_dense,
     observability_gramian_discrete_dense,
 };

@@ -224,7 +224,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::MarkovSequence;
-    use crate::control::state_space::{DiscreteStateSpace, SparseDiscreteStateSpace};
+    use crate::control::lti::state_space::{DiscreteStateSpace, SparseDiscreteStateSpace};
     use faer::Mat;
     use faer::MatRef;
     use faer::sparse::{SparseColMat, Triplet};

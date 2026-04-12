@@ -1,7 +1,7 @@
 use super::analysis::sparse_transfer_at_points;
 use super::error::LtiError;
-use crate::control::state_space::convert::matrix_exponential;
-use crate::control::state_space::{
+use super::state_space::convert::matrix_exponential;
+use super::state_space::{
     ContinuousStateSpace, DiscreteStateSpace, SparseContinuousStateSpace, SparseDiscreteStateSpace,
 };
 use crate::sparse::compensated::{CompensatedField, CompensatedSum, sum2};
@@ -809,7 +809,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{ContinuousImpulseResponse, SampledResponse};
-    use crate::control::state_space::{
+    use crate::control::lti::state_space::{
         ContinuousStateSpace, DiscreteStateSpace, SparseContinuousStateSpace,
         SparseDiscreteStateSpace,
     };

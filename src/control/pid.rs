@@ -13,10 +13,10 @@
 //! error dynamics and discretized through the existing state-space conversion
 //! path when the caller asks for a sampled LTI model.
 
-use super::lti::{ContinuousTransferFunction, DiscreteTransferFunction, LtiError};
-use super::state_space::{
+use super::lti::state_space::{
     ContinuousStateSpace, DiscreteStateSpace, DiscretizationMethod, StateSpaceError,
 };
+use super::lti::{ContinuousTransferFunction, DiscreteTransferFunction, LtiError};
 use crate::sparse::compensated::CompensatedField;
 use core::fmt;
 use faer::Mat;

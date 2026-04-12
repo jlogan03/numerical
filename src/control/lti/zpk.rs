@@ -2,9 +2,7 @@ use super::error::LtiError;
 use super::sos::Sos;
 use super::transfer_function::TransferFunction;
 use super::util::{CompositionDomain, real_poly_from_roots, validate_sample_time};
-use crate::control::state_space::{
-    ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime,
-};
+use super::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
 use faer::complex::Complex;
 use faer_traits::RealField;
 use num_traits::Float;

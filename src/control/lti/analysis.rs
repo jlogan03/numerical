@@ -1,5 +1,5 @@
 use super::error::LtiError;
-use crate::control::state_space::{
+use super::state_space::{
     ContinuousStateSpace, DiscreteStateSpace, SparseContinuousStateSpace, SparseDiscreteStateSpace,
     SparseStateSpace, StateSpace,
 };
@@ -526,7 +526,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::control::state_space::{
+    use crate::control::lti::state_space::{
         ContinuousStateSpace, DiscreteStateSpace, SparseContinuousStateSpace,
         SparseDiscreteStateSpace,
     };

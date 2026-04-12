@@ -15,8 +15,8 @@
 //! - [`SteadyStateKalmanFilter`] for discrete-time fixed-gain observation
 //! - [`ContinuousObserver`] for continuous-time fixed-gain observation
 
+use super::lti::{ContinuousStateSpace, DiscreteStateSpace};
 use super::riccati::{RiccatiError, solve_care_dense, solve_dare_dense};
-use super::state_space::{ContinuousStateSpace, DiscreteStateSpace};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use core::fmt;
 use faer::prelude::Solve;
@@ -1527,7 +1527,7 @@ mod test {
         ContinuousObserver, CovarianceUpdate, DiscreteKalmanFilter, EstimatorError,
         SteadyStateKalmanFilter, dlqe_dense, lqe_dense,
     };
-    use crate::control::state_space::{ContinuousStateSpace, DiscreteStateSpace};
+    use crate::control::lti::state_space::{ContinuousStateSpace, DiscreteStateSpace};
     use faer::Mat;
     use faer_traits::ext::ComplexFieldExt;
 

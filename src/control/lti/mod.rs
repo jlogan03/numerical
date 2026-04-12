@@ -31,6 +31,7 @@ mod plot_data;
 mod response;
 mod sim;
 mod sos;
+pub mod state_space;
 mod transfer_function;
 mod util;
 mod zpk;
@@ -57,7 +58,7 @@ pub use transfer_function::{
 };
 pub use zpk::{ContinuousZpk, DiscreteZpk, Zpk};
 
-pub use super::state_space::{
+pub use state_space::{
     ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime,
     SparseContinuousStateSpace, SparseDiscreteStateSpace, SparseStateSpace, StateSpace,
     StateSpaceError,

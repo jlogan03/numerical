@@ -13,9 +13,9 @@
 
 use super::estimator::{EstimatorError, LqeSolve, dlqe_dense, lqe_dense};
 use super::lqr::{LqrError, LqrSolve, dlqr_dense, lqr_dense};
-use super::state_space::{
-    ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime,
-    ObserverControllerComposition, StateSpace, StateSpaceError,
+use super::lti::{
+    ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime, StateSpace,
+    StateSpaceError, state_space::ObserverControllerComposition,
 };
 use crate::sparse::compensated::CompensatedField;
 use core::fmt;
@@ -262,7 +262,7 @@ fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
 #[cfg(test)]
 mod test {
     use super::{dlqg_dense, lqg_dense};
-    use crate::control::state_space::{ContinuousStateSpace, DiscreteStateSpace};
+    use crate::control::lti::state_space::{ContinuousStateSpace, DiscreteStateSpace};
     use crate::control::{dlqe_dense, dlqr_dense, lqe_dense, lqr_dense};
     use faer::Mat;
 

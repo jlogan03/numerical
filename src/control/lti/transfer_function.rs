@@ -5,9 +5,7 @@ use super::util::{
     poly_roots, poly_sub_aligned, real_poly_from_roots, trim_leading_zeros, validate_sample_time,
 };
 use super::zpk::Zpk;
-use crate::control::state_space::{
-    ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime,
-};
+use super::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
 use faer::complex::Complex;
 use faer::prelude::Solve;
 use faer::{Mat, MatRef};

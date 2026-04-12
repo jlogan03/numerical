@@ -309,7 +309,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{SparseContinuousStateSpace, SparseDiscreteStateSpace};
-    use crate::control::state_space::StateSpaceError;
+    use crate::control::lti::state_space::StateSpaceError;
     use faer::Mat;
     use faer::sparse::{SparseColMat, Triplet};
 

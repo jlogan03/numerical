@@ -151,7 +151,7 @@ where
 #[cfg(test)]
 mod test {
     use super::{LqrError, dlqr_dense, lqr_dense};
-    use crate::control::state_space::{ContinuousStateSpace, DiscreteStateSpace};
+    use crate::control::lti::state_space::{ContinuousStateSpace, DiscreteStateSpace};
     use crate::control::{RiccatiError, solve_care_dense, solve_dare_dense};
     use faer::Mat;
     use faer_traits::ext::ComplexFieldExt;

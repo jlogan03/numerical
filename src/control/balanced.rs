@@ -30,11 +30,11 @@
 //! balancing algebra on request.
 
 use super::hsvd::{HsvdError, hsvd_from_dense_gramians, hsvd_from_factors};
+use super::lti::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
 use super::lyapunov::{
     LyapunovError, LyapunovParams, ShiftStrategy, controllability_gramian_dense,
     controllability_gramian_low_rank, observability_gramian_dense, observability_gramian_low_rank,
 };
-use super::state_space::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
 use super::stein::{
     SteinError, controllability_gramian_discrete_dense, controllability_gramian_discrete_low_rank,
     observability_gramian_discrete_dense, observability_gramian_discrete_low_rank,
@@ -84,7 +84,7 @@ where
     T::Real: Float + Copy,
 {
     /// Reduced state-space model.
-    pub reduced: super::state_space::StateSpace<T, Domain>,
+    pub reduced: super::lti::state_space::StateSpace<T, Domain>,
     /// Hankel singular values in descending order.
     pub hankel_singular_values: Col<T::Real>,
     /// Final retained order.
@@ -114,7 +114,7 @@ pub enum BalancedError<R> {
     /// failed. This is a direct passthrough of the reusable HSVD layer.
     Hsvd(HsvdError<R>),
     /// Reduced state-space construction failed.
-    StateSpace(super::state_space::StateSpaceError),
+    StateSpace(super::lti::state_space::StateSpaceError),
 }
 
 impl<R: fmt::Debug> fmt::Display for BalancedError<R> {
@@ -137,8 +137,8 @@ impl<R> From<SteinError> for BalancedError<R> {
     }
 }
 
-impl<R> From<super::state_space::StateSpaceError> for BalancedError<R> {
-    fn from(value: super::state_space::StateSpaceError) -> Self {
+impl<R> From<super::lti::state_space::StateSpaceError> for BalancedError<R> {
+    fn from(value: super::lti::state_space::StateSpaceError) -> Self {
         Self::StateSpace(value)
     }
 }
@@ -312,7 +312,7 @@ where
     validate_sparse_system_dims(a.nrows().unbound(), b, c, d)?;
     if !sample_time.is_finite() || sample_time <= <T::Real as Zero>::zero() {
         return Err(BalancedError::StateSpace(
-            super::state_space::StateSpaceError::InvalidSampleTime,
+            super::lti::state_space::StateSpaceError::InvalidSampleTime,
         ));
     }
 
@@ -486,7 +486,7 @@ where
     // the wrapper boundary before any projection work begins.
     if b.nrows() != nstates {
         return Err(BalancedError::StateSpace(
-            super::state_space::StateSpaceError::DimensionMismatch {
+            super::lti::state_space::StateSpaceError::DimensionMismatch {
                 which: "b",
                 expected_nrows: nstates,
                 expected_ncols: b.ncols(),
@@ -497,7 +497,7 @@ where
     }
     if c.ncols() != nstates {
         return Err(BalancedError::StateSpace(
-            super::state_space::StateSpaceError::DimensionMismatch {
+            super::lti::state_space::StateSpaceError::DimensionMismatch {
                 which: "c",
                 expected_nrows: c.nrows(),
                 expected_ncols: nstates,
@@ -508,7 +508,7 @@ where
     }
     if d.nrows() != c.nrows() || d.ncols() != b.ncols() {
         return Err(BalancedError::StateSpace(
-            super::state_space::StateSpaceError::DimensionMismatch {
+            super::lti::state_space::StateSpaceError::DimensionMismatch {
                 which: "d",
                 expected_nrows: c.nrows(),
                 expected_ncols: b.ncols(),
