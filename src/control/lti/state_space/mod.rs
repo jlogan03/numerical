@@ -8,7 +8,7 @@
 //! system so downstream algorithms can state their assumptions clearly.
 //!
 //! This module is the model layer that sits above the lower-level Gramian and
-//! matrix-equation routines in [`super::lyapunov`]. It gives those routines a
+//! matrix-equation routines in [`crate::control::lyapunov`]. It gives those routines a
 //! structured `A/B/C/D` home and makes the time domain part of the type
 //! instead of leaving it as an implicit convention at the call site.
 
@@ -322,7 +322,7 @@ where
 
     /// Designs the dense infinite-horizon continuous-time LQR controller.
     ///
-    /// This is a convenience wrapper around [`super::lqr::lqr_dense`] using the
+    /// This is a convenience wrapper around [`crate::control::lqr::lqr_dense`] using the
     /// model's stored `A` and `B` blocks.
     pub fn lqr(&self, q: MatRef<'_, T>, r: MatRef<'_, T>) -> Result<LqrSolve<T>, LqrError> {
         lqr_dense(self.a.as_ref(), self.b.as_ref(), q, r)
@@ -525,7 +525,7 @@ where
 
     /// Designs the dense infinite-horizon discrete-time DLQR controller.
     ///
-    /// This is a convenience wrapper around [`super::lqr::dlqr_dense`] using
+    /// This is a convenience wrapper around [`crate::control::lqr::dlqr_dense`] using
     /// the model's stored `A` and `B` blocks.
     pub fn dlqr(&self, q: MatRef<'_, T>, r: MatRef<'_, T>) -> Result<LqrSolve<T>, LqrError> {
         dlqr_dense(self.a.as_ref(), self.b.as_ref(), q, r)

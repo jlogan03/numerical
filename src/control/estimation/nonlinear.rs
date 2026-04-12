@@ -1,12 +1,12 @@
 //! Discrete-time nonlinear state estimation with EKF and UKF runtimes.
 //!
-//! This module deliberately mirrors the structure of [`super::estimator`]
+//! This module deliberately mirrors the structure of [`super::linear`]
 //! where practical:
 //!
 //! - explicit `predict` / `update` / `step` stages
 //! - innovation and normalized-innovation diagnostics
 //! - configurable covariance-update policy through
-//!   [`super::estimator::CovarianceUpdate`]
+//!   [`super::CovarianceUpdate`]
 //!
 //! The first implementation is restricted to additive-noise discrete-time
 //! models:
@@ -17,7 +17,7 @@
 //! with `Q` interpreted directly in state coordinates and `R` interpreted
 //! directly in measurement coordinates.
 
-use super::estimator::CovarianceUpdate;
+use super::CovarianceUpdate;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use core::fmt;
 use faer::prelude::Solve;
@@ -1486,7 +1486,7 @@ mod tests {
         NonlinearEstimatorError, SigmaPointProvider, SigmaPointSet, UkfStage,
         UnscentedKalmanFilter, UnscentedParams,
     };
-    use crate::control::estimator::{CovarianceUpdate, DiscreteKalmanFilter};
+    use crate::control::estimation::{CovarianceUpdate, DiscreteKalmanFilter};
     use faer::Mat;
     use std::cell::Cell;
     use std::rc::Rc;

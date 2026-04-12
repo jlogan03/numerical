@@ -2,11 +2,11 @@
 //!
 //! The module is organized in layers:
 //!
-//! - `state_space` and `lti` provide model representations and analysis
+//! - `lti` provides model representations, analysis, and filtering
 //! - `lyapunov`, `stein`, and `hsvd` provide reusable matrix-equation and
 //!   balancing-core numerics
 //! - `balanced` builds reduced-order models on top of those lower-level pieces
-//! - `riccati`, `lqr`, `estimator`, `lqg`, and `pid` provide controller and
+//! - `riccati`, `lqr`, `estimation`, `lqg`, and `pid` provide controller and
 //!   estimator design plus practical runtime controller wrappers
 //!
 //! The current public surface is still dense-first for higher-level model
@@ -16,14 +16,13 @@
 //! complete paths.
 
 pub mod balanced;
-pub mod estimator;
+pub mod estimation;
 pub mod hsvd;
 pub mod identification;
 pub mod lqg;
 pub mod lqr;
 pub mod lti;
 pub mod lyapunov;
-pub mod nonlinear_estimator;
 pub mod pid;
 pub mod pid_design;
 pub mod realization;
@@ -35,7 +34,7 @@ pub use balanced::{
     balanced_truncation_continuous_dense, balanced_truncation_continuous_low_rank,
     balanced_truncation_discrete_dense, balanced_truncation_discrete_low_rank,
 };
-pub use estimator::{
+pub use estimation::{
     ContinuousObserver, ContinuousObserverDerivative, CovarianceUpdate, DiscreteKalmanFilter,
     EstimatorError, KalmanPrediction, KalmanUpdate, LqeSolve, SteadyStateKalmanFilter,
     SteadyStateKalmanPrediction, SteadyStateKalmanUpdate, dlqe_dense, lqe_dense,
@@ -59,11 +58,6 @@ pub use lyapunov::{
     DenseLyapunovSolve, LowRankFactor, LowRankLyapunovSolve, LyapunovError, LyapunovParams,
     ShiftStrategy, controllability_gramian_dense, controllability_gramian_low_rank,
     observability_gramian_dense, observability_gramian_low_rank, solve_continuous_lyapunov_dense,
-};
-pub use nonlinear_estimator::{
-    DiscreteExtendedKalmanModel, DiscreteNonlinearModel, ExtendedKalmanFilter,
-    NonlinearEstimatorError, NonlinearKalmanPrediction, NonlinearKalmanUpdate, SigmaPointProvider,
-    SigmaPointSet, SigmaPointStrategy, UkfStage, UnscentedKalmanFilter, UnscentedParams,
 };
 pub use pid::{AntiWindup, Pid, PidError, PidOutput, PidState};
 pub use pid_design::{
