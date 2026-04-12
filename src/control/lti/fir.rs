@@ -281,6 +281,8 @@ where
 
         let mut state = FirFilterState::for_filter(self);
         let mut first_pass = Vec::with_capacity(total_len);
+        // The padding is sampled logically through `padded_sample` rather than
+        // by allocating a full padded copy of the signal.
         for idx in 0..total_len {
             let sample = padded_sample(input, params.mode, pad_len, idx);
             first_pass.push(fir_step(&self.taps, &mut state.delay_line, sample));
@@ -320,6 +322,10 @@ where
         R::from(offset).unwrap().powi(col as i32)
     });
 
+    // Savitzky-Golay taps are entries of the pseudoinverse row corresponding
+    // to the requested derivative evaluated at the window center. Using the
+    // SVD keeps the design numerically stable for modest polynomial orders and
+    // makes rank deficiency explicit instead of silently amplifying it.
     let svd = dense_svd(a.as_ref(), &DenseDecompParams::<R>::new())?;
     let singular_values = (0..svd.s.nrows())
         .map(|i| svd.s[i].abs())
@@ -344,6 +350,8 @@ where
     let taps = (0..spec.window_len)
         .map(|sample_idx| {
             let mut acc = CompensatedSum::<R>::default();
+            // This is the `(d, sample_idx)` entry of `A^+`, assembled from the
+            // retained singular triplets only.
             for k in 0..retained {
                 acc.add(
                     svd.v[(spec.derivative_order, k)]
@@ -358,6 +366,7 @@ where
     Fir::new(taps, spec.sample_spacing)
 }
 
+/// Validates that a reusable FIR delay line matches the filter order.
 fn validate_fir_state_len<R>(filter: &Fir<R>, state: &FirFilterState<R>) -> Result<(), LtiError> {
     let expected = filter.taps.len().saturating_sub(1);
     if state.delay_line.len() == expected {
@@ -371,6 +380,10 @@ fn validate_fir_state_len<R>(filter: &Fir<R>, state: &FirFilterState<R>) -> Resu
     }
 }
 
+/// Advances one direct-convolution FIR step.
+///
+/// The delay line stores previous inputs from newest to oldest, so the causal
+/// recurrence is just `h[0] * x[k] + h[1] * x[k-1] + ...`.
 fn fir_step<R>(taps: &[R], delay_line: &mut [R], input: R) -> R
 where
     R: Float + Copy + RealField + CompensatedField,
@@ -391,6 +404,7 @@ where
     output
 }
 
+/// Validates the structural constraints of a Savitzky-Golay specification.
 fn validate_savgol_spec<R>(
     window_len: usize,
     poly_order: usize,
@@ -423,6 +437,11 @@ where
     Ok(())
 }
 
+/// Returns `n!` as the target real scalar type.
+///
+/// Savitzky-Golay derivative kernels differ from the smoothing kernel by the
+/// usual factorial scale coming from the derivative of the fitted polynomial at
+/// the window center.
 fn factorial_as_real<R>(n: usize) -> R
 where
     R: Float + Copy,

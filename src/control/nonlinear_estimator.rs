@@ -171,6 +171,12 @@ pub enum SigmaPointStrategy<R> {
 }
 
 impl<R> SigmaPointStrategy<R> {
+    /// Resolves the sigma-point set for one UKF stage.
+    ///
+    /// The standard path derives points from the current mean/covariance. The
+    /// custom path delegates the full point-and-weight choice to the caller so
+    /// discontinuity-aware placement can be injected without changing the rest
+    /// of the UKF algebra.
     fn sigma_points(
         &self,
         mean: MatRef<'_, R>,
@@ -764,6 +770,7 @@ where
     }
 }
 
+/// Validates the shared EKF/UKF model-state dimensions.
 fn validate_nonlinear_filter_model<R>(
     nstates: usize,
     ninputs: usize,
@@ -789,6 +796,7 @@ fn validate_nonlinear_filter_model<R>(
     Ok(())
 }
 
+/// Validates the structural shape of a nonlinear prediction bundle.
 fn validate_prediction<R>(
     prediction: &NonlinearKalmanPrediction<R>,
     nstates: usize,
@@ -830,6 +838,7 @@ fn which_output(prefix: &'static str) -> &'static str {
     }
 }
 
+/// Validates a square dense matrix shape.
 fn validate_square<R>(
     which: &'static str,
     matrix: MatRef<'_, R>,
@@ -838,6 +847,7 @@ fn validate_square<R>(
     validate_rect(which, matrix, expected_dim, expected_dim)
 }
 
+/// Validates a general dense matrix shape against explicit row/column targets.
 fn validate_rect<R>(
     which: &'static str,
     matrix: MatRef<'_, R>,
@@ -856,6 +866,7 @@ fn validate_rect<R>(
     Ok(())
 }
 
+/// Validates a dense column-vector shape.
 fn validate_column_vector<R>(
     which: &'static str,
     matrix: MatRef<'_, R>,
@@ -864,6 +875,11 @@ fn validate_column_vector<R>(
     validate_rect(which, matrix, expected_nrows, 1)
 }
 
+/// Validates the output returned by a nonlinear model callback.
+///
+/// Model callbacks get their own error variant so user-model contract
+/// violations are easier to distinguish from ordinary caller-side dimension
+/// mismatches.
 fn validate_model_output<R>(
     which: &'static str,
     matrix: MatRef<'_, R>,
@@ -882,6 +898,7 @@ fn validate_model_output<R>(
     Ok(())
 }
 
+/// Rejects non-finite matrices produced by model callbacks or dense solves.
 fn validate_finite<R>(
     which: &'static str,
     matrix: MatRef<'_, R>,
@@ -895,6 +912,10 @@ where
     Ok(())
 }
 
+/// Validates the standard scaled-unscented-transform parameters.
+///
+/// The key check is that the implied `n + lambda` spread scale stays strictly
+/// positive. If it does not, the standard sigma-point construction degenerates.
 fn validate_unscented_params<R>(
     params: UnscentedParams<R>,
     nstates: usize,
@@ -921,6 +942,11 @@ where
     Ok(())
 }
 
+/// Validates an expert-supplied sigma-point set before the UKF consumes it.
+///
+/// The first pass enforces the structural invariants that matter most for
+/// correctness: point count, weight count, finiteness, and mean-weight
+/// normalization.
 fn validate_sigma_point_set<R>(
     sigma: &SigmaPointSet<R>,
     nstates: usize,
@@ -970,6 +996,11 @@ where
     Ok(())
 }
 
+/// Builds the standard scaled sigma-point set from a mean/covariance pair.
+///
+/// The covariance square root comes from a dense Cholesky factorization. The
+/// first implementation rejects non-PSD inputs rather than injecting silent
+/// jitter.
 fn standard_sigma_points<R>(
     mean: MatRef<'_, R>,
     covariance: MatRef<'_, R>,
@@ -1028,6 +1059,10 @@ where
     })
 }
 
+/// Propagates a sigma-point matrix through one nonlinear callback.
+///
+/// Each input column is treated as one sigma point and the callback must return
+/// a column vector of fixed length for every point.
 fn propagate_sigma_points<R, F>(
     points: MatRef<'_, R>,
     mut map: F,
@@ -1054,6 +1089,7 @@ where
     Ok(out)
 }
 
+/// Reconstructs a weighted mean from sigma points stored columnwise.
 fn weighted_mean<R>(points: MatRef<'_, R>, weights: &[R]) -> Mat<R>
 where
     R: CompensatedField + RealField,
@@ -1068,6 +1104,10 @@ where
     })
 }
 
+/// Reconstructs a covariance-like second moment from centered sigma points.
+///
+/// This is used both for predicted state covariance and predicted measurement
+/// covariance in the UKF.
 fn weighted_covariance<R>(points: MatRef<'_, R>, mean: MatRef<'_, R>, weights: &[R]) -> Mat<R>
 where
     R: CompensatedField + RealField,
@@ -1084,6 +1124,7 @@ where
     })
 }
 
+/// Reconstructs the state/measurement cross covariance used in the UKF gain.
 fn weighted_cross_covariance<R>(
     lhs_points: MatRef<'_, R>,
     lhs_mean: MatRef<'_, R>,
@@ -1106,6 +1147,7 @@ where
     })
 }
 
+/// Applies the EKF covariance update using either the simple or Joseph form.
 fn updated_covariance<R>(
     covariance_update: CovarianceUpdate,
     predicted_covariance: MatRef<'_, R>,
@@ -1137,6 +1179,12 @@ where
     }
 }
 
+/// Applies the UKF covariance update.
+///
+/// The simple path uses the usual `P - K S K^H` subtraction. For the Joseph
+/// path the UKF has no explicit measurement Jacobian, so this helper recovers
+/// the effective linear sensitivity implied by the cross covariance before
+/// delegating to the same Joseph-form algebra used by the EKF.
 fn updated_covariance_ukf<R>(
     covariance_update: CovarianceUpdate,
     predicted_covariance: MatRef<'_, R>,
@@ -1176,6 +1224,10 @@ where
     }
 }
 
+/// Returns the square root of the normalized innovation energy.
+///
+/// This matches the runtime consistency metric used by the linear estimator
+/// layer, applied here to the nonlinear innovation covariance.
 fn normalized_innovation_norm<R>(
     innovation: MatRef<'_, R>,
     innovation_covariance: MatRef<'_, R>,
@@ -1195,6 +1247,11 @@ where
         .sqrt())
 }
 
+/// Solves `lhs * X = rhs` and rejects numerically unusable results.
+///
+/// The nonlinear layer keeps the same posture as the linear estimator code:
+/// avoid explicit inversion, but also reject obviously inconsistent dense
+/// solves using a residual check.
 fn solve_left_checked<R>(
     lhs: MatRef<'_, R>,
     rhs: MatRef<'_, R>,
@@ -1221,6 +1278,7 @@ where
     Ok(solution)
 }
 
+/// Solves `X * lhs = rhs` by transposing into [`solve_left_checked`].
 fn solve_right_checked<R>(
     rhs_left: MatRef<'_, R>,
     lhs_right: MatRef<'_, R>,
@@ -1245,12 +1303,14 @@ where
     R::Real::epsilon().sqrt()
 }
 
+/// Clones a dense matrix reference into an owned matrix.
 fn clone_mat<R: Copy>(matrix: MatRef<'_, R>) -> Mat<R> {
     Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
         matrix[(row, col)]
     })
 }
 
+/// Returns a dense identity matrix of the requested size.
 fn identity<R>(dim: usize) -> Mat<R>
 where
     R: ComplexField + Copy,
@@ -1262,12 +1322,14 @@ where
     )
 }
 
+/// Returns the plain transpose of a dense matrix.
 fn dense_transpose<R: Copy>(matrix: MatRef<'_, R>) -> Mat<R> {
     Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
         matrix[(col, row)]
     })
 }
 
+/// Dense matrix multiply using compensated accumulation per output entry.
 fn dense_mul<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> Mat<R>
 where
     R: CompensatedField + RealField,
@@ -1282,6 +1344,10 @@ where
     })
 }
 
+/// Dense multiply with an adjoint on the right-hand factor.
+///
+/// This is the common covariance-like pattern `A B^H` used throughout the
+/// estimator implementation.
 fn dense_mul_adjoint_rhs<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> Mat<R>
 where
     R: CompensatedField + RealField,
@@ -1296,6 +1362,7 @@ where
     })
 }
 
+/// Dense matrix addition using compensated accumulation per entry.
 fn dense_add<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> Mat<R>
 where
     R: CompensatedField + RealField,
@@ -1309,6 +1376,7 @@ where
     })
 }
 
+/// Dense matrix subtraction using compensated accumulation per entry.
 fn dense_sub<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> Mat<R>
 where
     R: CompensatedField + RealField,
@@ -1322,6 +1390,7 @@ where
     })
 }
 
+/// Plain dense matrix multiply used only in residual checks.
 fn dense_mul_plain<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> Mat<R>
 where
     R: ComplexField + Copy,
@@ -1335,6 +1404,7 @@ where
     })
 }
 
+/// Plain dense subtraction used only in residual checks.
 fn dense_sub_plain<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> Mat<R>
 where
     R: ComplexField + Copy,
@@ -1344,6 +1414,7 @@ where
     })
 }
 
+/// Returns the real part of the Hermitian inner product between two vectors.
 fn inner_product_real<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> R::Real
 where
     R: CompensatedField + RealField,
@@ -1356,6 +1427,7 @@ where
     acc.finish().real()
 }
 
+/// Returns the Euclidean norm of a dense column vector.
 fn column_vector_norm<R>(vector: MatRef<'_, R>) -> R::Real
 where
     R: CompensatedField + RealField,
@@ -1368,6 +1440,11 @@ where
     acc.sqrt()
 }
 
+/// Projects a dense matrix onto the Hermitian subspace in place.
+///
+/// Small skew drift is expected after repeated covariance operations.
+/// Projecting back prevents that drift from accumulating into obviously
+/// inconsistent covariance matrices.
 fn hermitian_project_in_place<R>(matrix: &mut Mat<R>)
 where
     R: CompensatedField + RealField,
@@ -1384,6 +1461,10 @@ where
     }
 }
 
+/// Returns the Frobenius norm of a dense matrix without compensation.
+///
+/// This is only used inside residual checks where a simple secondary norm
+/// calculation is sufficient.
 fn frobenius_norm_plain<R>(matrix: MatRef<'_, R>) -> R::Real
 where
     R: ComplexField + Copy,
