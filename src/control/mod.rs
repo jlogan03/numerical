@@ -57,8 +57,13 @@ pub use lyapunov::{
 };
 pub use pid::{AntiWindup, Pid, PidError, PidOutput, PidState};
 pub use pid_design::{
-    FopdtModel, PidControllerKind, PidDesignError, ProcessFitResult, ProcessPidDesign,
-    SimcPidParams, SopdtModel, StepFitPidDesign, StepResponseData, design_pid_from_fopdt,
+    FopdtModel, FrequencyPidDesign, FrequencyPidParams, OkidEraPidDesign, PidControllerKind,
+    PidDesignError, ProcessFitResult, ProcessPidDesign, SampledIoData, SimcPidParams, SopdtModel,
+    StepFitPidDesign, StepOptimizationPidDesign, StepOptimizationPidParams, StepResponseData,
+    design_pid_from_continuous_state_space_frequency, design_pid_from_continuous_tf_frequency,
+    design_pid_from_discrete_state_space_frequency,
+    design_pid_from_discrete_state_space_step_optimization, design_pid_from_discrete_tf_frequency,
+    design_pid_from_discrete_tf_step_optimization, design_pid_from_fopdt, design_pid_from_okid_era,
     design_pid_from_sopdt, design_pid_from_step_response_fopdt,
     design_pid_from_step_response_sopdt, fit_fopdt_from_step_response,
     fit_sopdt_from_step_response,

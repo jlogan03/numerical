@@ -7,15 +7,26 @@
 //! - tune `PI` / `PIDF` controllers from those fitted models with SIMC-style
 //!   formulas
 //!
-//! More general transfer-function tuning and identification-driven PID design
-//! belong to later phases once the process-model path is in place.
+//! The module now also includes:
+//!
+//! - direct frequency-domain tuning from SISO transfer-function / state-space
+//!   plant models
+//! - discrete-time step-response optimization from arbitrary identified or
+//!   modeled plants
+//! - a pragmatic `OKID -> ERA -> PID` bridge for tuning from sampled I/O data
 
+use super::identification::{EraError, EraParams, OkidError, OkidParams, era_from_markov, okid};
+use super::lti::{ContinuousTransferFunction, DiscreteTransferFunction, LtiError};
 use super::pid::{AntiWindup, Pid, PidError};
+use super::realization::recommended_square_era_block_dim;
+use super::state_space::{ContinuousStateSpace, DiscreteStateSpace, StateSpaceError};
 use core::fmt;
+use faer::Mat;
+use faer::complex::Complex;
 use faer_traits::RealField;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt, differentiate_numerically};
 use nalgebra::storage::Owned;
-use nalgebra::{Dyn, OMatrix, OVector, U1, U3, U4, VecStorage, Vector3, Vector4};
+use nalgebra::{Dyn, OMatrix, OVector, U1, U2, U3, U4, VecStorage, Vector2, Vector3, Vector4};
 use num_traits::Float;
 
 /// Errors produced by PID process-model fitting and SIMC-style tuning.
@@ -33,6 +44,19 @@ pub enum PidDesignError {
     InvalidProcessFit,
     /// The requested tuning parameter is invalid.
     InvalidTuningParameter { which: &'static str },
+    /// The requested frequency-domain design target is invalid.
+    InvalidFrequencyTarget { which: &'static str },
+    /// A model-based or identification-based tuning solve did not converge to
+    /// a usable controller.
+    OptimizationFailed { which: &'static str },
+    /// LTI analysis or conversion failed.
+    Lti(LtiError),
+    /// State-space conversion or validation failed.
+    StateSpace(StateSpaceError),
+    /// OKID identification failed.
+    Okid(OkidError),
+    /// ERA realization failed.
+    Era(EraError),
     /// PID construction failed after the tuning rule produced gains.
     Pid(PidError),
 }
@@ -48,6 +72,30 @@ impl std::error::Error for PidDesignError {}
 impl From<PidError> for PidDesignError {
     fn from(value: PidError) -> Self {
         Self::Pid(value)
+    }
+}
+
+impl From<LtiError> for PidDesignError {
+    fn from(value: LtiError) -> Self {
+        Self::Lti(value)
+    }
+}
+
+impl From<StateSpaceError> for PidDesignError {
+    fn from(value: StateSpaceError) -> Self {
+        Self::StateSpace(value)
+    }
+}
+
+impl From<OkidError> for PidDesignError {
+    fn from(value: OkidError) -> Self {
+        Self::Okid(value)
+    }
+}
+
+impl From<EraError> for PidDesignError {
+    fn from(value: EraError) -> Self {
+        Self::Era(value)
     }
 }
 
@@ -280,6 +328,274 @@ pub struct StepFitPidDesign<R, M> {
     pub design: ProcessPidDesign<R, M>,
 }
 
+/// Frequency-domain PID tuning parameters for SISO plant models.
+///
+/// The current implementation solves for:
+///
+/// - `Kp`
+/// - `Ti`
+///
+/// and, for `Pid`, derives `Td = Ti / ti_over_td_ratio`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FrequencyPidParams<R> {
+    /// Target crossover frequency in rad/s.
+    pub crossover_frequency: R,
+    /// Desired phase margin in degrees.
+    pub phase_margin_deg: R,
+    /// Whether to return a `PI` or `PIDF` controller.
+    pub controller: PidControllerKind,
+    /// Derivative filter ratio `N_f`, interpreted as `derivative_filter = N_f / Td`.
+    pub derivative_filter_ratio: R,
+    /// Fixed ratio `Ti / Td` used by the first PID frequency-design pass.
+    pub ti_over_td_ratio: R,
+    /// Runtime anti-windup policy attached to the returned controller.
+    pub anti_windup: AntiWindup<R>,
+    /// Optional direct limits on the stored integral contribution.
+    pub integrator_limits: Option<(R, R)>,
+}
+
+impl<R> FrequencyPidParams<R>
+where
+    R: Float + Copy,
+{
+    /// Creates validated frequency-domain tuning parameters.
+    pub fn new(
+        crossover_frequency: R,
+        phase_margin_deg: R,
+        controller: PidControllerKind,
+        derivative_filter_ratio: R,
+        ti_over_td_ratio: R,
+        anti_windup: AntiWindup<R>,
+    ) -> Result<Self, PidDesignError> {
+        if !crossover_frequency.is_finite() || crossover_frequency <= R::zero() {
+            return Err(PidDesignError::InvalidFrequencyTarget {
+                which: "crossover_frequency",
+            });
+        }
+        if !phase_margin_deg.is_finite()
+            || phase_margin_deg <= R::zero()
+            || phase_margin_deg >= R::from(180.0).unwrap()
+        {
+            return Err(PidDesignError::InvalidFrequencyTarget {
+                which: "phase_margin_deg",
+            });
+        }
+        if !derivative_filter_ratio.is_finite() || derivative_filter_ratio <= R::zero() {
+            return Err(PidDesignError::InvalidTuningParameter {
+                which: "derivative_filter_ratio",
+            });
+        }
+        if !ti_over_td_ratio.is_finite() || ti_over_td_ratio <= R::zero() {
+            return Err(PidDesignError::InvalidTuningParameter {
+                which: "ti_over_td_ratio",
+            });
+        }
+        Ok(Self {
+            crossover_frequency,
+            phase_margin_deg,
+            controller,
+            derivative_filter_ratio,
+            ti_over_td_ratio,
+            anti_windup,
+            integrator_limits: None,
+        })
+    }
+
+    /// Adds explicit integrator limits to the tuned controller.
+    pub fn with_integrator_limits(mut self, low: R, high: R) -> Result<Self, PidDesignError> {
+        if !low.is_finite() || !high.is_finite() || low > high {
+            return Err(PidDesignError::InvalidTuningParameter {
+                which: "integrator_limits",
+            });
+        }
+        self.integrator_limits = Some((low, high));
+        Ok(self)
+    }
+}
+
+/// Result of frequency-domain PID tuning.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FrequencyPidDesign<R> {
+    /// Tuned runtime controller.
+    pub pid: Pid<R>,
+    /// Applied frequency-domain tuning parameters.
+    pub params: FrequencyPidParams<R>,
+    /// Final open-loop value `L(jω_c)` or `L(e^{j ω_c dt})` at the target crossover.
+    pub loop_value: Complex<R>,
+    /// Achieved phase margin inferred from the final loop phase at the target.
+    pub achieved_phase_margin_deg: R,
+}
+
+/// Step-response optimization tuning parameters for discrete-time plant models.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StepOptimizationPidParams<R> {
+    /// Desired closed-loop time constant used to build the reference step response.
+    pub lambda: R,
+    /// Number of discrete samples used in the optimization horizon.
+    pub horizon_steps: usize,
+    /// Whether to return a `PI` or `PIDF` controller.
+    pub controller: PidControllerKind,
+    /// Derivative filter ratio `N_f`, interpreted as `derivative_filter = N_f / Td`.
+    pub derivative_filter_ratio: R,
+    /// Fixed ratio `Ti / Td` used by the first PID optimization pass.
+    pub ti_over_td_ratio: R,
+    /// Runtime anti-windup policy attached to the returned controller.
+    pub anti_windup: AntiWindup<R>,
+    /// Optional direct limits on the stored integral contribution.
+    pub integrator_limits: Option<(R, R)>,
+    /// Weight on the control-effort residual channel.
+    pub control_effort_weight: R,
+}
+
+impl<R> StepOptimizationPidParams<R>
+where
+    R: Float + Copy,
+{
+    /// Creates validated discrete-time step-optimization tuning parameters.
+    pub fn new(
+        lambda: R,
+        horizon_steps: usize,
+        controller: PidControllerKind,
+        derivative_filter_ratio: R,
+        ti_over_td_ratio: R,
+        anti_windup: AntiWindup<R>,
+    ) -> Result<Self, PidDesignError> {
+        if !lambda.is_finite() || lambda <= R::zero() {
+            return Err(PidDesignError::InvalidTuningParameter { which: "lambda" });
+        }
+        if horizon_steps == 0 {
+            return Err(PidDesignError::InvalidTuningParameter {
+                which: "horizon_steps",
+            });
+        }
+        if !derivative_filter_ratio.is_finite() || derivative_filter_ratio <= R::zero() {
+            return Err(PidDesignError::InvalidTuningParameter {
+                which: "derivative_filter_ratio",
+            });
+        }
+        if !ti_over_td_ratio.is_finite() || ti_over_td_ratio <= R::zero() {
+            return Err(PidDesignError::InvalidTuningParameter {
+                which: "ti_over_td_ratio",
+            });
+        }
+        Ok(Self {
+            lambda,
+            horizon_steps,
+            controller,
+            derivative_filter_ratio,
+            ti_over_td_ratio,
+            anti_windup,
+            integrator_limits: None,
+            control_effort_weight: R::zero(),
+        })
+    }
+
+    /// Adds explicit integrator limits to the tuned controller.
+    pub fn with_integrator_limits(mut self, low: R, high: R) -> Result<Self, PidDesignError> {
+        if !low.is_finite() || !high.is_finite() || low > high {
+            return Err(PidDesignError::InvalidTuningParameter {
+                which: "integrator_limits",
+            });
+        }
+        self.integrator_limits = Some((low, high));
+        Ok(self)
+    }
+
+    /// Sets the control-effort penalty weight.
+    pub fn with_control_effort_weight(mut self, weight: R) -> Result<Self, PidDesignError> {
+        if !weight.is_finite() || weight < R::zero() {
+            return Err(PidDesignError::InvalidTuningParameter {
+                which: "control_effort_weight",
+            });
+        }
+        self.control_effort_weight = weight;
+        Ok(self)
+    }
+}
+
+/// Result of discrete-time step-response PID optimization.
+#[derive(Clone, Debug, PartialEq)]
+pub struct StepOptimizationPidDesign<R> {
+    /// Tuned runtime controller.
+    pub pid: Pid<R>,
+    /// Applied optimization parameters.
+    pub params: StepOptimizationPidParams<R>,
+    /// Sum of squared tracking residuals over the optimization horizon.
+    pub tracking_cost: R,
+    /// Sum of squared control-effort residuals over the optimization horizon.
+    pub control_cost: R,
+}
+
+/// SISO sampled input/output data used by the `OKID -> ERA` PID path.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SampledIoData<R> {
+    sample_time: R,
+    input: Vec<R>,
+    output: Vec<R>,
+}
+
+impl<R> SampledIoData<R>
+where
+    R: Float + Copy,
+{
+    /// Creates validated sampled SISO input/output data.
+    pub fn new(sample_time: R, input: Vec<R>, output: Vec<R>) -> Result<Self, PidDesignError> {
+        if !sample_time.is_finite() || sample_time <= R::zero() {
+            return Err(PidDesignError::InvalidData {
+                which: "sample_time",
+            });
+        }
+        if input.len() < 2 || input.len() != output.len() {
+            return Err(PidDesignError::InvalidData {
+                which: "length_mismatch",
+            });
+        }
+        if input
+            .iter()
+            .chain(output.iter())
+            .any(|value| !value.is_finite())
+        {
+            return Err(PidDesignError::InvalidData {
+                which: "nonfinite_sample",
+            });
+        }
+        Ok(Self {
+            sample_time,
+            input,
+            output,
+        })
+    }
+
+    /// Sample interval.
+    #[must_use]
+    pub fn sample_time(&self) -> R {
+        self.sample_time
+    }
+
+    /// Input samples.
+    #[must_use]
+    pub fn input(&self) -> &[R] {
+        &self.input
+    }
+
+    /// Output samples.
+    #[must_use]
+    pub fn output(&self) -> &[R] {
+        &self.output
+    }
+}
+
+/// Result of the `OKID -> ERA -> PID` tuning path.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OkidEraPidDesign<R: faer_traits::ComplexField> {
+    /// Identified discrete-time plant realization.
+    pub identified_plant: DiscreteStateSpace<R>,
+    /// Final tuned controller on that identified model.
+    pub design: StepOptimizationPidDesign<R>,
+    /// ERA retained order of the identified model.
+    pub retained_order: usize,
+}
+
 /// Fits an `FOPDT` model to sampled step-response data.
 pub fn fit_fopdt_from_step_response(
     data: &StepResponseData<f64>,
@@ -433,6 +749,557 @@ pub fn design_pid_from_step_response_sopdt(
     let fit = fit_sopdt_from_step_response(data)?;
     let design = design_pid_from_sopdt(fit.model, params)?;
     Ok(StepFitPidDesign { fit, design })
+}
+
+/// Tunes a `PI` or `PIDF` controller against a continuous-time SISO transfer
+/// function at one target crossover frequency and phase margin.
+pub fn design_pid_from_continuous_tf_frequency(
+    plant: &ContinuousTransferFunction<f64>,
+    params: FrequencyPidParams<f64>,
+) -> Result<FrequencyPidDesign<f64>, PidDesignError> {
+    design_frequency_pid(FrequencyPlant::Continuous(plant), params)
+}
+
+/// Tunes a `PI` or `PIDF` controller against a discrete-time SISO transfer
+/// function at one target crossover frequency and phase margin.
+pub fn design_pid_from_discrete_tf_frequency(
+    plant: &DiscreteTransferFunction<f64>,
+    params: FrequencyPidParams<f64>,
+) -> Result<FrequencyPidDesign<f64>, PidDesignError> {
+    design_frequency_pid(FrequencyPlant::Discrete(plant), params)
+}
+
+/// Frequency-domain PID tuning convenience wrapper for a continuous-time SISO
+/// state-space plant.
+pub fn design_pid_from_continuous_state_space_frequency(
+    plant: &ContinuousStateSpace<f64>,
+    params: FrequencyPidParams<f64>,
+) -> Result<FrequencyPidDesign<f64>, PidDesignError> {
+    let tf = plant.to_transfer_function()?;
+    design_pid_from_continuous_tf_frequency(&tf, params)
+}
+
+/// Frequency-domain PID tuning convenience wrapper for a discrete-time SISO
+/// state-space plant.
+pub fn design_pid_from_discrete_state_space_frequency(
+    plant: &DiscreteStateSpace<f64>,
+    params: FrequencyPidParams<f64>,
+) -> Result<FrequencyPidDesign<f64>, PidDesignError> {
+    let tf = plant.to_transfer_function()?;
+    design_pid_from_discrete_tf_frequency(&tf, params)
+}
+
+/// Optimizes a `PI` or `PIDF` controller against the step response of a
+/// discrete-time SISO transfer-function plant.
+pub fn design_pid_from_discrete_tf_step_optimization(
+    plant: &DiscreteTransferFunction<f64>,
+    params: StepOptimizationPidParams<f64>,
+) -> Result<StepOptimizationPidDesign<f64>, PidDesignError> {
+    design_step_optimized_pid(plant, params)
+}
+
+/// Step-response optimization convenience wrapper for a discrete-time SISO
+/// state-space plant.
+pub fn design_pid_from_discrete_state_space_step_optimization(
+    plant: &DiscreteStateSpace<f64>,
+    params: StepOptimizationPidParams<f64>,
+) -> Result<StepOptimizationPidDesign<f64>, PidDesignError> {
+    let tf = plant.to_transfer_function()?;
+    design_pid_from_discrete_tf_step_optimization(&tf, params)
+}
+
+/// Identifies a discrete-time plant with `OKID -> ERA` and tunes a `PI` or
+/// `PIDF` controller against the identified model with step-response
+/// optimization.
+pub fn design_pid_from_okid_era(
+    data: &SampledIoData<f64>,
+    okid_params: &OkidParams,
+    mut era_params: EraParams<f64>,
+    pid_params: StepOptimizationPidParams<f64>,
+) -> Result<OkidEraPidDesign<f64>, PidDesignError> {
+    let nsamples = data.input().len();
+    let inputs = Mat::from_fn(1, nsamples, |_, col| data.input()[col]);
+    let outputs = Mat::from_fn(1, nsamples, |_, col| data.output()[col]);
+    let okid_result = okid(outputs.as_ref(), inputs.as_ref(), okid_params)?;
+    let q = recommended_square_era_block_dim(okid_result.markov.len());
+    if q == 0 {
+        return Err(PidDesignError::InvalidData {
+            which: "okid_era.block_dim",
+        });
+    }
+    era_params.sample_time = data.sample_time();
+    let era_result = era_from_markov(&okid_result.markov, q, q, &era_params)?;
+    let design =
+        design_pid_from_discrete_state_space_step_optimization(&era_result.realized, pid_params)?;
+    Ok(OkidEraPidDesign {
+        identified_plant: era_result.realized,
+        design,
+        retained_order: era_result.retained_order,
+    })
+}
+
+#[derive(Clone, Copy)]
+enum FrequencyPlant<'a> {
+    Continuous(&'a ContinuousTransferFunction<f64>),
+    Discrete(&'a DiscreteTransferFunction<f64>),
+}
+
+impl FrequencyPlant<'_> {
+    /// Evaluates the plant on the appropriate frequency-domain contour.
+    fn evaluate_at_omega(self, omega: f64) -> Complex<f64> {
+        match self {
+            Self::Continuous(plant) => plant.evaluate(Complex::new(0.0, omega)),
+            Self::Discrete(plant) => {
+                let phase = omega * plant.sample_time();
+                plant.evaluate(Complex::new(phase.cos(), phase.sin()))
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct LinearPidSpec {
+    kp: f64,
+    ki: f64,
+    kd: f64,
+    derivative_filter: Option<f64>,
+}
+
+fn design_frequency_pid(
+    plant: FrequencyPlant<'_>,
+    params: FrequencyPidParams<f64>,
+) -> Result<FrequencyPidDesign<f64>, PidDesignError> {
+    let floor = positive_floor(1.0 / params.crossover_frequency.max(1.0));
+    let plant_value = plant.evaluate_at_omega(params.crossover_frequency);
+    let mag_seed = (1.0 / plant_value.norm().max(1.0e-6)).max(floor);
+    let ti_seed = (1.0 / params.crossover_frequency).max(floor);
+
+    let kp_scales = [0.25, 1.0, 4.0];
+    let ti_scales = [0.25, 1.0, 4.0];
+    let signs = [1.0, -1.0];
+    let mut best: Option<(FrequencyPidLmProblem<'_>, f64)> = None;
+
+    for &sign in &signs {
+        for &kp_scale in &kp_scales {
+            for &ti_scale in &ti_scales {
+                let seed = Vector2::new((mag_seed * kp_scale).ln(), (ti_seed * ti_scale).ln());
+                let problem = FrequencyPidLmProblem {
+                    plant,
+                    params,
+                    sign,
+                    floor,
+                    variables: seed,
+                };
+                let (problem, _report) = LevenbergMarquardt::new()
+                    .with_patience(20)
+                    .minimize(problem);
+                let objective = frequency_objective(&problem.residual_vector());
+                if objective.is_finite()
+                    && best
+                        .as_ref()
+                        .is_none_or(|(_, best_objective)| objective < *best_objective)
+                {
+                    best = Some((problem, objective));
+                }
+            }
+        }
+    }
+
+    let (best_problem, best_objective) = best.ok_or(PidDesignError::OptimizationFailed {
+        which: "frequency_design",
+    })?;
+    if !best_objective.is_finite() {
+        return Err(PidDesignError::OptimizationFailed {
+            which: "frequency_design",
+        });
+    }
+
+    let spec = best_problem.linear_pid_spec();
+    let pid = build_runtime_pid_from_spec(spec, params.anti_windup, params.integrator_limits)?;
+    let loop_value = open_loop_at_frequency(plant, &spec, params.crossover_frequency)?;
+    let achieved_phase_margin_deg = phase_margin_deg(loop_value);
+    Ok(FrequencyPidDesign {
+        pid,
+        params,
+        loop_value,
+        achieved_phase_margin_deg,
+    })
+}
+
+fn design_step_optimized_pid(
+    plant: &DiscreteTransferFunction<f64>,
+    params: StepOptimizationPidParams<f64>,
+) -> Result<StepOptimizationPidDesign<f64>, PidDesignError> {
+    let floor = positive_floor(params.lambda);
+    let dc_gain = plant.evaluate(Complex::new(1.0, 0.0));
+    let kp_seed_mag = (1.0 / dc_gain.norm().max(1.0e-6)).max(floor);
+    let ti_seed = params.lambda.max(floor);
+    let predicted_sign = if dc_gain.re.abs() > 1.0e-9 {
+        dc_gain.re.signum()
+    } else {
+        1.0
+    };
+
+    let kp_scales = [0.5, 1.0, 2.0];
+    let ti_scales = [0.5, 1.0, 2.0];
+    let signs = [predicted_sign, -predicted_sign];
+    let mut best_seed: Option<(DiscreteStepPidLmProblem<'_>, f64)> = None;
+
+    for &sign in &signs {
+        for &kp_scale in &kp_scales {
+            for &ti_scale in &ti_scales {
+                let seed = Vector2::new((kp_seed_mag * kp_scale).ln(), (ti_seed * ti_scale).ln());
+                let problem = DiscreteStepPidLmProblem {
+                    plant,
+                    params,
+                    sign,
+                    floor,
+                    variables: seed,
+                };
+                let objective = step_objective(&problem.residual_vector());
+                if objective.is_finite()
+                    && best_seed
+                        .as_ref()
+                        .is_none_or(|(_, best_objective)| objective < *best_objective)
+                {
+                    best_seed = Some((problem, objective));
+                }
+            }
+        }
+    }
+
+    let (seed_problem, seed_objective) = best_seed.ok_or(PidDesignError::OptimizationFailed {
+        which: "step_optimization",
+    })?;
+    if !seed_objective.is_finite() {
+        return Err(PidDesignError::OptimizationFailed {
+            which: "step_optimization",
+        });
+    }
+
+    let (refined_problem, _report) = LevenbergMarquardt::new()
+        .with_patience(8)
+        .minimize(seed_problem);
+    let refined_objective = step_objective(&refined_problem.residual_vector());
+    let best_problem = if refined_objective.is_finite() && refined_objective <= seed_objective {
+        refined_problem
+    } else {
+        seed_problem
+    };
+
+    let spec = best_problem.linear_pid_spec();
+    let pid = build_runtime_pid_from_spec(spec, params.anti_windup, params.integrator_limits)?;
+    let (tracking_cost, control_cost) = discrete_closed_loop_costs(plant, &spec, params)?;
+    Ok(StepOptimizationPidDesign {
+        pid,
+        params,
+        tracking_cost,
+        control_cost,
+    })
+}
+
+fn open_loop_at_frequency(
+    plant: FrequencyPlant<'_>,
+    controller: &LinearPidSpec,
+    omega: f64,
+) -> Result<Complex<f64>, PidDesignError> {
+    let controller = build_linear_pid_core(*controller)?;
+    let controller_value = match plant {
+        FrequencyPlant::Continuous(_) => controller
+            .to_transfer_function_continuous()?
+            .evaluate(Complex::new(0.0, omega)),
+        FrequencyPlant::Discrete(plant) => controller
+            .to_transfer_function_discrete(plant.sample_time())?
+            .evaluate(Complex::new(
+                (omega * plant.sample_time()).cos(),
+                (omega * plant.sample_time()).sin(),
+            )),
+    };
+    Ok(controller_value * plant.evaluate_at_omega(omega))
+}
+
+fn build_linear_pid_spec_from_variables(
+    kp_sign: f64,
+    variables: Vector2<f64>,
+    controller: PidControllerKind,
+    derivative_filter_ratio: f64,
+    ti_over_td_ratio: f64,
+    floor: f64,
+) -> LinearPidSpec {
+    let kp = kp_sign * variables[0].exp().max(floor);
+    let ti = variables[1].exp().max(floor);
+    let ki = kp / ti;
+    match controller {
+        PidControllerKind::Pi => LinearPidSpec {
+            kp,
+            ki,
+            kd: 0.0,
+            derivative_filter: None,
+        },
+        PidControllerKind::Pid => {
+            let td = (ti / ti_over_td_ratio).max(floor);
+            LinearPidSpec {
+                kp,
+                ki,
+                kd: kp * td,
+                derivative_filter: Some(derivative_filter_ratio / td),
+            }
+        }
+    }
+}
+
+fn build_linear_pid_core(spec: LinearPidSpec) -> Result<Pid<f64>, PidDesignError> {
+    Ok(Pid::new(
+        spec.kp,
+        spec.ki,
+        spec.kd,
+        spec.derivative_filter,
+        AntiWindup::None,
+    )?)
+}
+
+fn build_runtime_pid_from_spec(
+    spec: LinearPidSpec,
+    anti_windup: AntiWindup<f64>,
+    integrator_limits: Option<(f64, f64)>,
+) -> Result<Pid<f64>, PidDesignError> {
+    let mut pid = Pid::new(
+        spec.kp,
+        spec.ki,
+        spec.kd,
+        spec.derivative_filter,
+        anti_windup,
+    )?;
+    if let Some((low, high)) = integrator_limits {
+        pid = pid.with_integrator_limits(low, high)?;
+    }
+    Ok(pid)
+}
+
+fn frequency_objective(residuals: &OVector<f64, Dyn>) -> f64 {
+    residuals.iter().map(|value| value * value).sum()
+}
+
+fn step_objective(residuals: &OVector<f64, Dyn>) -> f64 {
+    residuals.iter().map(|value| value * value).sum()
+}
+
+fn wrap_to_pi(angle: f64) -> f64 {
+    let two_pi = core::f64::consts::TAU;
+    let wrapped = (angle + core::f64::consts::PI).rem_euclid(two_pi) - core::f64::consts::PI;
+    if wrapped == -core::f64::consts::PI {
+        core::f64::consts::PI
+    } else {
+        wrapped
+    }
+}
+
+fn phase_margin_deg(loop_value: Complex<f64>) -> f64 {
+    let mut margin = (core::f64::consts::PI + loop_value.im.atan2(loop_value.re)).to_degrees();
+    if margin < 0.0 {
+        margin += 360.0;
+    }
+    margin
+}
+
+fn reference_step_sample(k: usize, sample_time: f64, lambda: f64) -> f64 {
+    1.0 - (-(k as f64 * sample_time) / lambda).exp()
+}
+
+fn discrete_closed_loop_costs(
+    plant: &DiscreteTransferFunction<f64>,
+    spec: &LinearPidSpec,
+    params: StepOptimizationPidParams<f64>,
+) -> Result<(f64, f64), PidDesignError> {
+    let controller = build_linear_pid_core(*spec)?;
+    let controller_tf = controller.to_transfer_function_discrete(plant.sample_time())?;
+    let open_loop = controller_tf.mul(plant)?;
+    let closed_output = open_loop.unity_feedback()?;
+    let closed_control = controller_tf.feedback(plant)?;
+    let closed_output_ss = closed_output.to_state_space()?;
+    if !closed_output_ss.is_asymptotically_stable()? {
+        return Err(PidDesignError::OptimizationFailed {
+            which: "unstable_closed_loop",
+        });
+    }
+    let closed_control_ss = closed_control.to_state_space()?;
+    let output_response = closed_output_ss.step_response(params.horizon_steps);
+    let control_response = closed_control_ss.step_response(params.horizon_steps);
+
+    let mut tracking_cost = 0.0;
+    let mut control_cost = 0.0;
+    let control_weight = params.control_effort_weight.sqrt();
+    for k in 0..params.horizon_steps {
+        let y = output_response.values[k][(0, 0)];
+        let u = control_response.values[k][(0, 0)];
+        let y_ref = reference_step_sample(k, plant.sample_time(), params.lambda);
+        let track_residual = y - y_ref;
+        tracking_cost += track_residual * track_residual;
+        let control_residual = control_weight * u;
+        control_cost += control_residual * control_residual;
+    }
+    Ok((tracking_cost, control_cost))
+}
+
+#[derive(Clone, Copy)]
+struct FrequencyPidLmProblem<'a> {
+    plant: FrequencyPlant<'a>,
+    params: FrequencyPidParams<f64>,
+    sign: f64,
+    floor: f64,
+    variables: Vector2<f64>,
+}
+
+impl FrequencyPidLmProblem<'_> {
+    fn linear_pid_spec(&self) -> LinearPidSpec {
+        build_linear_pid_spec_from_variables(
+            self.sign,
+            self.variables,
+            self.params.controller,
+            self.params.derivative_filter_ratio,
+            self.params.ti_over_td_ratio,
+            self.floor,
+        )
+    }
+
+    fn residual_vector(&self) -> OVector<f64, Dyn> {
+        let spec = self.linear_pid_spec();
+        let residuals =
+            match open_loop_at_frequency(self.plant, &spec, self.params.crossover_frequency) {
+                Ok(loop_value) => {
+                    let desired_phase =
+                        -core::f64::consts::PI + self.params.phase_margin_deg.to_radians();
+                    vec![
+                        loop_value.norm().ln(),
+                        wrap_to_pi(loop_value.im.atan2(loop_value.re) - desired_phase),
+                    ]
+                }
+                Err(_) => vec![1.0e6, 1.0e6],
+            };
+        OVector::<f64, Dyn>::from_vec(residuals)
+    }
+}
+
+impl LeastSquaresProblem<f64, Dyn, U2> for FrequencyPidLmProblem<'_> {
+    type ParameterStorage = Owned<f64, U2>;
+    type ResidualStorage = VecStorage<f64, Dyn, U1>;
+    type JacobianStorage = Owned<f64, Dyn, U2>;
+
+    fn set_params(&mut self, x: &Vector2<f64>) {
+        self.variables = *x;
+    }
+
+    fn params(&self) -> Vector2<f64> {
+        self.variables
+    }
+
+    fn residuals(&self) -> Option<OVector<f64, Dyn>> {
+        Some(self.residual_vector())
+    }
+
+    fn jacobian(&self) -> Option<OMatrix<f64, Dyn, U2>> {
+        let mut clone = *self;
+        differentiate_numerically(&mut clone)
+    }
+}
+
+#[derive(Clone, Copy)]
+struct DiscreteStepPidLmProblem<'a> {
+    plant: &'a DiscreteTransferFunction<f64>,
+    params: StepOptimizationPidParams<f64>,
+    sign: f64,
+    floor: f64,
+    variables: Vector2<f64>,
+}
+
+impl DiscreteStepPidLmProblem<'_> {
+    fn linear_pid_spec(&self) -> LinearPidSpec {
+        build_linear_pid_spec_from_variables(
+            self.sign,
+            self.variables,
+            self.params.controller,
+            self.params.derivative_filter_ratio,
+            self.params.ti_over_td_ratio,
+            self.floor,
+        )
+    }
+
+    fn residual_vector(&self) -> OVector<f64, Dyn> {
+        let spec = self.linear_pid_spec();
+        let controller = match build_linear_pid_core(spec) {
+            Ok(controller) => controller,
+            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+        };
+        let controller_tf = match controller.to_transfer_function_discrete(self.plant.sample_time())
+        {
+            Ok(tf) => tf,
+            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+        };
+        let open_loop = match controller_tf.mul(self.plant) {
+            Ok(tf) => tf,
+            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+        };
+        let closed_output = match open_loop.unity_feedback() {
+            Ok(tf) => tf,
+            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+        };
+        let closed_control = match controller_tf.feedback(self.plant) {
+            Ok(tf) => tf,
+            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+        };
+        let closed_output_ss = match closed_output.to_state_space() {
+            Ok(ss) => ss,
+            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+        };
+        let stable = closed_output_ss.is_asymptotically_stable().unwrap_or(false);
+        if !stable {
+            return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]);
+        }
+        let closed_control_ss = match closed_control.to_state_space() {
+            Ok(ss) => ss,
+            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+        };
+        let output_response = closed_output_ss.step_response(self.params.horizon_steps);
+        let control_response = closed_control_ss.step_response(self.params.horizon_steps);
+        let mut residuals = Vec::with_capacity(
+            self.params.horizon_steps
+                + usize::from(self.params.control_effort_weight > 0.0) * self.params.horizon_steps,
+        );
+        for k in 0..self.params.horizon_steps {
+            let y_ref = reference_step_sample(k, self.plant.sample_time(), self.params.lambda);
+            residuals.push(output_response.values[k][(0, 0)] - y_ref);
+        }
+        if self.params.control_effort_weight > 0.0 {
+            let control_weight = self.params.control_effort_weight.sqrt();
+            for k in 0..self.params.horizon_steps {
+                residuals.push(control_weight * control_response.values[k][(0, 0)]);
+            }
+        }
+        OVector::<f64, Dyn>::from_vec(residuals)
+    }
+}
+
+impl LeastSquaresProblem<f64, Dyn, U2> for DiscreteStepPidLmProblem<'_> {
+    type ParameterStorage = Owned<f64, U2>;
+    type ResidualStorage = VecStorage<f64, Dyn, U1>;
+    type JacobianStorage = Owned<f64, Dyn, U2>;
+
+    fn set_params(&mut self, x: &Vector2<f64>) {
+        self.variables = *x;
+    }
+
+    fn params(&self) -> Vector2<f64> {
+        self.variables
+    }
+
+    fn residuals(&self) -> Option<OVector<f64, Dyn>> {
+        Some(self.residual_vector())
+    }
+
+    fn jacobian(&self) -> Option<OMatrix<f64, Dyn, U2>> {
+        let mut clone = *self;
+        differentiate_numerically(&mut clone)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -991,11 +1858,16 @@ where
 #[cfg(test)]
 mod tests {
     use super::{
-        AntiWindup, FopdtModel, PidControllerKind, PidDesignError, SimcPidParams, SopdtModel,
-        StepResponseData, design_pid_from_fopdt, design_pid_from_sopdt,
-        design_pid_from_step_response_fopdt, fit_fopdt_from_step_response,
-        fit_sopdt_from_step_response,
+        AntiWindup, FopdtModel, FrequencyPidParams, PidControllerKind, PidDesignError,
+        SampledIoData, SimcPidParams, SopdtModel, StepOptimizationPidParams, StepResponseData,
+        design_pid_from_continuous_state_space_frequency, design_pid_from_continuous_tf_frequency,
+        design_pid_from_discrete_tf_step_optimization, design_pid_from_fopdt,
+        design_pid_from_okid_era, design_pid_from_sopdt, design_pid_from_step_response_fopdt,
+        fit_fopdt_from_step_response, fit_sopdt_from_step_response,
     };
+    use crate::control::identification::{EraParams, OkidParams};
+    use crate::control::lti::{ContinuousTransferFunction, DiscreteTransferFunction};
+    use faer::Mat;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
         let err = (lhs - rhs).abs();
@@ -1130,5 +2002,96 @@ mod tests {
         .unwrap();
         let err = fit_fopdt_from_step_response(&data).unwrap_err();
         assert!(matches!(err, PidDesignError::InvalidStepAmplitude));
+    }
+
+    #[test]
+    fn continuous_frequency_design_hits_target() {
+        let plant = ContinuousTransferFunction::continuous(vec![1.0], vec![1.0, 1.0]).unwrap();
+        let params = FrequencyPidParams::new(
+            1.0,
+            60.0,
+            PidControllerKind::Pi,
+            10.0,
+            8.0,
+            AntiWindup::None,
+        )
+        .unwrap();
+        let design = design_pid_from_continuous_tf_frequency(&plant, params).unwrap();
+        assert_close(design.loop_value.norm(), 1.0, 1.0e-8);
+        assert_close(design.achieved_phase_margin_deg, 60.0, 1.0e-6);
+
+        let plant_ss = plant.to_state_space().unwrap();
+        let from_ss = design_pid_from_continuous_state_space_frequency(&plant_ss, params).unwrap();
+        assert_close(from_ss.pid.kp(), design.pid.kp(), 1.0e-8);
+        assert_close(from_ss.pid.ki(), design.pid.ki(), 1.0e-8);
+    }
+
+    #[test]
+    fn discrete_step_optimization_returns_stabilizing_controller() {
+        let plant = DiscreteTransferFunction::discrete(vec![0.2], vec![1.0, -0.8], 0.1).unwrap();
+        let params = StepOptimizationPidParams::new(
+            0.5,
+            20,
+            PidControllerKind::Pi,
+            10.0,
+            8.0,
+            AntiWindup::None,
+        )
+        .unwrap();
+
+        let design = design_pid_from_discrete_tf_step_optimization(&plant, params).unwrap();
+        assert!(design.tracking_cost.is_finite());
+        assert!(design.control_cost.is_finite());
+
+        let controller_tf = design
+            .pid
+            .to_transfer_function_discrete(plant.sample_time())
+            .unwrap();
+        let closed_loop = controller_tf
+            .mul(&plant)
+            .unwrap()
+            .unity_feedback()
+            .unwrap()
+            .to_state_space()
+            .unwrap();
+        assert!(closed_loop.is_asymptotically_stable().unwrap());
+    }
+
+    #[test]
+    fn okid_era_pid_design_builds_controller_from_sampled_data() {
+        let plant = DiscreteTransferFunction::discrete(vec![0.15], vec![1.0, -0.85], 0.1).unwrap();
+        let plant_ss = plant.to_state_space().unwrap();
+        let nsamples = 80usize;
+        let input = (0..nsamples)
+            .map(|k| if (k / 4) % 2 == 0 { 1.0 } else { -0.5 })
+            .collect::<Vec<_>>();
+        let inputs = Mat::from_fn(1, nsamples, |_, col| input[col]);
+        let sim = plant_ss.simulate(&[0.0], inputs.as_ref()).unwrap();
+        let output = (0..nsamples)
+            .map(|col| sim.outputs[(0, col)])
+            .collect::<Vec<_>>();
+
+        let data = SampledIoData::new(0.1, input, output).unwrap();
+        let okid_params = OkidParams::new(24, 8);
+        let era_params = EraParams::new(0.1).with_order(1);
+        let pid_params = StepOptimizationPidParams::new(
+            0.6,
+            25,
+            PidControllerKind::Pi,
+            10.0,
+            8.0,
+            AntiWindup::None,
+        )
+        .unwrap();
+
+        let design = design_pid_from_okid_era(&data, &okid_params, era_params, pid_params).unwrap();
+        assert_eq!(design.identified_plant.sample_time(), 0.1);
+        assert_eq!(design.retained_order, 1);
+        assert!(design.design.pid.kp().is_finite());
+        assert!(design.design.pid.ki().is_finite());
+
+        let original_dc = plant_ss.dc_gain().unwrap()[(0, 0)].re;
+        let identified_dc = design.identified_plant.dc_gain().unwrap()[(0, 0)].re;
+        assert!((identified_dc - original_dc).abs() <= 0.1);
     }
 }
