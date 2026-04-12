@@ -32,8 +32,9 @@ pub use balanced::{
     balanced_truncation_discrete_dense, balanced_truncation_discrete_low_rank,
 };
 pub use estimator::{
-    DiscreteKalmanFilter, EstimatorError, KalmanPrediction, KalmanUpdate, LqeSolve, dlqe_dense,
-    lqe_dense,
+    ContinuousObserver, ContinuousObserverDerivative, CovarianceUpdate, DiscreteKalmanFilter,
+    EstimatorError, KalmanPrediction, KalmanUpdate, LqeSolve, SteadyStateKalmanFilter,
+    SteadyStateKalmanPrediction, SteadyStateKalmanUpdate, dlqe_dense, lqe_dense,
 };
 pub use hsvd::{
     HsvdError, HsvdInternals, HsvdInternalsLevel, HsvdParams, HsvdResult, hsvd_from_dense_gramians,

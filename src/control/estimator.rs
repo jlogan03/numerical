@@ -8,6 +8,12 @@
 //! The first layer computes the observer gain `L` and steady-state error
 //! covariance `P`. The second layer uses explicit predict/update recursions for
 //! a discrete linear Gaussian state estimator.
+//!
+//! The module now also exposes two fixed-gain runtime forms built from those
+//! steady-state design results:
+//!
+//! - [`SteadyStateKalmanFilter`] for discrete-time fixed-gain observation
+//! - [`ContinuousObserver`] for continuous-time fixed-gain observation
 
 use super::riccati::{RiccatiError, solve_care_dense, solve_dare_dense};
 use super::state_space::{ContinuousStateSpace, DiscreteStateSpace};
@@ -50,6 +56,8 @@ where
     pub state: Mat<T>,
     /// Predicted covariance before incorporating the new measurement.
     pub covariance: Mat<T>,
+    /// Predicted output `C x^- + D u` corresponding to the supplied input.
+    pub output: Mat<T>,
 }
 
 /// Update result of one discrete linear Kalman filter measurement step.
@@ -60,14 +68,85 @@ where
 {
     /// Measurement innovation `y - (C x^- + D u)`.
     pub innovation: Mat<T>,
+    /// Euclidean norm of the innovation.
+    pub innovation_norm: T::Real,
     /// Innovation covariance `S = C P^- C^H + V`.
     pub innovation_covariance: Mat<T>,
+    /// Square root of the normalized innovation energy `r^H S^-1 r`.
+    pub normalized_innovation_norm: T::Real,
     /// Kalman gain for this update.
     pub gain: Mat<T>,
+    /// Predicted output `C x^- + D u` used in the innovation.
+    pub predicted_output: Mat<T>,
     /// Updated state estimate.
     pub state: Mat<T>,
     /// Updated covariance.
     pub covariance: Mat<T>,
+    /// Posterior output `C x^+ + D u`.
+    pub output: Mat<T>,
+}
+
+/// Covariance-update policy used by [`DiscreteKalmanFilter`].
+///
+/// `Simple` is the compact textbook update. `Joseph` is algebraically
+/// equivalent in exact arithmetic, but is usually better at preserving
+/// Hermitian symmetry and positive semidefiniteness in floating point.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CovarianceUpdate {
+    /// `P^+ = P^- - K S K^H`
+    Simple,
+    /// `P^+ = (I - K C) P^- (I - K C)^H + K V K^H`
+    Joseph,
+}
+
+impl Default for CovarianceUpdate {
+    fn default() -> Self {
+        Self::Joseph
+    }
+}
+
+/// Prediction stage of the fixed-gain steady-state discrete observer.
+#[derive(Clone, Debug)]
+pub struct SteadyStateKalmanPrediction<T: CompensatedField>
+where
+    T::Real: Float + Copy,
+{
+    /// Predicted state estimate before measurement correction.
+    pub state: Mat<T>,
+    /// Predicted output `C x^- + D u`.
+    pub output: Mat<T>,
+}
+
+/// Update result of the fixed-gain steady-state discrete observer.
+#[derive(Clone, Debug)]
+pub struct SteadyStateKalmanUpdate<T: CompensatedField>
+where
+    T::Real: Float + Copy,
+{
+    /// Measurement innovation `y - (C x^- + D u)`.
+    pub innovation: Mat<T>,
+    /// Euclidean norm of the innovation.
+    pub innovation_norm: T::Real,
+    /// Updated state estimate.
+    pub state: Mat<T>,
+    /// Updated output estimate `C x^+ + D u`.
+    pub output: Mat<T>,
+}
+
+/// Runtime derivative information for a continuous fixed-gain observer.
+#[derive(Clone, Debug)]
+pub struct ContinuousObserverDerivative<T: CompensatedField>
+where
+    T::Real: Float + Copy,
+{
+    /// Estimated output `C x_hat + D u`.
+    pub output: Mat<T>,
+    /// Measurement innovation `y - (C x_hat + D u)`.
+    pub innovation: Mat<T>,
+    /// Euclidean norm of the innovation.
+    pub innovation_norm: T::Real,
+    /// Observer state derivative.
+    pub state_derivative: Mat<T>,
 }
 
 /// Errors produced by dense LQE/DLQE design and discrete Kalman filtering.
@@ -129,10 +208,62 @@ where
     pub w: Mat<T>,
     /// Measurement-noise covariance.
     pub v: Mat<T>,
+    /// Covariance-update policy used during the measurement step.
+    pub covariance_update: CovarianceUpdate,
     /// Current posterior state estimate.
     pub x_hat: Mat<T>,
     /// Current posterior covariance.
     pub p: Mat<T>,
+}
+
+/// Fixed-gain steady-state discrete-time observer built from `DLQE`.
+///
+/// This wrapper uses a constant observer gain and does not propagate a
+/// time-varying covariance. It is the common deployment form once the steady-
+/// state Riccati solve has already been performed.
+#[derive(Clone, Debug)]
+pub struct SteadyStateKalmanFilter<T: CompensatedField>
+where
+    T::Real: Float + Copy,
+{
+    /// State transition matrix.
+    pub a: Mat<T>,
+    /// Input matrix.
+    pub b: Mat<T>,
+    /// Output matrix.
+    pub c: Mat<T>,
+    /// Feedthrough matrix.
+    pub d: Mat<T>,
+    /// Fixed observer gain.
+    pub gain: Mat<T>,
+    /// Current state estimate.
+    pub x_hat: Mat<T>,
+    /// Optional steady-state covariance returned by `DLQE`.
+    pub steady_state_covariance: Option<Mat<T>>,
+}
+
+/// Continuous fixed-gain observer built from `LQE`.
+///
+/// This is the continuous-time steady-state counterpart to
+/// [`SteadyStateKalmanFilter`]. It exposes the observer differential equation
+/// and leaves time integration to the caller.
+#[derive(Clone, Debug)]
+pub struct ContinuousObserver<T: CompensatedField>
+where
+    T::Real: Float + Copy,
+{
+    /// State matrix.
+    pub a: Mat<T>,
+    /// Input matrix.
+    pub b: Mat<T>,
+    /// Output matrix.
+    pub c: Mat<T>,
+    /// Feedthrough matrix.
+    pub d: Mat<T>,
+    /// Fixed observer gain.
+    pub gain: Mat<T>,
+    /// Current state estimate.
+    pub x_hat: Mat<T>,
 }
 
 /// Solves the dense continuous-time steady-state LQE problem.
@@ -214,6 +345,32 @@ where
     pub fn dlqe(&self, w: MatRef<'_, T>, v: MatRef<'_, T>) -> Result<LqeSolve<T>, EstimatorError> {
         dlqe_dense(self.a(), self.c(), w, v)
     }
+
+    /// Builds a fixed-gain steady-state discrete observer from `DLQE`.
+    pub fn steady_state_kalman(
+        &self,
+        w: MatRef<'_, T>,
+        v: MatRef<'_, T>,
+        x_hat: Mat<T>,
+    ) -> Result<SteadyStateKalmanFilter<T>, EstimatorError> {
+        SteadyStateKalmanFilter::from_dlqe(self, w, v, x_hat)
+    }
+}
+
+impl<T> ContinuousStateSpace<T>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy + RealField,
+{
+    /// Builds a fixed-gain continuous observer from `LQE`.
+    pub fn observer(
+        &self,
+        w: MatRef<'_, T>,
+        v: MatRef<'_, T>,
+        x_hat: Mat<T>,
+    ) -> Result<ContinuousObserver<T>, EstimatorError> {
+        ContinuousObserver::from_lqe(self, w, v, x_hat)
+    }
 }
 
 impl<T> DiscreteKalmanFilter<T>
@@ -233,6 +390,22 @@ where
         x_hat: Mat<T>,
         p: Mat<T>,
     ) -> Result<Self, EstimatorError> {
+        Self::new_with_covariance_update(a, b, c, d, w, v, x_hat, p, CovarianceUpdate::default())
+    }
+
+    /// Builds a discrete Kalman filter with an explicit covariance-update
+    /// policy.
+    pub fn new_with_covariance_update(
+        a: Mat<T>,
+        b: Mat<T>,
+        c: Mat<T>,
+        d: Mat<T>,
+        w: Mat<T>,
+        v: Mat<T>,
+        x_hat: Mat<T>,
+        p: Mat<T>,
+        covariance_update: CovarianceUpdate,
+    ) -> Result<Self, EstimatorError> {
         validate_filter_model(
             a.as_ref(),
             b.as_ref(),
@@ -250,6 +423,7 @@ where
             d,
             w,
             v,
+            covariance_update,
             x_hat,
             p,
         })
@@ -264,7 +438,7 @@ where
         x_hat: Mat<T>,
         p: Mat<T>,
     ) -> Result<Self, EstimatorError> {
-        Self::new(
+        Self::new_with_covariance_update(
             clone_mat(system.a()),
             clone_mat(system.b()),
             clone_mat(system.c()),
@@ -273,6 +447,52 @@ where
             v,
             x_hat,
             p,
+            CovarianceUpdate::default(),
+        )
+    }
+
+    /// Builds a discrete Kalman filter from a validated state-space model with
+    /// an explicit covariance-update policy.
+    pub fn from_state_space_with_covariance_update(
+        system: &DiscreteStateSpace<T>,
+        w: Mat<T>,
+        v: Mat<T>,
+        x_hat: Mat<T>,
+        p: Mat<T>,
+        covariance_update: CovarianceUpdate,
+    ) -> Result<Self, EstimatorError> {
+        Self::new_with_covariance_update(
+            clone_mat(system.a()),
+            clone_mat(system.b()),
+            clone_mat(system.c()),
+            clone_mat(system.d()),
+            w,
+            v,
+            x_hat,
+            p,
+            covariance_update,
+        )
+    }
+
+    /// Builds a full recursive discrete Kalman filter initialized from the
+    /// steady-state `DLQE` covariance.
+    pub fn from_dlqe(
+        system: &DiscreteStateSpace<T>,
+        w: MatRef<'_, T>,
+        v: MatRef<'_, T>,
+        x_hat: Mat<T>,
+    ) -> Result<Self, EstimatorError> {
+        let solve = system.dlqe(w, v)?;
+        Self::new_with_covariance_update(
+            clone_mat(system.a()),
+            clone_mat(system.b()),
+            clone_mat(system.c()),
+            clone_mat(system.d()),
+            clone_mat(w),
+            clone_mat(v),
+            x_hat,
+            solve.covariance,
+            CovarianceUpdate::default(),
         )
     }
 
@@ -286,6 +506,12 @@ where
     #[must_use]
     pub fn covariance(&self) -> MatRef<'_, T> {
         self.p.as_ref()
+    }
+
+    /// Returns the covariance-update policy currently used by the filter.
+    #[must_use]
+    pub fn covariance_update(&self) -> CovarianceUpdate {
+        self.covariance_update
     }
 
     /// Computes the prediction step for the supplied input without mutating the
@@ -311,6 +537,12 @@ where
             .as_ref(),
             self.w.as_ref(),
         );
+        let mut covariance = covariance;
+        hermitian_project_in_place(&mut covariance);
+        let output = dense_add(
+            dense_mul(self.c.as_ref(), state.as_ref()).as_ref(),
+            dense_mul(self.d.as_ref(), input).as_ref(),
+        );
 
         if !state.as_ref().is_all_finite() {
             return Err(EstimatorError::NonFiniteResult {
@@ -322,8 +554,17 @@ where
                 which: "prediction.covariance",
             });
         }
+        if !output.as_ref().is_all_finite() {
+            return Err(EstimatorError::NonFiniteResult {
+                which: "prediction.output",
+            });
+        }
 
-        Ok(KalmanPrediction { state, covariance })
+        Ok(KalmanPrediction {
+            state,
+            covariance,
+            output,
+        })
     }
 
     /// Applies one measurement update to an externally supplied prediction.
@@ -345,6 +586,11 @@ where
             prediction.covariance.as_ref(),
             self.a.nrows(),
         )?;
+        validate_column_vector(
+            "prediction.output",
+            prediction.output.as_ref(),
+            self.c.nrows(),
+        )?;
 
         // The update stage forms the innovation
         //
@@ -355,11 +601,8 @@ where
         // `S = C P^- C^H + V`
         //
         // before solving for the Kalman gain.
-        let y_pred = dense_add(
-            dense_mul(self.c.as_ref(), prediction.state.as_ref()).as_ref(),
-            dense_mul(self.d.as_ref(), input).as_ref(),
-        );
-        let innovation = dense_sub(measurement, y_pred.as_ref());
+        let predicted_output = clone_mat(prediction.output.as_ref());
+        let innovation = dense_sub(measurement, predicted_output.as_ref());
         let innovation_covariance = dense_add(
             dense_mul_adjoint_rhs(
                 dense_mul(self.c.as_ref(), prediction.covariance.as_ref()).as_ref(),
@@ -368,6 +611,8 @@ where
             .as_ref(),
             self.v.as_ref(),
         );
+        let mut innovation_covariance = innovation_covariance;
+        hermitian_project_in_place(&mut innovation_covariance);
         let cross = dense_mul_adjoint_rhs(prediction.covariance.as_ref(), self.c.as_ref());
         // `cross * S^-1` is the Kalman gain `K = P^- C^H S^-1`. The helper is
         // written as a right solve so the algebra stays close to that formula.
@@ -381,21 +626,23 @@ where
             prediction.state.as_ref(),
             dense_mul(gain.as_ref(), innovation.as_ref()).as_ref(),
         );
-        // The first pass uses the simple covariance update
-        //
-        // `P^+ = P^- - K S K^H`
-        //
-        // rather than the Joseph form. That keeps the implementation aligned
-        // with the textbook linear-Gaussian recursion while leaving room for a
-        // more conservative update later if needed.
-        let covariance = dense_sub(
+        let covariance = updated_covariance(
+            self.covariance_update,
             prediction.covariance.as_ref(),
-            dense_mul_adjoint_rhs(
-                dense_mul(gain.as_ref(), innovation_covariance.as_ref()).as_ref(),
-                gain.as_ref(),
-            )
-            .as_ref(),
+            gain.as_ref(),
+            self.c.as_ref(),
+            self.v.as_ref(),
+            innovation_covariance.as_ref(),
         );
+        let mut covariance = covariance;
+        hermitian_project_in_place(&mut covariance);
+        let output = dense_add(
+            dense_mul(self.c.as_ref(), state.as_ref()).as_ref(),
+            dense_mul(self.d.as_ref(), input).as_ref(),
+        );
+        let innovation_norm = column_vector_norm(innovation.as_ref());
+        let normalized_innovation_norm =
+            normalized_innovation_norm(innovation.as_ref(), innovation_covariance.as_ref())?;
 
         if !innovation.as_ref().is_all_finite() {
             return Err(EstimatorError::NonFiniteResult {
@@ -417,13 +664,22 @@ where
                 which: "update.covariance",
             });
         }
+        if !output.as_ref().is_all_finite() {
+            return Err(EstimatorError::NonFiniteResult {
+                which: "update.output",
+            });
+        }
 
         Ok(KalmanUpdate {
             innovation,
+            innovation_norm,
             innovation_covariance,
+            normalized_innovation_norm,
             gain,
+            predicted_output,
             state,
             covariance,
+            output,
         })
     }
 
@@ -440,6 +696,339 @@ where
         self.x_hat = clone_mat(update.state.as_ref());
         self.p = clone_mat(update.covariance.as_ref());
         Ok(update)
+    }
+}
+
+impl<T> SteadyStateKalmanFilter<T>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy + RealField,
+{
+    /// Builds a fixed-gain steady-state discrete observer from explicit
+    /// matrices.
+    pub fn new(
+        a: Mat<T>,
+        b: Mat<T>,
+        c: Mat<T>,
+        d: Mat<T>,
+        gain: Mat<T>,
+        x_hat: Mat<T>,
+        steady_state_covariance: Option<Mat<T>>,
+    ) -> Result<Self, EstimatorError> {
+        validate_fixed_gain_observer_model(
+            a.as_ref(),
+            b.as_ref(),
+            c.as_ref(),
+            d.as_ref(),
+            gain.as_ref(),
+            x_hat.as_ref(),
+        )?;
+        if let Some(covariance) = &steady_state_covariance {
+            validate_square("steady_state_covariance", covariance.as_ref(), a.nrows())?;
+        }
+        Ok(Self {
+            a,
+            b,
+            c,
+            d,
+            gain,
+            x_hat,
+            steady_state_covariance,
+        })
+    }
+
+    /// Builds a fixed-gain steady-state discrete observer from a validated
+    /// discrete state-space model and an explicit observer gain.
+    pub fn from_gain(
+        system: &DiscreteStateSpace<T>,
+        gain: Mat<T>,
+        x_hat: Mat<T>,
+        steady_state_covariance: Option<Mat<T>>,
+    ) -> Result<Self, EstimatorError> {
+        Self::new(
+            clone_mat(system.a()),
+            clone_mat(system.b()),
+            clone_mat(system.c()),
+            clone_mat(system.d()),
+            gain,
+            x_hat,
+            steady_state_covariance,
+        )
+    }
+
+    /// Builds a fixed-gain steady-state discrete observer from `DLQE`.
+    ///
+    /// `DLQE` returns the steady-state posterior covariance and the
+    /// predictor-form observer dynamics `A - L C`. The runtime wrapper here
+    /// uses explicit filter-form `predict` / `update` steps, so it converts the
+    /// stored posterior covariance into the corresponding fixed filter gain
+    /// before constructing the observer.
+    pub fn from_dlqe(
+        system: &DiscreteStateSpace<T>,
+        w: MatRef<'_, T>,
+        v: MatRef<'_, T>,
+        x_hat: Mat<T>,
+    ) -> Result<Self, EstimatorError> {
+        let solve = system.dlqe(w, v)?;
+        let gain =
+            steady_state_filter_gain(system.a(), system.c(), w, v, solve.covariance.as_ref())?;
+        Self::from_gain(system, gain, x_hat, Some(solve.covariance))
+    }
+
+    /// Returns the current state estimate.
+    #[must_use]
+    pub fn state_estimate(&self) -> MatRef<'_, T> {
+        self.x_hat.as_ref()
+    }
+
+    /// Returns the fixed observer gain.
+    #[must_use]
+    pub fn gain(&self) -> MatRef<'_, T> {
+        self.gain.as_ref()
+    }
+
+    /// Returns the stored steady-state covariance when available.
+    #[must_use]
+    pub fn steady_state_covariance(&self) -> Option<MatRef<'_, T>> {
+        self.steady_state_covariance.as_ref().map(|p| p.as_ref())
+    }
+
+    /// Computes the fixed-gain prediction step for the supplied input.
+    ///
+    /// This follows the same filter-form state propagation as the full
+    /// discrete Kalman filter, but without covariance evolution:
+    ///
+    /// `x^- = A x + B u`
+    pub fn predict(
+        &self,
+        input: MatRef<'_, T>,
+    ) -> Result<SteadyStateKalmanPrediction<T>, EstimatorError> {
+        validate_column_vector("input", input, self.b.ncols())?;
+        let state = dense_add(
+            dense_mul(self.a.as_ref(), self.x_hat.as_ref()).as_ref(),
+            dense_mul(self.b.as_ref(), input).as_ref(),
+        );
+        let output = dense_add(
+            dense_mul(self.c.as_ref(), state.as_ref()).as_ref(),
+            dense_mul(self.d.as_ref(), input).as_ref(),
+        );
+        if !state.as_ref().is_all_finite() {
+            return Err(EstimatorError::NonFiniteResult {
+                which: "steady_state_prediction.state",
+            });
+        }
+        if !output.as_ref().is_all_finite() {
+            return Err(EstimatorError::NonFiniteResult {
+                which: "steady_state_prediction.output",
+            });
+        }
+        Ok(SteadyStateKalmanPrediction { state, output })
+    }
+
+    /// Applies one fixed-gain measurement correction to an externally supplied
+    /// prediction.
+    ///
+    /// The update uses the stored constant gain:
+    ///
+    /// `x^+ = x^- + L (y - (C x^- + D u))`
+    ///
+    /// so this wrapper behaves like the converged steady-state version of the
+    /// full discrete Kalman recursion.
+    pub fn update(
+        &self,
+        prediction: &SteadyStateKalmanPrediction<T>,
+        input: MatRef<'_, T>,
+        measurement: MatRef<'_, T>,
+    ) -> Result<SteadyStateKalmanUpdate<T>, EstimatorError> {
+        validate_column_vector("input", input, self.b.ncols())?;
+        validate_column_vector("measurement", measurement, self.c.nrows())?;
+        validate_column_vector(
+            "prediction.state",
+            prediction.state.as_ref(),
+            self.a.nrows(),
+        )?;
+        validate_column_vector(
+            "prediction.output",
+            prediction.output.as_ref(),
+            self.c.nrows(),
+        )?;
+
+        let innovation = dense_sub(measurement, prediction.output.as_ref());
+        let state = dense_add(
+            prediction.state.as_ref(),
+            dense_mul(self.gain.as_ref(), innovation.as_ref()).as_ref(),
+        );
+        let output = dense_add(
+            dense_mul(self.c.as_ref(), state.as_ref()).as_ref(),
+            dense_mul(self.d.as_ref(), input).as_ref(),
+        );
+        let innovation_norm = column_vector_norm(innovation.as_ref());
+
+        if !innovation.as_ref().is_all_finite() {
+            return Err(EstimatorError::NonFiniteResult {
+                which: "steady_state_update.innovation",
+            });
+        }
+        if !state.as_ref().is_all_finite() {
+            return Err(EstimatorError::NonFiniteResult {
+                which: "steady_state_update.state",
+            });
+        }
+        if !output.as_ref().is_all_finite() {
+            return Err(EstimatorError::NonFiniteResult {
+                which: "steady_state_update.output",
+            });
+        }
+
+        Ok(SteadyStateKalmanUpdate {
+            innovation,
+            innovation_norm,
+            state,
+            output,
+        })
+    }
+
+    /// Runs one full fixed-gain predict/update cycle and stores the posterior
+    /// state estimate.
+    pub fn step(
+        &mut self,
+        input: MatRef<'_, T>,
+        measurement: MatRef<'_, T>,
+    ) -> Result<SteadyStateKalmanUpdate<T>, EstimatorError> {
+        let prediction = self.predict(input)?;
+        let update = self.update(&prediction, input, measurement)?;
+        self.x_hat = clone_mat(update.state.as_ref());
+        Ok(update)
+    }
+}
+
+impl<T> ContinuousObserver<T>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy + RealField,
+{
+    /// Builds a fixed-gain continuous observer from explicit matrices.
+    pub fn new(
+        a: Mat<T>,
+        b: Mat<T>,
+        c: Mat<T>,
+        d: Mat<T>,
+        gain: Mat<T>,
+        x_hat: Mat<T>,
+    ) -> Result<Self, EstimatorError> {
+        validate_fixed_gain_observer_model(
+            a.as_ref(),
+            b.as_ref(),
+            c.as_ref(),
+            d.as_ref(),
+            gain.as_ref(),
+            x_hat.as_ref(),
+        )?;
+        Ok(Self {
+            a,
+            b,
+            c,
+            d,
+            gain,
+            x_hat,
+        })
+    }
+
+    /// Builds a fixed-gain continuous observer from a validated state-space
+    /// model and an explicit observer gain.
+    pub fn from_gain(
+        system: &ContinuousStateSpace<T>,
+        gain: Mat<T>,
+        x_hat: Mat<T>,
+    ) -> Result<Self, EstimatorError> {
+        Self::new(
+            clone_mat(system.a()),
+            clone_mat(system.b()),
+            clone_mat(system.c()),
+            clone_mat(system.d()),
+            gain,
+            x_hat,
+        )
+    }
+
+    /// Builds a fixed-gain continuous observer from `LQE`.
+    ///
+    /// Unlike the discrete steady-state wrapper, this path does not need a
+    /// predictor-to-filter gain conversion. The continuous `LQE` gain already
+    /// appears directly in the observer differential equation.
+    pub fn from_lqe(
+        system: &ContinuousStateSpace<T>,
+        w: MatRef<'_, T>,
+        v: MatRef<'_, T>,
+        x_hat: Mat<T>,
+    ) -> Result<Self, EstimatorError> {
+        let solve = system.lqe(w, v)?;
+        Self::from_gain(system, solve.gain, x_hat)
+    }
+
+    /// Returns the current state estimate.
+    #[must_use]
+    pub fn state_estimate(&self) -> MatRef<'_, T> {
+        self.x_hat.as_ref()
+    }
+
+    /// Returns the fixed observer gain.
+    #[must_use]
+    pub fn gain(&self) -> MatRef<'_, T> {
+        self.gain.as_ref()
+    }
+
+    /// Evaluates the continuous observer differential equation for the current
+    /// estimate and supplied signals.
+    ///
+    /// This returns the derivative data rather than stepping time internally so
+    /// callers can integrate it with whatever ODE scheme they are already
+    /// using.
+    pub fn derivative(
+        &self,
+        input: MatRef<'_, T>,
+        measurement: MatRef<'_, T>,
+    ) -> Result<ContinuousObserverDerivative<T>, EstimatorError> {
+        validate_column_vector("input", input, self.b.ncols())?;
+        validate_column_vector("measurement", measurement, self.c.nrows())?;
+
+        let output = dense_add(
+            dense_mul(self.c.as_ref(), self.x_hat.as_ref()).as_ref(),
+            dense_mul(self.d.as_ref(), input).as_ref(),
+        );
+        let innovation = dense_sub(measurement, output.as_ref());
+        let state_derivative = dense_add(
+            dense_add(
+                dense_mul(self.a.as_ref(), self.x_hat.as_ref()).as_ref(),
+                dense_mul(self.b.as_ref(), input).as_ref(),
+            )
+            .as_ref(),
+            dense_mul(self.gain.as_ref(), innovation.as_ref()).as_ref(),
+        );
+        let innovation_norm = column_vector_norm(innovation.as_ref());
+
+        if !output.as_ref().is_all_finite() {
+            return Err(EstimatorError::NonFiniteResult {
+                which: "continuous_observer.output",
+            });
+        }
+        if !innovation.as_ref().is_all_finite() {
+            return Err(EstimatorError::NonFiniteResult {
+                which: "continuous_observer.innovation",
+            });
+        }
+        if !state_derivative.as_ref().is_all_finite() {
+            return Err(EstimatorError::NonFiniteResult {
+                which: "continuous_observer.state_derivative",
+            });
+        }
+
+        Ok(ContinuousObserverDerivative {
+            output,
+            innovation,
+            innovation_norm,
+            state_derivative,
+        })
     }
 }
 
@@ -512,6 +1101,58 @@ fn validate_filter_model<T>(
     Ok(())
 }
 
+fn validate_fixed_gain_observer_model<T>(
+    a: MatRef<'_, T>,
+    b: MatRef<'_, T>,
+    c: MatRef<'_, T>,
+    d: MatRef<'_, T>,
+    gain: MatRef<'_, T>,
+    x_hat: MatRef<'_, T>,
+) -> Result<(), EstimatorError> {
+    // Fixed-gain observers share the same `A/B/C/D` compatibility rules as the
+    // full filter, but they replace covariance state with an explicit gain.
+    let n = a.nrows();
+    validate_square("a", a, n)?;
+    if b.nrows() != n {
+        return Err(EstimatorError::DimensionMismatch {
+            which: "b",
+            expected_nrows: n,
+            expected_ncols: b.ncols(),
+            actual_nrows: b.nrows(),
+            actual_ncols: b.ncols(),
+        });
+    }
+    if c.ncols() != n {
+        return Err(EstimatorError::DimensionMismatch {
+            which: "c",
+            expected_nrows: c.nrows(),
+            expected_ncols: n,
+            actual_nrows: c.nrows(),
+            actual_ncols: c.ncols(),
+        });
+    }
+    if d.nrows() != c.nrows() || d.ncols() != b.ncols() {
+        return Err(EstimatorError::DimensionMismatch {
+            which: "d",
+            expected_nrows: c.nrows(),
+            expected_ncols: b.ncols(),
+            actual_nrows: d.nrows(),
+            actual_ncols: d.ncols(),
+        });
+    }
+    validate_column_vector("x_hat", x_hat, n)?;
+    if gain.nrows() != a.nrows() || gain.ncols() != c.nrows() {
+        return Err(EstimatorError::DimensionMismatch {
+            which: "gain",
+            expected_nrows: a.nrows(),
+            expected_ncols: c.nrows(),
+            actual_nrows: gain.nrows(),
+            actual_ncols: gain.ncols(),
+        });
+    }
+    Ok(())
+}
+
 fn validate_square<T>(
     which: &'static str,
     matrix: MatRef<'_, T>,
@@ -562,6 +1203,98 @@ where
     // Both continuous and discrete steady-state observer design report the
     // estimator dynamics in the same algebraic form `A - L C`.
     dense_sub(a, dense_mul(l, c).as_ref())
+}
+
+fn steady_state_filter_gain<T>(
+    a: MatRef<'_, T>,
+    c: MatRef<'_, T>,
+    w: MatRef<'_, T>,
+    v: MatRef<'_, T>,
+    posterior_covariance: MatRef<'_, T>,
+) -> Result<Mat<T>, EstimatorError>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    // `DLQE` gives the steady-state posterior covariance. The fixed-gain
+    // runtime wrapper uses an explicit predict/update decomposition, so it
+    // needs the corresponding filter-form gain based on the predicted
+    // covariance and innovation covariance.
+    let mut predicted_covariance = dense_add(
+        dense_mul_adjoint_rhs(dense_mul(a, posterior_covariance).as_ref(), a).as_ref(),
+        w,
+    );
+    hermitian_project_in_place(&mut predicted_covariance);
+
+    let mut innovation_covariance = dense_add(
+        dense_mul_adjoint_rhs(dense_mul(c, predicted_covariance.as_ref()).as_ref(), c).as_ref(),
+        v,
+    );
+    hermitian_project_in_place(&mut innovation_covariance);
+
+    let cross = dense_mul_adjoint_rhs(predicted_covariance.as_ref(), c);
+    solve_right_checked(
+        cross.as_ref(),
+        innovation_covariance.as_ref(),
+        default_tolerance::<T>(),
+        EstimatorError::SingularInnovationCovariance,
+    )
+}
+
+fn updated_covariance<T>(
+    covariance_update: CovarianceUpdate,
+    predicted_covariance: MatRef<'_, T>,
+    gain: MatRef<'_, T>,
+    c: MatRef<'_, T>,
+    v: MatRef<'_, T>,
+    innovation_covariance: MatRef<'_, T>,
+) -> Mat<T>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    match covariance_update {
+        CovarianceUpdate::Simple => dense_sub(
+            predicted_covariance,
+            dense_mul_adjoint_rhs(dense_mul(gain, innovation_covariance).as_ref(), gain).as_ref(),
+        ),
+        CovarianceUpdate::Joseph => {
+            // The Joseph form is more expensive, but it is also the more
+            // conservative floating-point update because it tends to preserve
+            // Hermitian symmetry and positive semidefiniteness better than the
+            // compact subtraction formula.
+            let identity = identity::<T>(predicted_covariance.nrows());
+            let kc = dense_mul(gain, c);
+            let i_minus_kc = dense_sub(identity.as_ref(), kc.as_ref());
+            let first = dense_mul_adjoint_rhs(
+                dense_mul(i_minus_kc.as_ref(), predicted_covariance).as_ref(),
+                i_minus_kc.as_ref(),
+            );
+            let second = dense_mul_adjoint_rhs(dense_mul(gain, v).as_ref(), gain);
+            dense_add(first.as_ref(), second.as_ref())
+        }
+    }
+}
+
+fn normalized_innovation_norm<T>(
+    innovation: MatRef<'_, T>,
+    innovation_covariance: MatRef<'_, T>,
+) -> Result<T::Real, EstimatorError>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    // Whitening the innovation by `S^-1` gives the standard normalized
+    // innovation energy used for runtime consistency checks.
+    let whitened = solve_left_checked(
+        innovation_covariance,
+        innovation,
+        default_tolerance::<T>(),
+        EstimatorError::SingularInnovationCovariance,
+    )?;
+    Ok(inner_product_real(innovation, whitened.as_ref())
+        .max(<T::Real as Zero>::zero())
+        .sqrt())
 }
 
 /// Solves `lhs * X = rhs` and rejects numerically unusable results.
@@ -620,6 +1353,20 @@ fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
     Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
         matrix[(row, col)]
     })
+}
+
+/// Returns a dense identity matrix of the requested dimension.
+fn identity<T>(dim: usize) -> Mat<T>
+where
+    T: ComplexField + Copy,
+{
+    Mat::from_fn(
+        dim,
+        dim,
+        |row, col| {
+            if row == col { T::one() } else { T::zero() }
+        },
+    )
 }
 
 fn dense_adjoint<T>(matrix: MatRef<'_, T>) -> Mat<T>
@@ -713,6 +1460,53 @@ where
     })
 }
 
+fn inner_product_real<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> T::Real
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    // The normalized-innovation metric only needs the real scalar value of the
+    // Hermitian inner product.
+    let mut acc = CompensatedSum::<T>::default();
+    for row in 0..lhs.nrows() {
+        acc.add(lhs[(row, 0)].conj() * rhs[(row, 0)]);
+    }
+    acc.finish().real()
+}
+
+/// Returns the Euclidean norm of a dense column vector.
+fn column_vector_norm<T>(vector: MatRef<'_, T>) -> T::Real
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let mut acc = <T::Real as Zero>::zero();
+    for row in 0..vector.nrows() {
+        acc = acc + vector[(row, 0)].abs2();
+    }
+    acc.sqrt()
+}
+
+/// Projects a dense matrix onto the Hermitian subspace in place.
+///
+/// This is used after covariance-like updates so small floating-point skew does
+/// not accumulate into obviously non-Hermitian covariance matrices.
+fn hermitian_project_in_place<T>(matrix: &mut Mat<T>)
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let one = <T::Real as One>::one();
+    let half = one / (one + one);
+    for col in 0..matrix.ncols() {
+        for row in 0..=col {
+            let avg = (matrix[(row, col)] + matrix[(col, row)].conj()).mul_real(half);
+            matrix[(row, col)] = avg;
+            matrix[(col, row)] = avg.conj();
+        }
+    }
+}
+
 fn frobenius_norm_plain<T>(matrix: MatRef<'_, T>) -> T::Real
 where
     T: ComplexField + Copy,
@@ -729,7 +1523,10 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::{DiscreteKalmanFilter, EstimatorError, dlqe_dense, lqe_dense};
+    use super::{
+        ContinuousObserver, CovarianceUpdate, DiscreteKalmanFilter, EstimatorError,
+        SteadyStateKalmanFilter, dlqe_dense, lqe_dense,
+    };
     use crate::control::state_space::{ContinuousStateSpace, DiscreteStateSpace};
     use faer::Mat;
     use faer_traits::ext::ComplexFieldExt;
@@ -829,6 +1626,7 @@ mod test {
         let pred = filter.predict(u.as_ref()).unwrap();
         assert!((pred.state[(0, 0)] - 2.0).abs() < 1.0e-12);
         assert!((pred.covariance[(0, 0)] - 1.25).abs() < 1.0e-12);
+        assert!((pred.output[(0, 0)] - 2.0).abs() < 1.0e-12);
 
         let y = Mat::from_fn(1, 1, |_, _| 1.5f64);
         let update = filter.update(&pred, u.as_ref(), y.as_ref()).unwrap();
@@ -838,6 +1636,10 @@ mod test {
         assert!((update.gain[(0, 0)] - expected_k).abs() < 1.0e-12);
         assert!((update.state[(0, 0)] - expected_x).abs() < 1.0e-12);
         assert!((update.covariance[(0, 0)] - expected_p).abs() < 1.0e-12);
+        assert!((update.predicted_output[(0, 0)] - 2.0).abs() < 1.0e-12);
+        assert!((update.output[(0, 0)] - expected_x).abs() < 1.0e-12);
+        assert!((update.innovation_norm - 0.5).abs() < 1.0e-12);
+        assert!(update.normalized_innovation_norm.is_finite());
     }
 
     #[test]
@@ -892,5 +1694,160 @@ mod test {
         let y = Mat::from_fn(1, 1, |_, _| 0.0f64);
         let err = filter.update(&pred, u.as_ref(), y.as_ref()).unwrap_err();
         assert!(matches!(err, EstimatorError::SingularInnovationCovariance));
+    }
+
+    #[test]
+    fn joseph_and_simple_updates_match_on_scalar_problem() {
+        let a = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let b = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let c = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let d = Mat::from_fn(1, 1, |_, _| 0.0f64);
+        let w = Mat::from_fn(1, 1, |_, _| 0.25f64);
+        let v = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let x0 = Mat::from_fn(1, 1, |_, _| 0.0f64);
+        let p0 = Mat::from_fn(1, 1, |_, _| 1.0f64);
+
+        let simple = DiscreteKalmanFilter::new_with_covariance_update(
+            a.clone(),
+            b.clone(),
+            c.clone(),
+            d.clone(),
+            w.clone(),
+            v.clone(),
+            x0.clone(),
+            p0.clone(),
+            CovarianceUpdate::Simple,
+        )
+        .unwrap();
+        let joseph = DiscreteKalmanFilter::new_with_covariance_update(
+            a,
+            b,
+            c,
+            d,
+            w,
+            v,
+            x0,
+            p0,
+            CovarianceUpdate::Joseph,
+        )
+        .unwrap();
+
+        let u = Mat::from_fn(1, 1, |_, _| 2.0f64);
+        let y = Mat::from_fn(1, 1, |_, _| 1.5f64);
+        let pred_simple = simple.predict(u.as_ref()).unwrap();
+        let pred_joseph = joseph.predict(u.as_ref()).unwrap();
+        let update_simple = simple.update(&pred_simple, u.as_ref(), y.as_ref()).unwrap();
+        let update_joseph = joseph.update(&pred_joseph, u.as_ref(), y.as_ref()).unwrap();
+
+        assert_close(&update_simple.state, &update_joseph.state, 1.0e-12);
+        assert_close(
+            &update_simple.covariance,
+            &update_joseph.covariance,
+            1.0e-12,
+        );
+    }
+
+    #[test]
+    fn steady_state_discrete_filter_matches_dlqe_gain_and_full_filter_init() {
+        let system = DiscreteStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| 0.8f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 0.0f64),
+            0.1,
+        )
+        .unwrap();
+        let w = Mat::from_fn(1, 1, |_, _| 0.2f64);
+        let v = Mat::from_fn(1, 1, |_, _| 0.3f64);
+        let x0 = Mat::from_fn(1, 1, |_, _| 0.0f64);
+
+        let steady =
+            SteadyStateKalmanFilter::from_dlqe(&system, w.as_ref(), v.as_ref(), x0.clone())
+                .unwrap();
+        let full = DiscreteKalmanFilter::from_dlqe(&system, w.as_ref(), v.as_ref(), x0).unwrap();
+
+        assert_close(
+            &super::clone_mat(full.covariance()),
+            steady.steady_state_covariance.as_ref().unwrap(),
+            1.0e-12,
+        );
+
+        let u = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let y = Mat::from_fn(1, 1, |_, _| 0.25f64);
+        let steady_update = {
+            let pred = steady.predict(u.as_ref()).unwrap();
+            steady.update(&pred, u.as_ref(), y.as_ref()).unwrap()
+        };
+        let full_update = {
+            let pred = full.predict(u.as_ref()).unwrap();
+            full.update(&pred, u.as_ref(), y.as_ref()).unwrap()
+        };
+
+        assert_close(&super::clone_mat(steady.gain()), &full_update.gain, 1.0e-10);
+        assert_close(&steady_update.state, &full_update.state, 1.0e-10);
+        assert_close(&steady_update.output, &full_update.output, 1.0e-10);
+    }
+
+    #[test]
+    fn continuous_observer_derivative_matches_manual_scalar_formula() {
+        let system = ContinuousStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| 2.0f64),
+            Mat::from_fn(1, 1, |_, _| 3.0f64),
+            Mat::from_fn(1, 1, |_, _| 4.0f64),
+            Mat::from_fn(1, 1, |_, _| 5.0f64),
+        )
+        .unwrap();
+        let observer = ContinuousObserver::from_gain(
+            &system,
+            Mat::from_fn(1, 1, |_, _| 6.0f64),
+            Mat::from_fn(1, 1, |_, _| 7.0f64),
+        )
+        .unwrap();
+
+        let u = Mat::from_fn(1, 1, |_, _| 0.5f64);
+        let y = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let deriv = observer.derivative(u.as_ref(), y.as_ref()).unwrap();
+
+        let expected_output = 4.0 * 7.0 + 5.0 * 0.5;
+        let expected_innovation = 1.0 - expected_output;
+        let expected_xdot = 2.0 * 7.0 + 3.0 * 0.5 + 6.0 * expected_innovation;
+
+        assert!((deriv.output[(0, 0)] - expected_output).abs() < 1.0e-12);
+        assert!((deriv.innovation[(0, 0)] - expected_innovation).abs() < 1.0e-12);
+        assert!((deriv.state_derivative[(0, 0)] - expected_xdot).abs() < 1.0e-12);
+        assert!((deriv.innovation_norm - expected_innovation.abs()).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn state_space_observer_and_steady_state_methods_build_wrappers() {
+        let continuous = ContinuousStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 0.0f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 0.0f64),
+        )
+        .unwrap();
+        let discrete = DiscreteStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| 0.8f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 0.0f64),
+            0.1,
+        )
+        .unwrap();
+        let w = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let v = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let x0 = Mat::from_fn(1, 1, |_, _| 0.0f64);
+
+        let observer = continuous
+            .observer(w.as_ref(), v.as_ref(), x0.clone())
+            .unwrap();
+        let steady = discrete
+            .steady_state_kalman(w.as_ref(), v.as_ref(), x0)
+            .unwrap();
+
+        assert_eq!(observer.gain.nrows(), 1);
+        assert_eq!(steady.gain.nrows(), 1);
+        assert!(steady.steady_state_covariance.is_some());
     }
 }
