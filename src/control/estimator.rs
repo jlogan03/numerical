@@ -151,7 +151,11 @@ where
     T::Real: Float + Copy + RealField,
 {
     validate_lqe_dims(a, c, w, v)?;
+    // Continuous-time LQE is the dual CARE problem with
+    // `(A_dual, B_dual, Q_dual, R_dual) = (A^H, C^H, W, V)`.
     let dual = solve_care_dense(dense_adjoint(a).as_ref(), dense_adjoint(c).as_ref(), w, v)?;
+    // The regulator-side gain lives in the dual coordinates, so transpose it
+    // back to obtain the observer gain `L`.
     let gain = dense_adjoint(dual.gain.as_ref());
     Ok(LqeSolve {
         estimator_a: estimator_matrix(a, gain.as_ref(), c),
@@ -178,6 +182,7 @@ where
     T::Real: Float + Copy + RealField,
 {
     validate_lqe_dims(a, c, w, v)?;
+    // Discrete-time DLQE is the DARE dual of DLQR on `(A^H, C^H, W, V)`.
     let dual = solve_dare_dense(dense_adjoint(a).as_ref(), dense_adjoint(c).as_ref(), w, v)?;
     let gain = dense_adjoint(dual.gain.as_ref());
     Ok(LqeSolve {
@@ -288,6 +293,12 @@ where
     pub fn predict(&self, input: MatRef<'_, T>) -> Result<KalmanPrediction<T>, EstimatorError> {
         validate_column_vector("input", input, self.b.ncols())?;
 
+        // Prediction uses the standard one-step propagation:
+        //
+        // `x^- = A x + B u`
+        // `P^- = A P A^H + W`
+        //
+        // where `W` is interpreted directly in state coordinates.
         let state = dense_add(
             dense_mul(self.a.as_ref(), self.x_hat.as_ref()).as_ref(),
             dense_mul(self.b.as_ref(), input).as_ref(),
@@ -335,6 +346,15 @@ where
             self.a.nrows(),
         )?;
 
+        // The update stage forms the innovation
+        //
+        // `r = y - (C x^- + D u)`
+        //
+        // and innovation covariance
+        //
+        // `S = C P^- C^H + V`
+        //
+        // before solving for the Kalman gain.
         let y_pred = dense_add(
             dense_mul(self.c.as_ref(), prediction.state.as_ref()).as_ref(),
             dense_mul(self.d.as_ref(), input).as_ref(),
@@ -349,6 +369,8 @@ where
             self.v.as_ref(),
         );
         let cross = dense_mul_adjoint_rhs(prediction.covariance.as_ref(), self.c.as_ref());
+        // `cross * S^-1` is the Kalman gain `K = P^- C^H S^-1`. The helper is
+        // written as a right solve so the algebra stays close to that formula.
         let gain = solve_right_checked(
             cross.as_ref(),
             innovation_covariance.as_ref(),
@@ -359,6 +381,13 @@ where
             prediction.state.as_ref(),
             dense_mul(gain.as_ref(), innovation.as_ref()).as_ref(),
         );
+        // The first pass uses the simple covariance update
+        //
+        // `P^+ = P^- - K S K^H`
+        //
+        // rather than the Joseph form. That keeps the implementation aligned
+        // with the textbook linear-Gaussian recursion while leaving room for a
+        // more conservative update later if needed.
         let covariance = dense_sub(
             prediction.covariance.as_ref(),
             dense_mul_adjoint_rhs(
@@ -404,6 +433,8 @@ where
         input: MatRef<'_, T>,
         measurement: MatRef<'_, T>,
     ) -> Result<KalmanUpdate<T>, EstimatorError> {
+        // `step` is just the stateful convenience wrapper around the pure
+        // predict/update stages above.
         let prediction = self.predict(input)?;
         let update = self.update(&prediction, input, measurement)?;
         self.x_hat = clone_mat(update.state.as_ref());
@@ -418,6 +449,8 @@ fn validate_lqe_dims<T>(
     w: MatRef<'_, T>,
     v: MatRef<'_, T>,
 ) -> Result<(), EstimatorError> {
+    // The first estimator API assumes process noise already acts in state
+    // coordinates, so `W` is `n x n` and `V` is `p x p`.
     validate_square("a", a, a.nrows())?;
     validate_square("w", w, a.nrows())?;
     validate_square("v", v, c.nrows())?;
@@ -526,9 +559,15 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // Both continuous and discrete steady-state observer design report the
+    // estimator dynamics in the same algebraic form `A - L C`.
     dense_sub(a, dense_mul(l, c).as_ref())
 }
 
+/// Solves `lhs * X = rhs` and rejects numerically unusable results.
+///
+/// This is used for innovation-covariance solves in the runtime filter and for
+/// the small dense dual-gain recovery steps.
 fn solve_left_checked<T>(
     lhs: MatRef<'_, T>,
     rhs: MatRef<'_, T>,
@@ -557,6 +596,10 @@ where
     Ok(solution)
 }
 
+/// Solves `X * lhs = rhs` by transposing into [`solve_left_checked`].
+///
+/// The Kalman gain formula naturally appears as a right solve
+/// `K S = P^- C^H`, so this wrapper keeps the calling code in that form.
 fn solve_right_checked<T>(
     rhs_left: MatRef<'_, T>,
     lhs_right: MatRef<'_, T>,
