@@ -14,6 +14,17 @@
 //! 2. delegate the balancing-core work to [`super::hsvd`]
 //! 3. assemble the reduced state-space system from the returned projections
 //!
+//! Standard balanced truncation assumes the plant is asymptotically stable in
+//! the relevant time domain:
+//!
+//! - continuous time: all poles lie in the open left half-plane
+//! - discrete time: all poles lie strictly inside the unit disk
+//!
+//! The current implementation follows that standard setting. In practice this
+//! means the underlying Gramian solves are only meaningful for stable systems,
+//! so callers should check or enforce stability before using this module on an
+//! open-loop plant.
+//!
 //! The returned result always includes the actual projection operators used to
 //! build the reduced model, and can optionally retain more of the internal
 //! balancing algebra on request.
@@ -62,6 +73,11 @@ pub use super::hsvd::HsvdInternals as BalancedInternals;
 /// The reduced model is accompanied by the actual left/right projection
 /// operators used to assemble it. Those transforms are returned even at the
 /// summary level so callers can inspect or reuse the balancing map directly.
+///
+/// The standard balanced-truncation interpretation of this result assumes the
+/// original plant was asymptotically stable. If the input model is unstable,
+/// the returned quantities should not be treated as a valid balanced
+/// truncation of the original system.
 #[derive(Clone, Debug)]
 pub struct BalancedTruncationResult<T: CompensatedField, Domain>
 where
@@ -74,6 +90,10 @@ where
     /// Final retained order.
     pub reduced_order: usize,
     /// Standard balanced-truncation tail bound when available.
+    ///
+    /// This bound is the usual stable-system BT bound. It is only meaningful
+    /// under the same asymptotic-stability assumptions as the rest of the
+    /// balanced-truncation construction.
     pub error_bound: Option<T::Real>,
     /// Left projection operator used to build the reduced model.
     pub left_projection: Mat<T>,
@@ -135,6 +155,10 @@ impl<R> From<HsvdError<R>> for BalancedError<R> {
 /// Gramians, converts each Gramian into a PSD square-root factor, forms the
 /// balancing core `Ro^H Rc`, and then builds the reduced model from the
 /// resulting left/right projection operators.
+///
+/// The input plant is assumed to be asymptotically stable. For continuous
+/// time, that means all poles of `A` must lie strictly in the open left
+/// half-plane.
 pub fn balanced_truncation_continuous_dense<T>(
     system: &ContinuousStateSpace<T>,
     params: &BalancedParams<T::Real>,
@@ -173,6 +197,9 @@ where
 /// The balancing algebra is identical to the continuous-time path; only the
 /// source of the Gramians changes from Lyapunov solves to discrete Stein
 /// solves.
+///
+/// The input plant is assumed to be asymptotically stable. For discrete time,
+/// that means all poles of `A` must lie strictly inside the unit disk.
 pub fn balanced_truncation_discrete_dense<T>(
     system: &DiscreteStateSpace<T>,
     params: &BalancedParams<T::Real>,
@@ -212,6 +239,10 @@ where
 /// This path never forms dense full Gramians. It uses the low-rank factors
 /// returned by the sparse Lyapunov solver directly, so the only dense object
 /// introduced by the reduction step is the small balancing core `Zo^H Zc`.
+///
+/// The input plant is assumed to be asymptotically stable. The low-rank
+/// continuous-time Gramian solve underneath this routine relies on that
+/// assumption.
 pub fn balanced_truncation_continuous_low_rank<I, T, ViewT>(
     a: SparseColMatRef<'_, I, ViewT>,
     b: MatRef<'_, T>,
@@ -259,6 +290,9 @@ where
 /// As in the sparse continuous-time path, the discrete solver contributes only
 /// low-rank Gramian factors. The reduction itself stays factor-based and avoids
 /// materializing any dense `n x n` discrete Gramian.
+///
+/// The input plant is assumed to be asymptotically stable. The discrete
+/// low-rank Stein solve underneath this routine relies on that assumption.
 pub fn balanced_truncation_discrete_low_rank<I, T, ViewT>(
     a: SparseColMatRef<'_, I, ViewT>,
     b: MatRef<'_, T>,
@@ -314,6 +348,9 @@ where
     T::Real: Float + Copy,
 {
     /// Computes dense continuous-time balanced truncation for this model.
+    ///
+    /// The model is assumed to be asymptotically stable. Callers can use the
+    /// LTI analysis layer to check this explicitly before truncation.
     pub fn balanced_truncation(
         &self,
         params: &BalancedParams<T::Real>,
@@ -328,6 +365,9 @@ where
     T::Real: Float + Copy,
 {
     /// Computes dense discrete-time balanced truncation for this model.
+    ///
+    /// The model is assumed to be asymptotically stable. Callers can use the
+    /// LTI analysis layer to check this explicitly before truncation.
     pub fn balanced_truncation(
         &self,
         params: &BalancedParams<T::Real>,
