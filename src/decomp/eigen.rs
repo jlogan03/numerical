@@ -85,6 +85,8 @@ where
     let vectors_ref = full.U();
     let values_ref = full.S().column_vector();
     let values = Col::from_fn(values_ref.nrows(), |i| values_ref[i]);
+    // The public decomposition layer always exposes descending-magnitude
+    // ordering, even though the backend's native ordering is backend-specific.
     let order = sorted_order_descending_by_abs(values.as_ref());
     let values = permute_col(values.as_ref(), &order);
     let vectors = permute_mat_cols(vectors_ref, &order);
@@ -133,6 +135,8 @@ where
     let vectors_ref = full.U();
     let alpha = Col::from_fn(alpha_ref.nrows(), |i| alpha_ref[i]);
     let beta = Col::from_fn(beta_ref.nrows(), |i| beta_ref[i]);
+    // Order generalized eigenpairs by the magnitude of the implied finite
+    // eigenvalue `alpha / beta`, treating `beta = 0` as an infinite mode.
     let order = sorted_generalized_order_descending_by_abs(alpha.as_ref(), beta.as_ref());
     let alpha = permute_col(alpha.as_ref(), &order);
     let beta = permute_col(beta.as_ref(), &order);
@@ -163,6 +167,10 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // `faer`'s dense general eigen returns complex Ritz data even for real
+    // input matrices. The residual checks therefore need a small local dense
+    // multiply that promotes the original matrix coefficients into the complex
+    // field of the returned eigenvectors.
     Mat::from_fn(a.nrows(), rhs.ncols(), |i, j| {
         let row = i.unbound();
         let col = j.unbound();
@@ -250,6 +258,9 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
+    // The dense general path currently computes the full factorization and
+    // truncates afterward. Recompute diagnostics on the truncated window rather
+    // than carrying the full-spectrum maxima forward.
     let values = Col::from_fn(n_requested, |i| eig.values[i]);
     let vectors = Mat::from_fn(a.nrows(), n_requested, |i, j| {
         eig.vectors[(i.unbound(), j.unbound())]
@@ -396,6 +407,10 @@ where
     A: LinOp<T>,
 {
     let par = get_global_parallelism();
+    // The matrix-free operator is still defined over `T`, so the complex
+    // residual check routes each complex vector through `T::from_real_imag`
+    // before applying the operator and lifting the result back into the
+    // complex residual field.
     let rhs_t = Mat::from_fn(op.ncols(), 1, |i, _| {
         T::from_real_imag(rhs[i.unbound()].re, rhs[i.unbound()].im)
     });
@@ -445,6 +460,8 @@ where
     );
 
     let n_converged = info.n_converged_eigen.min(n_requested);
+    // As in the self-adjoint path, expose a deterministic dominant-first
+    // ordering instead of the backend's native Ritz ordering.
     let values = Col::from_fn(n_converged, |i| values[i]);
     let vectors = Mat::from_fn(op.nrows(), n_converged, |i, j| {
         vectors[(i.unbound(), j.unbound())]
@@ -643,6 +660,10 @@ where
 }
 
 /// Computes the scratch requirement for [`sparse_eigen_with_scratch`].
+///
+/// This mirrors [`sparse_self_adjoint_eigen_scratch_req`] for the general
+/// nonsymmetric path so callers that repeat many decompositions can amortize
+/// scratch allocation.
 pub fn sparse_eigen_scratch_req<T, A>(
     op: &A,
     params: &SparseDecompParams<T>,
@@ -665,6 +686,10 @@ where
 
 /// Computes a sparse / matrix-free partial general eigendecomposition with
 /// caller-provided scratch space.
+///
+/// This is the expert, lowest-allocation entry point for nonsymmetric matrix-
+/// free problems. Returned Ritz pairs are reordered by descending eigenvalue
+/// magnitude before being exposed.
 pub fn sparse_eigen_with_scratch<T, A>(
     op: &A,
     params: &SparseDecompParams<T>,
@@ -689,6 +714,10 @@ where
 }
 
 /// Computes a sparse / matrix-free partial general eigendecomposition.
+///
+/// This is a dominant-component Arnoldi-style wrapper. It does not attempt a
+/// full spectrum and is therefore the natural entry point for large sparse
+/// operators when only a leading spectral window is needed.
 pub fn sparse_eigen<T, A>(
     op: &A,
     params: &SparseDecompParams<T>,
@@ -764,6 +793,10 @@ where
 ///
 /// The first implementation always computes the full dense eigendecomposition
 /// and truncates afterward when `params.n_components = Some(k)`.
+///
+/// Returned eigenpairs are ordered by descending eigenvalue magnitude. The
+/// residual and orthogonality diagnostics are recomputed on the exposed window
+/// after any truncation step.
 pub fn dense_eigen<T>(
     a: MatRef<'_, T>,
     params: &DenseDecompParams<T>,
@@ -799,6 +832,10 @@ where
 
 /// Computes the dense eigenvalues of a square matrix and orders them by
 /// descending magnitude.
+///
+/// This is the lightest-weight dense wrapper in the module. It forwards to the
+/// backend's eigenvalue-only path and only adds dimension validation and the
+/// crate-wide ordering convention.
 pub fn dense_eigenvalues<T>(a: MatRef<'_, T>) -> Result<Col<Complex<T::Real>>, DecompError>
 where
     T: ComplexField,
@@ -819,6 +856,10 @@ where
 }
 
 /// Computes a dense generalized eigendecomposition.
+///
+/// The returned generalized eigenpairs are stored as `(alpha, beta)` rather
+/// than pre-divided eigenvalues so callers can preserve infinite modes and
+/// avoid unnecessary division when they need the raw pencil factors.
 pub fn dense_generalized_eigen<T>(
     a: MatRef<'_, T>,
     b: MatRef<'_, T>,

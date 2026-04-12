@@ -109,6 +109,9 @@ impl From<GevdError> for RiccatiError {
 fn expect_dense_evd(err: DecompError) -> RiccatiError {
     match err {
         DecompError::DenseEvd(err) => RiccatiError::Eigen(err),
+        // The Riccati paths validate dimensions before entering the wrapper, so
+        // the only expected decomposition failure here is backend eigensolver
+        // failure itself.
         other => unreachable!("unexpected dense_eigen error in Riccati solver: {other:?}"),
     }
 }
@@ -116,6 +119,9 @@ fn expect_dense_evd(err: DecompError) -> RiccatiError {
 fn expect_dense_gevd(err: DecompError) -> RiccatiError {
     match err {
         DecompError::DenseGevd(err) => RiccatiError::GeneralizedEigen(err),
+        // As above, the generalized-eigen wrapper is only expected to surface
+        // the backend pencil-factorization failure once the Riccati inputs have
+        // been validated locally.
         other => {
             unreachable!("unexpected dense_generalized_eigen error in Riccati solver: {other:?}")
         }
