@@ -14,6 +14,7 @@
 //! complete paths.
 
 pub mod balanced;
+pub mod estimator;
 pub mod hsvd;
 pub mod identification;
 pub mod lqr;
@@ -28,6 +29,10 @@ pub use balanced::{
     BalancedError, BalancedInternals, BalancedParams, BalancedTruncationResult, InternalsLevel,
     balanced_truncation_continuous_dense, balanced_truncation_continuous_low_rank,
     balanced_truncation_discrete_dense, balanced_truncation_discrete_low_rank,
+};
+pub use estimator::{
+    DiscreteKalmanFilter, EstimatorError, KalmanPrediction, KalmanUpdate, LqeSolve, dlqe_dense,
+    lqe_dense,
 };
 pub use hsvd::{
     HsvdError, HsvdInternals, HsvdInternalsLevel, HsvdParams, HsvdResult, hsvd_from_dense_gramians,
