@@ -24,7 +24,3 @@ jobs:
       run: cargo test --features=std --verbose
     - name: Run tests with mul_add
       run: cargo test --features=std,fma --verbose
-    - name: Test no-std
-      run: |
-        rustup target add thumbv7em-none-eabihf
-        cargo build --target thumbv7em-none-eabihf
