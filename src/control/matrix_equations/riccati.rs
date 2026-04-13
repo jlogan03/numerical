@@ -1,8 +1,8 @@
 //! Dense algebraic Riccati solvers for continuous and discrete LTI systems.
 //!
-//! This module is the numerical foundation for later synthesis routines such
-//! as LQR and Kalman filtering. The first implementation is intentionally
-//! dense-first and conservative:
+//! This module is the numerical foundation for synthesis routines such as LQR
+//! and Kalman filtering. The implementation is intentionally dense-first and
+//! conservative:
 //!
 //! - CARE uses the stable invariant subspace of the Hamiltonian matrix
 //! - DARE uses the stable generalized invariant subspace of the symplectic
@@ -476,7 +476,7 @@ where
 /// Builds the symplectic generalized-eigen pencil used for the stabilizing
 /// DARE solution.
 ///
-/// In this first dense implementation the pencil is written as
+/// In this dense implementation the pencil is written as
 ///
 /// ```text
 /// H - λ J

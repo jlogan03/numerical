@@ -1,6 +1,6 @@
 //! Dense classical pole-placement utilities.
 //!
-//! The current implementation is dense and real-valued:
+//! The implementation is dense and real-valued:
 //!
 //! - SISO state feedback uses the Ackermann construction
 //! - MIMO state feedback uses an iterative eigenvector-selection path for real
@@ -14,7 +14,7 @@
 //! - `place_observer_poles*` designs an observer gain `L` for the estimator
 //!   error dynamics and places the poles of `A - L C`
 //!
-//! The MIMO path is still intentionally first-pass: it is useful for dense
+//! The MIMO path is intentionally limited: it is useful for dense
 //! real systems and real desired poles, but it is not yet a full general
 //! eigenstructure-assignment package.
 //!
@@ -25,7 +25,7 @@
 //!    problem.
 //! 2. **Controllability view.** In the SISO case the implementation reduces
 //!    that request to controllability algebra through Ackermann's formula; in
-//!    the first-pass MIMO case it extends the idea to a dense real assignment
+//!    the dense MIMO case it extends the idea to a dense real assignment
 //!    workflow.
 //!
 //! # Glossary

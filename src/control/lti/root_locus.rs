@@ -1,6 +1,6 @@
 //! Sampled root-locus data helpers.
 //!
-//! The first pass is intentionally plotting-oriented:
+//! The implementation is intentionally plotting-oriented:
 //!
 //! - it samples closed-loop poles on a caller-supplied gain grid
 //! - it tracks branches by nearest-neighbor continuation between adjacent gain
@@ -19,8 +19,8 @@
 //! - **Branch:** One heuristically tracked pole trajectory across gains.
 //! - **Open-loop poles/zeros:** Roots of the plant/controller transfer map
 //!   before closing the loop.
-//! - **Breakaway:** Gain where branches meet or split; not solved exactly in
-//!   this first pass.
+//! - **Breakaway:** Gain where branches meet or split; not solved exactly by
+//!   this helper.
 //!
 //! # Mathematical Formulation
 //!

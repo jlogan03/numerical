@@ -123,7 +123,7 @@ where
 
     /// Returns whether the dense model is numerically minimal.
     ///
-    /// In the first pass, minimality is defined by the usual dense rank tests:
+    /// Minimality is defined here by the usual dense rank tests:
     /// controllable and observable.
     pub fn is_minimal(&self) -> Result<bool, LtiError> {
         Ok(self.is_controllable()? && self.is_observable()?)

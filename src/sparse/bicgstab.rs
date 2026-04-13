@@ -128,7 +128,7 @@ where
 {
     /// Initializes a solver with a fresh residual estimate and preconditioner.
     ///
-    /// The current implementation uses `preconditioner` on the right. In other
+    /// This implementation uses `preconditioner` on the right. In other
     /// words, the iteration builds directions in an internally rescaled
     /// variable `y` and maps them back through `x = M^{-1} y` before each
     /// matrix-vector product. For a diagonal preconditioner, that means the

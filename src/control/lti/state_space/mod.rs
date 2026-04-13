@@ -1,6 +1,6 @@
 //! Dense and sparse state-space model types plus dense conversion routines.
 //!
-//! The first state-space layer in this crate is intentionally dense-first.
+//! The state-space layer in this crate is intentionally dense-first.
 //! Exact `c2d` conversions use dense matrix functions, and even bilinear
 //! conversion generally produces dense explicit discrete-time state matrices.
 //!
@@ -615,9 +615,9 @@ where
     /// This measures how strongly the sampled input channels can drive the
     /// state through repeated applications of the one-step transition matrix.
     ///
-    /// This is currently the dense reference path. It calls the Stein solver on
+    /// This is the dense reference path. It calls the Stein solver on
     /// `A` and `B` directly, so it is appropriate for modest dense models and
-    /// for validating later large-scale discrete Gramian implementations.
+    /// for validating larger-scale discrete Gramian implementations.
     pub fn controllability_gramian(&self) -> Result<DenseSteinSolve<T>, SteinError> {
         controllability_gramian_discrete_dense(self.a.as_ref(), self.b.as_ref())
     }

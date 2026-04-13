@@ -44,8 +44,8 @@
 //!
 //! # Implementation Notes
 //!
-//! - The current runtime Kalman filter is discrete-time only.
-//! - Continuous runtime support is currently fixed-gain observer evaluation,
+//! - The runtime Kalman filter is discrete-time only.
+//! - Continuous runtime support is fixed-gain observer evaluation,
 //!   not a continuous covariance ODE integrator.
 //! - Design and runtime live together so the fixed-gain wrappers can be built
 //!   directly from `LQE` / `DLQE` results.
@@ -228,7 +228,7 @@ impl From<RiccatiError> for EstimatorError {
 /// Dense discrete-time linear Kalman filter with explicit predict/update
 /// recursions.
 ///
-/// The first implementation assumes the process-noise covariance is already
+/// This implementation assumes the process-noise covariance is already
 /// expressed in state coordinates, so the prediction covariance update is
 ///
 /// `P^- = A P A^H + W`

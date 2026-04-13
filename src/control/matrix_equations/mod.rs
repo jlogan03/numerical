@@ -34,7 +34,7 @@
 //! # Implementation Notes
 //!
 //! - Dense paths favor explicit, reference-style algorithms.
-//! - Sparse paths currently focus on low-rank Gramian workflows rather than
+//! - Sparse paths focus on low-rank Gramian workflows rather than
 //!   sparse Riccati solvers.
 //! - These routines are intentionally reusable and avoid controller- or
 //!   estimator-specific packaging.

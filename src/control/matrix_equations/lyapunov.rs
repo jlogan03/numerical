@@ -24,8 +24,9 @@
 //! - shifted solves are performed through the staged sparse LU wrapper already
 //!   used elsewhere in this crate
 //!
-//! This keeps the implementation numerically explicit and lets later work add
-//! shift heuristics or promoted complex shifts without rewriting the outer API.
+//! This keeps the implementation numerically explicit and leaves room for
+//! additional shift heuristics or promoted complex shifts without rewriting
+//! the outer API.
 //!
 //! # Two Intuitions
 //!
@@ -56,7 +57,7 @@
 //!
 //! - Dense solves favor clarity and reference correctness over asymptotic
 //!   optimality.
-//! - Sparse solves currently require user-provided ADI shifts.
+//! - Sparse solves require user-provided ADI shifts.
 //! - The same solver surface underlies the controllability and observability
 //!   Gramian helper entry points.
 

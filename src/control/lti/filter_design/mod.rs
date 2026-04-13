@@ -1,6 +1,6 @@
 //! Analog and digital IIR filter design.
 //!
-//! The first implementation is intentionally practical and numerically
+//! The implementation is intentionally practical and numerically
 //! conservative:
 //!
 //! - prototype generation and frequency transformations stay in `Zpk` form
@@ -8,7 +8,7 @@
 //! - raw polynomial `TransferFunction` output is treated as an interoperability
 //!   view rather than the main working representation
 //!
-//! Supported in the first pass:
+//! Supported here:
 //!
 //! - Butterworth
 //! - Chebyshev Type I
@@ -18,7 +18,7 @@
 //!
 //! Digital Bessel design is intentionally not exposed in the digital family
 //! enum. A bilinear-transformed Bessel filter is mathematically possible, but
-//! the current API omits it so users are not misled into expecting classical
+//! the API omits it so users are not misled into expecting classical
 //! Bessel group-delay behavior from the resulting digital filter.
 //!
 //! # Two Intuitions
@@ -54,7 +54,7 @@
 //!   arithmetic during the numerically sensitive stages.
 //! - Digital Bessel is intentionally omitted from the type surface.
 //! - Order-selection helpers are spec-driven and produce the minimum order
-//!   consistent with the first-pass formulas in this module.
+//!   consistent with the formulas in this module.
 //!
 //! # Feature Matrix
 //!

@@ -136,7 +136,7 @@ where
         assert_eq!(out.nrows(), self.nrows());
         assert_eq!(out.ncols(), rhs.ncols());
 
-        // The first implementation uses dense temporaries for clarity:
+        // This implementation uses dense temporaries for clarity:
         // `tmp_b = B x`, `tmp_c = C (A^{-1} tmp_b)`, then `out = D x - tmp_c`.
         let rhs_ncols = rhs.ncols();
         let mut tmp_b = Mat::<T>::zeros(self.n_a, rhs_ncols);

@@ -196,7 +196,7 @@ where
     /// Runs forward-backward zero-phase filtering with explicit padding
     /// control.
     ///
-    /// The first implementation deliberately uses zero initial state on both
+    /// This implementation deliberately uses zero initial state on both
     /// passes and relies on endpoint padding to reduce startup transients. It
     /// also shortens the requested padding automatically when the input is too
     /// short to support the nominal length.
@@ -257,7 +257,7 @@ where
     /// Filters one input slice causally with zero initial state.
     ///
     /// The returned `final_state` is useful for manual chunked workflows even
-    /// though the first pass does not expose a dedicated streaming wrapper.
+    /// though this module does not expose a dedicated streaming wrapper.
     pub fn filter_forward(
         &self,
         input: &[R],

@@ -6,8 +6,8 @@
 //! transfer-function-style APIs that are specifically about linear
 //! time-invariant systems.
 //!
-//! The current implementation is still dense-first overall, but selected
-//! sparse state-space workflows are now available:
+//! The implementation is dense-first overall, with selected sparse state-space
+//! workflows available:
 //!
 //! - dense state-space analysis lives in `analysis`
 //! - dense sampled responses live in `response`
@@ -24,8 +24,8 @@
 //!
 //! Broader sparse/operator-backed analysis, especially continuous-time
 //! matrix-function actions and large-scale stability diagnostics, still belongs
-//! to later phases once the required Krylov and matrix-function machinery is in
-//! place.
+//! beyond the scope of this layer until the required Krylov and
+//! matrix-function machinery is added.
 //!
 //! # Two Intuitions
 //!

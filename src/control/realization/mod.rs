@@ -5,7 +5,7 @@
 //! - known or estimated discrete-time Markov parameters
 //! - higher-level realization algorithms such as ERA and OKID
 //!
-//! The first implementation keeps the core deliberately small:
+//! The implementation keeps the core deliberately small:
 //!
 //! - [`MarkovSequence`] stores the block sequence `H_0, H_1, ...`
 //! - [`BlockHankel`] assembles dense block-Hankel matrices from that sequence

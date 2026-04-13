@@ -34,7 +34,7 @@ pub enum FilterShape<R> {
     },
 }
 
-/// Analog filter families supported in the first pass.
+/// Analog filter families supported by this design layer.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum AnalogFilterFamily<R> {
     /// Maximally flat magnitude in the passband.
@@ -50,7 +50,7 @@ pub enum AnalogFilterFamily<R> {
     Bessel,
 }
 
-/// Digital filter families supported in the first pass.
+/// Digital filter families supported by this design layer.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DigitalFilterFamily<R> {
     /// Maximally flat magnitude in the passband.
@@ -135,7 +135,7 @@ where
 /// The cutoff frequencies in `shape` are interpreted as physical angular
 /// frequencies. `sample_rate` is the sampling rate in samples per unit time.
 ///
-/// The digital first pass intentionally supports only Butterworth and
+/// The digital design surface intentionally supports only Butterworth and
 /// Chebyshev Type I families. Bessel remains analog-only.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DigitalFilterSpec<R> {

@@ -34,7 +34,7 @@ use faer::{Mat, MatRef};
 ///
 /// If the top-left block is `H_start_index`, then block `(i, j)` stores
 /// `H_{start_index + i + j}`. The matrix is materialized densely because that
-/// is the right trade for first-pass ERA/OKID support and keeps later SVD
+/// is the right trade for ERA/OKID support and keeps later SVD
 /// calls straightforward.
 ///
 /// For ERA specifically, the common choice is `start_index = 1`, so the first
@@ -212,7 +212,7 @@ pub fn max_square_era_block_dim(markov_len: usize) -> usize {
 
 /// Recommended square ERA block dimension from the available Markov length.
 ///
-/// The first implementation simply returns the largest admissible square size.
+/// This helper returns the largest admissible square size.
 /// Higher-level algorithms are free to choose smaller dimensions if they want
 /// a thinner identification window.
 ///

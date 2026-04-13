@@ -46,7 +46,7 @@
 //!
 //! # Implementation Notes
 //!
-//! - The current nonlinear surface is discrete-time and additive-noise only.
+//! - The nonlinear surface is discrete-time and additive-noise only.
 //! - Linear design and runtime live together so the returned gains can be used
 //!   directly by convenience observers.
 //! - UKF sigma-point placement is pluggable for users who need to avoid model

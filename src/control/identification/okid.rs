@@ -23,7 +23,7 @@
 //!
 //! # Implementation Notes
 //!
-//! - The current implementation assumes a discrete-time LTI data-generating
+//! - The implementation assumes a discrete-time LTI data-generating
 //!   model.
 //! - The solve uses a dense SVD-based pseudoinverse path so rank-deficiency is
 //!   detected explicitly instead of being hidden in a normal-equations solve.
@@ -127,7 +127,7 @@ impl From<DecompError> for OkidError {
 /// Estimates a discrete-time Markov sequence from input/output data using the
 /// OKID observer-Markov regression.
 ///
-/// The current implementation assumes the supplied data are compatible with the
+/// The implementation assumes the supplied data are compatible with the
 /// linear time-invariant discrete-time model used by the regression and that
 /// the initial-condition effect has either decayed or been trimmed away.
 pub fn okid<T>(

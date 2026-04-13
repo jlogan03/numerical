@@ -1,6 +1,6 @@
 //! SISO loop-analysis helpers built on the existing LTI evaluation surface.
 //!
-//! The first pass is intentionally grid-based:
+//! The implementation is intentionally grid-based:
 //!
 //! - `S` and `T` are formed exactly through transfer-function arithmetic
 //! - crossover frequencies and margins are estimated from sampled loop values
@@ -103,7 +103,7 @@ pub struct NyquistData<R> {
     pub angular_frequencies: Vec<R>,
     /// Complex loop values at those frequencies.
     ///
-    /// The first-pass Nyquist helper is intentionally just sampled loop data:
+    /// The Nyquist helper is intentionally just sampled loop data:
     /// it does not mirror the negative-frequency branch or perform winding
     /// analysis on its own.
     pub values: Vec<Complex<R>>,
@@ -218,7 +218,7 @@ where
     ///
     /// The frequency grid must be monotone. Crossings are linearly
     /// interpolated between adjacent sampled points; no exact root solve is
-    /// attempted in this first pass.
+    /// attempted here.
     pub fn loop_crossovers(
         &self,
         angular_frequencies: &[R],

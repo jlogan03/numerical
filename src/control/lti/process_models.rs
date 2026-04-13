@@ -34,7 +34,7 @@
 //!
 //! # Implementation Notes
 //!
-//! - The models are continuous-time only in this first pass.
+//! - The models are continuous-time only in this layer.
 //! - Delay is preserved explicitly in analysis helpers rather than converted to
 //!   a rational approximation.
 //! - These public types are shared with the PID-design layer so fitted process

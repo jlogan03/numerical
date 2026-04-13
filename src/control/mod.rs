@@ -8,11 +8,10 @@
 //! - `estimation` provides linear and nonlinear state estimation
 //! - `synthesis` provides controller design and practical runtime controllers
 //!
-//! The current public surface is still dense-first for higher-level model
-//! manipulation, but it now includes selected sparse state-space workflows on
-//! top of the lower-level sparse solver layers. Dense conversion, dense
-//! full-spectrum analysis, and dense direct model manipulation remain the most
-//! complete paths.
+//! The public surface is dense-first for higher-level model manipulation, with
+//! selected sparse state-space workflows layered on top of the lower-level
+//! sparse solver layers. Dense conversion, dense full-spectrum analysis, and
+//! dense direct model manipulation remain the most complete paths.
 //!
 //! # Two Intuitions
 //!

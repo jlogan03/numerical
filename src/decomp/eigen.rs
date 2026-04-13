@@ -37,7 +37,7 @@
 //! - Dense outputs are ordered by descending magnitude to match the rest of the
 //!   decomposition layer.
 //! - Sparse diagnostics are recomputed explicitly on the returned vectors.
-//! - Generalized eigen support currently returns right eigenvectors only.
+//! - Generalized eigen support returns right eigenvectors only.
 
 use super::{
     DecompError, DecompInfo, DenseDecompParams, PartialEigen, PartialGeneralizedEigen,
@@ -286,7 +286,7 @@ where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
-    // The dense general path currently computes the full factorization and
+    // The dense general path computes the full factorization and
     // truncates afterward. Recompute diagnostics on the truncated window rather
     // than carrying the full-spectrum maxima forward.
     let values = Col::from_fn(n_requested, |i| eig.values[i]);
@@ -819,7 +819,7 @@ where
 
 /// Computes a dense general eigendecomposition.
 ///
-/// The first implementation always computes the full dense eigendecomposition
+/// This wrapper always computes the full dense eigendecomposition
 /// and truncates afterward when `params.n_components = Some(k)`.
 ///
 /// Returned eigenpairs are ordered by descending eigenvalue magnitude. The

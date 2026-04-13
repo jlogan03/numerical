@@ -32,10 +32,10 @@
 //!
 //! # Implementation Notes
 //!
-//! - The current identification surface is discrete-time only.
+//! - The identification surface is discrete-time only.
 //! - ERA is implemented both from Markov data and from an explicit shifted
 //!   Hankel pair.
-//! - OKID currently assumes the initial-condition transient is absent or has
+//! - OKID assumes the initial-condition transient is absent or has
 //!   been trimmed away.
 //!
 //! # Feature Matrix

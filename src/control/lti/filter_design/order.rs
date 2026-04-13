@@ -1,6 +1,6 @@
 //! Practical minimum-order IIR filter-selection helpers.
 //!
-//! The first pass follows the existing design pipeline:
+//! The implementation follows the existing design pipeline:
 //!
 //! - validate passband / stopband shape pairs
 //! - reduce the problem to a normalized lowpass prototype

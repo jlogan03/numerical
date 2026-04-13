@@ -20,7 +20,7 @@
 //! - continuous time: all poles lie in the open left half-plane
 //! - discrete time: all poles lie strictly inside the unit disk
 //!
-//! The current implementation follows that standard setting. In practice this
+//! The implementation follows that standard setting. In practice this
 //! means the underlying Gramian solves are only meaningful for stable systems,
 //! so callers should check or enforce stability before using this module on an
 //! open-loop plant.

@@ -8,7 +8,7 @@
 //! - configurable covariance-update policy through
 //!   [`super::CovarianceUpdate`]
 //!
-//! The first implementation is restricted to additive-noise discrete-time
+//! The implementation is restricted to additive-noise discrete-time
 //! models:
 //!
 //! - `x[k+1] = f(x[k], u[k]) + w[k]`
@@ -82,7 +82,7 @@ pub trait DiscreteNonlinearModel<R> {
 
 /// EKF-specific nonlinear model extension requiring explicit Jacobians.
 ///
-/// This first implementation does not estimate Jacobians numerically. Callers
+/// This implementation does not estimate Jacobians numerically. Callers
 /// must provide the local linearizations directly so the estimator does not
 /// hide finite-difference step-size heuristics.
 pub trait DiscreteExtendedKalmanModel<R>: DiscreteNonlinearModel<R> {
@@ -1001,7 +1001,7 @@ where
 
 /// Validates an expert-supplied sigma-point set before the UKF consumes it.
 ///
-/// The first pass enforces the structural invariants that matter most for
+/// This validation enforces the structural invariants that matter most for
 /// correctness: point count, weight count, finiteness, and mean-weight
 /// normalization.
 fn validate_sigma_point_set<R>(
@@ -1056,7 +1056,7 @@ where
 /// Builds the standard scaled sigma-point set from a mean/covariance pair.
 ///
 /// The covariance square root comes from a dense Cholesky factorization. The
-/// first implementation rejects non-PSD inputs rather than injecting silent
+/// implementation rejects non-PSD inputs rather than injecting silent
 /// jitter.
 fn standard_sigma_points<R>(
     mean: MatRef<'_, R>,

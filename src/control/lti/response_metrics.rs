@@ -1,6 +1,6 @@
 //! Sampled time-domain response metrics.
 //!
-//! The first implementation is intentionally grid-based. Metrics are extracted
+//! The implementation is intentionally grid-based. Metrics are extracted
 //! from sampled step responses rather than exact symbolic solves, so the
 //! caller's sampling grid determines the final accuracy.
 //!
@@ -402,7 +402,7 @@ where
             y0 > target && y1 <= target
         };
         if crossed {
-            // Keep the first pass cheap: linear interpolation on the sampled
+            // Keep the implementation cheap: linear interpolation on the sampled
             // segment is enough for these grid-based metrics.
             return Some(interpolate_time(
                 sample_times[idx],

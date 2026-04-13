@@ -40,7 +40,7 @@ pub enum ContinuousizationMethod<R> {
     /// Exact zero-order-hold reconstruction.
     ///
     /// This requires a matrix logarithm of the lifted discrete-time system and
-    /// is intentionally left unsupported in the first implementation.
+    /// is intentionally left unsupported by this implementation.
     ZeroOrderHold,
     /// Bilinear / Tustin inversion.
     ///

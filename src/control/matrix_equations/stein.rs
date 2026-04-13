@@ -8,14 +8,14 @@
 //!
 //! rather than the continuous-time Lyapunov form `A X + X A^H + Q = 0`.
 //!
-//! The first implementation is intentionally direct and numerically explicit:
+//! The implementation is intentionally direct and numerically explicit:
 //! it vectorizes the matrix equation into a dense linear system
 //!
 //! `(I - conj(A) ⊗ A) vec(X) = vec(Q)`
 //!
 //! and solves that system with `faer`'s full-pivoting LU factorization.
 //! That is not the asymptotically best dense algorithm, but it is a reliable
-//! reference path that fits the current control module cleanly and unlocks
+//! reference path that fits the control module cleanly and unlocks
 //! dense discrete Gramians for balanced truncation work.
 //!
 //! # Two Intuitions

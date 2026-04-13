@@ -1,13 +1,13 @@
 //! PID tuning helpers based on low-order process models.
 //!
-//! The first implementation focuses on the pragmatic workflow that is easiest
+//! The implementation focuses on the pragmatic workflow that is easiest
 //! to validate and explain:
 //!
 //! - fit `FOPDT` / `SOPDT` process models from sampled step-response data
 //! - tune `PI` / `PIDF` controllers from those fitted models with SIMC-style
 //!   formulas
 //!
-//! The module now also includes:
+//! The module also includes:
 //!
 //! - direct frequency-domain tuning from SISO transfer-function / state-space
 //!   plant models
@@ -45,7 +45,7 @@
 //! - FOPDT and SOPDT fitting use structured seeds followed by
 //!   Levenberg-Marquardt refinement.
 //! - The optimization-backed paths remain SISO and `f64`-oriented in this
-//!   first implementation.
+//!   implementation.
 //! - Public FOPDT / SOPDT model types are shared with the LTI layer to avoid
 //!   parallel process-model type hierarchies.
 
@@ -149,7 +149,7 @@ impl From<EraError> for PidDesignError {
 
 /// Sampled SISO step-response experiment data.
 ///
-/// The first implementation assumes one dominant input step over the record.
+/// The implementation assumes one dominant input step over the record.
 #[derive(Clone, Debug, PartialEq)]
 pub struct StepResponseData<R> {
     time: Vec<R>,
@@ -311,7 +311,7 @@ pub struct StepFitPidDesign<R, M> {
 
 /// Frequency-domain PID tuning parameters for SISO plant models.
 ///
-/// The current implementation solves for:
+/// The implementation solves for:
 ///
 /// - `Kp`
 /// - `Ti`
@@ -1587,7 +1587,7 @@ impl<'a> LeastSquaresProblem<f64, Dyn, U3> for FopdtLmProblem<'a> {
     }
 
     fn jacobian(&self) -> Option<OMatrix<f64, Dyn, U3>> {
-        // A numerical Jacobian keeps the first implementation compact. The
+        // A numerical Jacobian keeps the implementation compact. The
         // fitted problems are small enough that this cost is acceptable.
         let mut clone = self.clone();
         differentiate_numerically(&mut clone)
@@ -1650,7 +1650,8 @@ impl<'a> LeastSquaresProblem<f64, Dyn, U4> for SopdtLmProblem<'a> {
 
     fn jacobian(&self) -> Option<OMatrix<f64, Dyn, U4>> {
         // As in the FOPDT path, numerical differentiation is enough for this
-        // small reference fitter and keeps the algebra out of the first pass.
+        // small reference fitter and keeps the algebra out of the core model
+        // specification.
         let mut clone = self.clone();
         differentiate_numerically(&mut clone)
     }
