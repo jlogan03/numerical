@@ -6,6 +6,10 @@
 //! - an inverse application for the `A` block
 //! - an inverse application for the Schur block `S`
 //! - off-diagonal block operators `B` and `C`
+//!
+//! Its `conj_apply` and `conj_apply_in_place` methods follow `faer`'s
+//! conjugate-operator contract. They do not implement transpose or adjoint
+//! block solves; those belong on `BiLinOp` / `BiPrecond`.
 
 use faer::Par;
 use faer::dyn_stack::{MemStack, StackReq};
@@ -320,6 +324,29 @@ mod test {
         assert!((rhs[(0, 0)] - 3.0).abs() < 1.0e-12);
         assert!((rhs[(1, 0)] - 3.0).abs() < 1.0e-12);
         assert!((rhs[(2, 0)] + 1.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn schur_preconditioner_conjugate_matches_forward_apply_for_real_nonscalar_blocks() {
+        let split = BlockSplit2::new(2, 2);
+        let ainv = DiagonalPrecond::from_inverse_diagonal(&[0.5, 0.25]);
+        let sinv = DiagonalPrecond::from_inverse_diagonal(&[0.2, 0.5]);
+        let b = DenseBlockOp::new(2, 2, &[1.0, 3.0, 2.0, 4.0]);
+        let c = DenseBlockOp::new(2, 2, &[2.0, 1.0, 0.0, 5.0]);
+        let precond = SchurPrecond2::new::<f64>(split, ainv, sinv, b, c).unwrap();
+
+        let rhs = Mat::from_fn(4, 1, |i, _| [1.0, -2.0, 3.0, 4.0][i]);
+        let mut expected = rhs.clone();
+        let mut out = rhs.clone();
+        let mut buffer = MemBuffer::new(precond.apply_in_place_scratch(1, Par::Seq));
+        let mut stack = MemStack::new(&mut buffer);
+        precond.apply_in_place(expected.as_mut(), Par::Seq, &mut stack);
+        let mut stack = MemStack::new(&mut buffer);
+        precond.conj_apply_in_place(out.as_mut(), Par::Seq, &mut stack);
+
+        for row in 0..4 {
+            assert!((out[(row, 0)] - expected[(row, 0)]).abs() < 1.0e-12);
+        }
     }
 
     #[test]

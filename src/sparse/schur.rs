@@ -14,6 +14,10 @@
 //! as a matrix-free linear operator. The implementation is intentionally
 //! implicit: it reuses existing inverse application and matvec machinery rather
 //! than assembling a new sparse matrix with potentially heavy fill.
+//!
+//! The `LinOp::conj_apply` path follows `faer`'s conjugate-operator contract,
+//! not a transpose or adjoint contract. Adjoint application belongs on
+//! `BiLinOp`, which this type does not implement.
 
 use faer::Par;
 use faer::dyn_stack::{MemStack, StackReq};
@@ -330,6 +334,28 @@ mod test {
         let expected = expected_symbol * rhs[(0, 0)];
         let err = (out[(0, 0)] - expected).abs1();
         assert!(err < 1.0e-12);
+    }
+
+    #[test]
+    fn conjugate_schur_operator_matches_forward_apply_for_real_nonscalar_blocks() {
+        let ainv = DiagonalPrecond::from_inverse_diagonal(&[0.5, 0.25]);
+        let b = DenseBlockOp::new(2, 2, &[1.0, 0.0, 2.0, 1.0]);
+        let c = DenseBlockOp::new(2, 2, &[3.0, 4.0, 1.0, 2.0]);
+        let d = DenseBlockOp::new(2, 2, &[5.0, 6.0, 7.0, 8.0]);
+        let schur = SchurComplement2::new::<f64>(ainv, b, c, d).unwrap();
+
+        let rhs = Mat::from_fn(2, 1, |i, _| [2.0, -1.0][i]);
+        let mut expected = Mat::<f64>::zeros(2, 1);
+        let mut out = Mat::<f64>::zeros(2, 1);
+        let mut buffer = MemBuffer::new(schur.apply_scratch(1, Par::Seq));
+        let mut stack = MemStack::new(&mut buffer);
+        schur.apply(expected.as_mut(), rhs.as_ref(), Par::Seq, &mut stack);
+        let mut stack = MemStack::new(&mut buffer);
+        schur.conj_apply(out.as_mut(), rhs.as_ref(), Par::Seq, &mut stack);
+
+        for row in 0..2 {
+            assert!((out[(row, 0)] - expected[(row, 0)]).abs() < 1.0e-12);
+        }
     }
 
     #[test]

@@ -3,6 +3,10 @@
 //! This module intentionally starts small: it provides the block partition and
 //! two concrete 2x2 compositions that are useful on their own and also serve
 //! as building blocks for later Schur-complement preconditioners.
+//!
+//! The `conj_apply` / `conj_apply_in_place` paths follow `faer`'s conjugate
+//! operator contract. They are not transpose or adjoint block solves; those
+//! would belong on `BiLinOp` / `BiPrecond`.
 
 use faer::Par;
 use faer::dyn_stack::{MemStack, StackReq};
@@ -488,6 +492,27 @@ mod test {
         assert!((rhs[(0, 0)] - 1.5).abs() < 1.0e-12);
         assert!((rhs[(1, 0)] - 11.0 / 3.0).abs() < 1.0e-12);
         assert!((rhs[(2, 0)] - 2.0).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn block_upper_triangular_conjugate_matches_forward_apply_for_real_nonscalar_blocks() {
+        let split = BlockSplit2::new(2, 2);
+        let p0 = DiagonalPrecond::from_inverse_diagonal(&[0.5, 0.25]);
+        let p1 = DiagonalPrecond::from_inverse_diagonal(&[0.2, 0.5]);
+        let b01 = DenseBlockOp::new(2, 2, &[1.0, 3.0, 2.0, 4.0]);
+        let precond = BlockUpperTriangularPrecond2::new::<f64>(split, p0, p1, b01).unwrap();
+        let rhs = Mat::from_fn(4, 1, |i, _| [1.0, -1.0, 2.0, 3.0][i]);
+        let mut expected = rhs.clone();
+        let mut out = rhs.clone();
+        let mut buffer = MemBuffer::new(precond.apply_in_place_scratch(1, Par::Seq));
+        let mut stack = MemStack::new(&mut buffer);
+        precond.apply_in_place(expected.as_mut(), Par::Seq, &mut stack);
+        let mut stack = MemStack::new(&mut buffer);
+        precond.conj_apply_in_place(out.as_mut(), Par::Seq, &mut stack);
+
+        for row in 0..4 {
+            assert!((out[(row, 0)] - expected[(row, 0)]).abs() < 1.0e-12);
+        }
     }
 
     #[test]
