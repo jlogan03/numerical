@@ -108,12 +108,13 @@ where
     /// For the UKF path this is the unscented predicted measurement mean
     /// reconstructed from the propagated sigma cloud, not merely `h(x^-)`.
     pub output: Mat<R>,
-    /// Propagated sigma cloud cached by the UKF prediction stage.
+    /// Measurement-side sigma cloud cached by the UKF prediction stage.
     ///
-    /// The UKF update must reuse the same propagated state points that were
-    /// used to form `x^-` and `P^-`. Re-sampling from `(x^-, P^-)` would apply
-    /// an extra Gaussianization step and no longer match the standard UKF
-    /// equations.
+    /// This is built from the final predicted pair `(x^-, P^-)` after process
+    /// noise injection, so the update stage uses measurement statistics
+    /// consistent with the returned prediction covariance. The cache also
+    /// preserves any custom `UkfStage::Update` sigma-point placement chosen by
+    /// the active strategy.
     ukf_sigma: Option<SigmaPointSet<R>>,
 }
 
@@ -715,13 +716,21 @@ where
         );
         let mut covariance = covariance;
         hermitian_project_in_place(&mut covariance);
+        let measurement_sigma = self.sigma_strategy.sigma_points(
+            state.as_ref(),
+            covariance.as_ref(),
+            input,
+            UkfStage::Update,
+        )?;
+        validate_sigma_point_set(&measurement_sigma, self.model.nstates())?;
+
         let output_points = propagate_sigma_points(
-            propagated.as_ref(),
+            measurement_sigma.points.as_ref(),
             |point| self.model.output(point, input),
             self.model.noutputs(),
             "output",
         )?;
-        let output = weighted_mean(output_points.as_ref(), &sigma.mean_weights);
+        let output = weighted_mean(output_points.as_ref(), &measurement_sigma.mean_weights);
 
         validate_finite("prediction.state", state.as_ref())?;
         validate_finite("prediction.covariance", covariance.as_ref())?;
@@ -731,11 +740,7 @@ where
             state,
             covariance,
             output,
-            ukf_sigma: Some(SigmaPointSet {
-                points: propagated,
-                mean_weights: sigma.mean_weights,
-                cov_weights: sigma.cov_weights,
-            }),
+            ukf_sigma: Some(measurement_sigma),
         })
     }
 
@@ -755,13 +760,18 @@ where
         validate_column_vector("input", input, self.model.ninputs())?;
         validate_column_vector("measurement", measurement, self.model.noutputs())?;
 
-        let sigma =
-            prediction
-                .ukf_sigma
-                .as_ref()
-                .ok_or(NonlinearEstimatorError::InvalidSigmaPointSet {
-                    which: "prediction.ukf_sigma",
-                })?;
+        let owned_sigma;
+        let sigma = if let Some(sigma) = prediction.ukf_sigma.as_ref() {
+            sigma
+        } else {
+            owned_sigma = self.sigma_strategy.sigma_points(
+                prediction.state.as_ref(),
+                prediction.covariance.as_ref(),
+                input,
+                UkfStage::Update,
+            )?;
+            &owned_sigma
+        };
         validate_sigma_point_set(sigma, self.model.nstates())?;
 
         let output_points = propagate_sigma_points(
@@ -770,7 +780,7 @@ where
             self.model.noutputs(),
             "output",
         )?;
-        let predicted_output = clone_mat(prediction.output.as_ref());
+        let predicted_output = weighted_mean(output_points.as_ref(), &sigma.mean_weights);
         let innovation = dense_sub(measurement, predicted_output.as_ref());
         let innovation_covariance = dense_add(
             weighted_covariance(
@@ -1907,12 +1917,12 @@ mod tests {
 
         let prediction = ukf.predict(u.as_ref()).unwrap();
         assert_close(prediction.state[(0, 0)], 1.25, 1.0e-12);
-        assert_close(prediction.output[(0, 0)], 2.5625, 1.0e-12);
+        assert_close(prediction.output[(0, 0)], 2.6875, 1.0e-12);
     }
 
     #[test]
-    fn ukf_update_reuses_propagated_sigma_points() {
-        let q = Mat::from_fn(1, 1, |_, _| 0.0);
+    fn ukf_update_reuses_prediction_measurement_sigma_points() {
+        let q = Mat::from_fn(1, 1, |_, _| 0.5);
         let r = Mat::from_fn(1, 1, |_, _| 0.2);
         let x_hat = Mat::from_fn(1, 1, |_, _| 1.0);
         let p = Mat::from_fn(1, 1, |_, _| 0.25);
@@ -1935,8 +1945,11 @@ mod tests {
         let prediction = ukf.predict(u.as_ref()).unwrap();
         let update = ukf.update(&prediction, u.as_ref(), y.as_ref()).unwrap();
 
-        assert_close(prediction.output[(0, 0)], 2.5625, 1.0e-12);
-        assert_close(update.predicted_output[(0, 0)], 2.5625, 1.0e-12);
+        // The prediction stage caches the update-side sigma set built from the
+        // final `(x^-, P^-)` pair, so the measurement mean seen by `update`
+        // must agree exactly with the one returned by `predict`.
+        assert_close(prediction.output[(0, 0)], 3.1875, 1.0e-12);
+        assert_close(update.predicted_output[(0, 0)], 3.1875, 1.0e-12);
     }
 
     #[test]
@@ -1958,7 +1971,7 @@ mod tests {
         let y = Mat::from_fn(1, 1, |_, _| 1.0);
         let update = ukf.step(u.as_ref(), y.as_ref()).unwrap();
         assert_eq!(predict_calls.get(), 1);
-        assert_eq!(update_calls.get(), 0);
+        assert_eq!(update_calls.get(), 1);
         assert_close(update.predicted_output[(0, 0)], 1.0625, 1.0e-12);
     }
 
@@ -2009,19 +2022,14 @@ mod tests {
     }
 
     #[test]
-    fn nonlinear_filters_track_linear_kalman_on_linear_model_without_process_noise() {
+    fn nonlinear_filters_track_linear_kalman_on_linear_model() {
         let model = LinearScalarModel {
             a: 1.1,
             b: 0.4,
             c: 0.8,
             d: 0.1,
         };
-        // This non-augmented additive-noise UKF injects `Q` by covariance
-        // addition after state prediction but reuses the propagated sigma
-        // cloud during the measurement step. The linear-model equivalence
-        // check therefore uses `Q = 0`, where the UKF and the ordinary Kalman
-        // filter coincide exactly.
-        let q = Mat::from_fn(1, 1, |_, _| 0.0);
+        let q = Mat::from_fn(1, 1, |_, _| 0.2);
         let r = Mat::from_fn(1, 1, |_, _| 0.3);
         let x_hat = Mat::from_fn(1, 1, |_, _| 0.5);
         let p = Mat::from_fn(1, 1, |_, _| 1.1);
