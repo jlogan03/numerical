@@ -1,6 +1,6 @@
 //! Balanced truncation for dense and low-rank state-space models.
 //!
-//! The control module now has the full Gramian solver set needed for balanced
+//! This module relies on the Gramian solver set needed for balanced
 //! truncation:
 //!
 //! - dense continuous Lyapunov
