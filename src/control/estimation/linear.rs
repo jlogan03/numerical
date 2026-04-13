@@ -771,6 +771,12 @@ where
 {
     /// Builds a fixed-gain steady-state discrete observer from explicit
     /// matrices.
+    ///
+    /// `gain` must be the filter-form correction gain `K` used in
+    ///
+    /// `x^+ = x^- + K (y - y^-)`
+    ///
+    /// rather than the predictor-form `DLQE` observer gain used in `A - L C`.
     pub fn new(
         a: Mat<T>,
         b: Mat<T>,
@@ -803,8 +809,14 @@ where
     }
 
     /// Builds a fixed-gain steady-state discrete observer from a validated
-    /// discrete state-space model and an explicit observer gain.
-    pub fn from_gain(
+    /// discrete state-space model and an explicit filter-form correction gain.
+    ///
+    /// This constructor expects the discrete Kalman gain `K` that appears in
+    ///
+    /// `x^+ = x^- + K (y - y^-)`
+    ///
+    /// not the predictor-form `DLQE` gain used in `A - L C`.
+    pub fn from_filter_gain(
         system: &DiscreteStateSpace<T>,
         gain: Mat<T>,
         x_hat: Mat<T>,
@@ -828,6 +840,11 @@ where
     /// here uses explicit filter-form `predict` / `update` steps, so it forms
     /// the corresponding fixed filter gain directly from that prior
     /// covariance.
+    ///
+    /// This is the correct constructor when the gain originates from
+    /// [`dlqe_dense`] or [`DiscreteStateSpace::dlqe`]. Use
+    /// [`Self::from_filter_gain`] only when the supplied gain is already in the
+    /// filter-form correction equation `x^+ = x^- + K (y - y^-)`.
     pub fn from_dlqe(
         system: &DiscreteStateSpace<T>,
         w: MatRef<'_, T>,
@@ -836,7 +853,7 @@ where
     ) -> Result<Self, EstimatorError> {
         let solve = system.dlqe(w, v)?;
         let (gain, _) = steady_state_filter_gain(system.c(), v, solve.covariance.as_ref())?;
-        Self::from_gain(system, gain, x_hat, Some(solve.covariance))
+        Self::from_filter_gain(system, gain, x_hat, Some(solve.covariance))
     }
 
     /// Returns the current state estimate.
@@ -1850,6 +1867,61 @@ mod test {
         );
         assert_close(&steady_update.state, &full_update.state, 1.0e-10);
         assert_close(&steady_update.output, &full_update.output, 1.0e-10);
+    }
+
+    #[test]
+    fn steady_state_from_filter_gain_matches_dlqe_when_given_filter_gain() {
+        let system = DiscreteStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| 0.8f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 0.0f64),
+            0.1,
+        )
+        .unwrap();
+        let w = Mat::from_fn(1, 1, |_, _| 0.2f64);
+        let v = Mat::from_fn(1, 1, |_, _| 0.3f64);
+        let x0 = Mat::from_fn(1, 1, |_, _| 0.0f64);
+        let solve = system.dlqe(w.as_ref(), v.as_ref()).unwrap();
+        let (filter_gain, _) =
+            super::steady_state_filter_gain(system.c(), v.as_ref(), solve.covariance.as_ref())
+                .unwrap();
+
+        let from_filter_gain = SteadyStateKalmanFilter::from_filter_gain(
+            &system,
+            filter_gain,
+            x0.clone(),
+            Some(solve.covariance.clone()),
+        )
+        .unwrap();
+        let from_dlqe =
+            SteadyStateKalmanFilter::from_dlqe(&system, w.as_ref(), v.as_ref(), x0).unwrap();
+
+        let u = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let y = Mat::from_fn(1, 1, |_, _| 0.25f64);
+        let update_from_filter_gain = {
+            let prediction = from_filter_gain.predict(u.as_ref()).unwrap();
+            from_filter_gain
+                .update(&prediction, u.as_ref(), y.as_ref())
+                .unwrap()
+        };
+        let update_from_dlqe = {
+            let prediction = from_dlqe.predict(u.as_ref()).unwrap();
+            from_dlqe
+                .update(&prediction, u.as_ref(), y.as_ref())
+                .unwrap()
+        };
+
+        assert_close(
+            &update_from_filter_gain.state,
+            &update_from_dlqe.state,
+            1.0e-10,
+        );
+        assert_close(
+            &update_from_filter_gain.output,
+            &update_from_dlqe.output,
+            1.0e-10,
+        );
     }
 
     #[test]
