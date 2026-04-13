@@ -63,7 +63,9 @@ use num_traits::{Float, One, Zero};
 /// Result of a dense continuous- or discrete-time steady-state estimator solve.
 ///
 /// The gain `L` is the observer gain used in `A - L C`. `covariance` is the
-/// steady-state error covariance returned by the dual Riccati equation.
+/// steady-state error covariance returned by the dual Riccati equation. On the
+/// discrete-time `DLQE` path this is the steady-state a-priori covariance
+/// `P^-`, because the dual DARE directly yields the predictor-form solution.
 #[derive(Clone, Debug)]
 pub struct LqeSolve<T: CompensatedField>
 where
@@ -72,6 +74,9 @@ where
     /// Observer gain.
     pub gain: Mat<T>,
     /// Steady-state estimation-error covariance.
+    ///
+    /// For discrete-time `DLQE`, this is the a-priori covariance `P^-` used to
+    /// form the predictor-form observer gain.
     pub covariance: Mat<T>,
     /// Closed-loop estimator state matrix `A - L C`.
     pub estimator_a: Mat<T>,
@@ -518,7 +523,13 @@ where
     }
 
     /// Builds a full recursive discrete Kalman filter initialized from the
-    /// steady-state `DLQE` covariance.
+    /// steady-state `DLQE` fixed point.
+    ///
+    /// `DLQE` returns the steady-state a-priori covariance `P^-`. The runtime
+    /// Kalman filter stores its mutable covariance state as the current
+    /// posterior covariance `P^+`, so this constructor converts the Riccati
+    /// solution to the corresponding posterior fixed point before seeding the
+    /// recursion.
     pub fn from_dlqe(
         system: &DiscreteStateSpace<T>,
         w: MatRef<'_, T>,
@@ -526,6 +537,17 @@ where
         x_hat: Mat<T>,
     ) -> Result<Self, EstimatorError> {
         let solve = system.dlqe(w, v)?;
+        let (gain, innovation_covariance) =
+            steady_state_filter_gain(system.c(), v, solve.covariance.as_ref())?;
+        let mut posterior_covariance = updated_covariance(
+            CovarianceUpdate::default(),
+            solve.covariance.as_ref(),
+            gain.as_ref(),
+            system.c(),
+            v,
+            innovation_covariance.as_ref(),
+        );
+        hermitian_project_in_place(&mut posterior_covariance);
         Self::new_with_covariance_update(
             clone_mat(system.a()),
             clone_mat(system.b()),
@@ -534,7 +556,7 @@ where
             clone_mat(w),
             clone_mat(v),
             x_hat,
-            solve.covariance,
+            posterior_covariance,
             CovarianceUpdate::default(),
         )
     }
@@ -801,11 +823,11 @@ where
 
     /// Builds a fixed-gain steady-state discrete observer from `DLQE`.
     ///
-    /// `DLQE` returns the steady-state posterior covariance and the
-    /// predictor-form observer dynamics `A - L C`. The runtime wrapper here
-    /// uses explicit filter-form `predict` / `update` steps, so it converts the
-    /// stored posterior covariance into the corresponding fixed filter gain
-    /// before constructing the observer.
+    /// `DLQE` returns the steady-state a-priori covariance `P^-` together with
+    /// the predictor-form observer dynamics `A - L C`. The runtime wrapper
+    /// here uses explicit filter-form `predict` / `update` steps, so it forms
+    /// the corresponding fixed filter gain directly from that prior
+    /// covariance.
     pub fn from_dlqe(
         system: &DiscreteStateSpace<T>,
         w: MatRef<'_, T>,
@@ -813,8 +835,7 @@ where
         x_hat: Mat<T>,
     ) -> Result<Self, EstimatorError> {
         let solve = system.dlqe(w, v)?;
-        let gain =
-            steady_state_filter_gain(system.a(), system.c(), w, v, solve.covariance.as_ref())?;
+        let (gain, _) = steady_state_filter_gain(system.c(), v, solve.covariance.as_ref())?;
         Self::from_gain(system, gain, x_hat, Some(solve.covariance))
     }
 
@@ -1249,39 +1270,31 @@ where
 }
 
 fn steady_state_filter_gain<T>(
-    a: MatRef<'_, T>,
     c: MatRef<'_, T>,
-    w: MatRef<'_, T>,
     v: MatRef<'_, T>,
-    posterior_covariance: MatRef<'_, T>,
-) -> Result<Mat<T>, EstimatorError>
+    prior_covariance: MatRef<'_, T>,
+) -> Result<(Mat<T>, Mat<T>), EstimatorError>
 where
     T: CompensatedField,
     T::Real: Float + Copy,
 {
-    // `DLQE` gives the steady-state posterior covariance. The fixed-gain
-    // runtime wrapper uses an explicit predict/update decomposition, so it
-    // needs the corresponding filter-form gain based on the predicted
-    // covariance and innovation covariance.
-    let mut predicted_covariance = dense_add(
-        dense_mul_adjoint_rhs(dense_mul(a, posterior_covariance).as_ref(), a).as_ref(),
-        w,
-    );
-    hermitian_project_in_place(&mut predicted_covariance);
-
+    // The discrete-time Riccati solve already returns the steady-state
+    // a-priori covariance `P^-`. The fixed-gain filter-form observer therefore
+    // uses that covariance directly when forming `K = P^- C^H S^-1`.
     let mut innovation_covariance = dense_add(
-        dense_mul_adjoint_rhs(dense_mul(c, predicted_covariance.as_ref()).as_ref(), c).as_ref(),
+        dense_mul_adjoint_rhs(dense_mul(c, prior_covariance).as_ref(), c).as_ref(),
         v,
     );
     hermitian_project_in_place(&mut innovation_covariance);
 
-    let cross = dense_mul_adjoint_rhs(predicted_covariance.as_ref(), c);
-    solve_right_checked(
+    let cross = dense_mul_adjoint_rhs(prior_covariance, c);
+    let gain = solve_right_checked(
         cross.as_ref(),
         innovation_covariance.as_ref(),
         default_tolerance::<T>(),
         EstimatorError::SingularInnovationCovariance,
-    )
+    )?;
+    Ok((gain, innovation_covariance))
 }
 
 fn updated_covariance<T>(
@@ -1803,6 +1816,7 @@ mod test {
         let w = Mat::from_fn(1, 1, |_, _| 0.2f64);
         let v = Mat::from_fn(1, 1, |_, _| 0.3f64);
         let x0 = Mat::from_fn(1, 1, |_, _| 0.0f64);
+        let solve = system.dlqe(w.as_ref(), v.as_ref()).unwrap();
 
         let steady =
             SteadyStateKalmanFilter::from_dlqe(&system, w.as_ref(), v.as_ref(), x0.clone())
@@ -1810,23 +1824,30 @@ mod test {
         let full = DiscreteKalmanFilter::from_dlqe(&system, w.as_ref(), v.as_ref(), x0).unwrap();
 
         assert_close(
-            &super::clone_mat(full.covariance()),
             steady.steady_state_covariance.as_ref().unwrap(),
+            &solve.covariance,
             1.0e-12,
         );
 
         let u = Mat::from_fn(1, 1, |_, _| 1.0f64);
         let y = Mat::from_fn(1, 1, |_, _| 0.25f64);
+        let full_prediction = full.predict(u.as_ref()).unwrap();
+        assert_close(&full_prediction.covariance, &solve.covariance, 1.0e-12);
+
         let steady_update = {
             let pred = steady.predict(u.as_ref()).unwrap();
             steady.update(&pred, u.as_ref(), y.as_ref()).unwrap()
         };
-        let full_update = {
-            let pred = full.predict(u.as_ref()).unwrap();
-            full.update(&pred, u.as_ref(), y.as_ref()).unwrap()
-        };
+        let full_update = full
+            .update(&full_prediction, u.as_ref(), y.as_ref())
+            .unwrap();
 
         assert_close(&super::clone_mat(steady.gain()), &full_update.gain, 1.0e-10);
+        assert_close(
+            &super::clone_mat(full.covariance()),
+            &full_update.covariance,
+            1.0e-10,
+        );
         assert_close(&steady_update.state, &full_update.state, 1.0e-10);
         assert_close(&steady_update.output, &full_update.output, 1.0e-10);
     }
