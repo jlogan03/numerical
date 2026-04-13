@@ -615,9 +615,9 @@ fn compute_updates<R: Float + Copy>(
 #[cfg(test)]
 mod test {
     use super::{Equilibration, EquilibrationError, EquilibrationParams};
-    use crate::sparse::BiCGSTAB;
     use crate::sparse::compensated::norm2;
     use crate::sparse::matvec::SparseMatVec;
+    use crate::sparse::{BiCGSTAB, BiCGSTABSolveError};
     use faer::Unbind;
     use faer::sparse::{SparseColMat, SparseRowMat, Triplet};
     use faer_traits::IndexCore;
@@ -776,7 +776,10 @@ mod test {
         assert!(norm2::<f64>(&diff) < 1.0e-7);
         match unscaled {
             Ok(unscaled) => assert!(scaled.iteration_count() <= unscaled.iteration_count()),
-            Err(unscaled) => assert!(unscaled.err() >= 1.0e-10),
+            Err(BiCGSTABSolveError::NoConvergence(unscaled)) => {
+                assert!(unscaled.err() >= 1.0e-10)
+            }
+            Err(BiCGSTABSolveError::InvalidInput(err)) => panic!("unexpected invalid input: {err}"),
         }
     }
 }

@@ -92,8 +92,8 @@ where
     /// realization path here.
     pub fn to_transfer_function(&self) -> Result<TransferFunction<R, Domain>, LtiError> {
         let mut numerator = real_poly_from_roots(&self.zeros, "zeros")?;
-        if let Some(first) = numerator.first_mut() {
-            *first = *first * self.gain;
+        for coeff in &mut numerator {
+            *coeff = *coeff * self.gain;
         }
         let denominator = real_poly_from_roots(&self.poles, "poles")?;
         TransferFunction::new(numerator, denominator, self.domain.clone())
@@ -262,5 +262,39 @@ where
     /// transfer-function layer.
     pub fn to_state_space(&self) -> Result<DiscreteStateSpace<R>, LtiError> {
         self.to_transfer_function()?.to_state_space()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ContinuousZpk;
+    use faer::complex::Complex;
+
+    fn assert_close(lhs: f64, rhs: f64, tol: f64) {
+        let err = (lhs - rhs).abs();
+        assert!(err <= tol, "lhs={lhs}, rhs={rhs}, err={err}, tol={tol}");
+    }
+
+    fn assert_complex_close(lhs: Complex<f64>, rhs: Complex<f64>, tol: f64) {
+        assert_close(lhs.re, rhs.re, tol);
+        assert_close(lhs.im, rhs.im, tol);
+    }
+
+    #[test]
+    fn zpk_to_transfer_function_preserves_gain_across_full_numerator() {
+        let zpk = ContinuousZpk::continuous(vec![Complex::new(1.0, 0.0)], Vec::new(), 2.0).unwrap();
+        let tf = zpk.to_transfer_function().unwrap();
+
+        assert_eq!(tf.numerator(), &[2.0, -2.0]);
+        assert_complex_close(
+            tf.evaluate(Complex::new(3.0, 0.0)),
+            zpk.evaluate(Complex::new(3.0, 0.0)),
+            1.0e-12,
+        );
+        assert_complex_close(
+            tf.evaluate(Complex::new(-2.0, 0.0)),
+            zpk.evaluate(Complex::new(-2.0, 0.0)),
+            1.0e-12,
+        );
     }
 }

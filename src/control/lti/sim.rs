@@ -308,7 +308,8 @@ where
             return Ok(FilteredSignal { output: Vec::new() });
         }
 
-        let pad_len = resolve_pad_len(input.len(), params, 3 * self.nstates());
+        let equivalent_sections = (self.nstates() + 1) / 2;
+        let pad_len = resolve_pad_len(input.len(), params, 6 * equivalent_sections);
         let total_len = input.len() + 2 * pad_len;
 
         let mut state = vec![R::zero(); self.nstates()];
@@ -618,6 +619,17 @@ mod tests {
 
         let lhs = sos.filtfilt_with_params(&input, &params).unwrap();
         let rhs = state_space.filtfilt_with_params(&input, &params).unwrap();
+        assert_vec_close(&lhs.output, &rhs.output, 1.0e-12);
+    }
+
+    #[test]
+    fn default_state_space_filtfilt_matches_equivalent_sos_for_first_order_iir() {
+        let sos = first_order_sos();
+        let state_space = first_order_state_space();
+        let input = [0.0, 1.0, 2.0, 1.0, 0.0, -1.0, 0.0];
+
+        let lhs = sos.filtfilt(&input).unwrap();
+        let rhs = state_space.filtfilt(&input).unwrap();
         assert_vec_close(&lhs.output, &rhs.output, 1.0e-12);
     }
 

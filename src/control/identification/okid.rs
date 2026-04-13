@@ -76,7 +76,7 @@ impl OkidParams {
     /// Creates OKID parameters with the required Markov horizon and observer
     /// order.
     ///
-    /// The default rank policy is [`OkidRankPolicy::AllowDeficient`].
+    /// The default rank policy is `OkidRankPolicy::AllowDeficient`.
     #[must_use]
     pub fn new(n_markov: usize, observer_order: usize) -> Self {
         Self {

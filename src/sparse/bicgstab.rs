@@ -41,6 +41,167 @@ use faer_traits::ext::ComplexFieldExt;
 use faer_traits::math_utils::{eps, from_f64, zero};
 use num_traits::Float;
 
+/// Input-validation failures for [`BiCGSTAB`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BiCGSTABError {
+    /// The system matrix is not square.
+    NonSquareMatrix {
+        /// Actual row count.
+        nrows: usize,
+        /// Actual column count.
+        ncols: usize,
+    },
+    /// The initial guess length does not match the system dimension.
+    WrongInitialGuessLen {
+        /// Expected vector length.
+        expected: usize,
+        /// Actual vector length.
+        actual: usize,
+    },
+    /// The right-hand side length does not match the system dimension.
+    WrongRhsLen {
+        /// Expected vector length.
+        expected: usize,
+        /// Actual vector length.
+        actual: usize,
+    },
+    /// The preconditioner output dimension does not match the system dimension.
+    WrongPreconditionerOutputDim {
+        /// Expected output dimension.
+        expected: usize,
+        /// Actual output dimension.
+        actual: usize,
+    },
+    /// The preconditioner input dimension does not match the system dimension.
+    WrongPreconditionerInputDim {
+        /// Expected input dimension.
+        expected: usize,
+        /// Actual input dimension.
+        actual: usize,
+    },
+}
+
+impl fmt::Display for BiCGSTABError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NonSquareMatrix { nrows, ncols } => {
+                write!(f, "BiCGSTAB requires a square matrix, got {nrows}x{ncols}")
+            }
+            Self::WrongInitialGuessLen { expected, actual } => {
+                write!(
+                    f,
+                    "BiCGSTAB initial guess has length {actual}, expected {expected}"
+                )
+            }
+            Self::WrongRhsLen { expected, actual } => {
+                write!(
+                    f,
+                    "BiCGSTAB right-hand side has length {actual}, expected {expected}"
+                )
+            }
+            Self::WrongPreconditionerOutputDim { expected, actual } => {
+                write!(
+                    f,
+                    "BiCGSTAB preconditioner output dimension is {actual}, expected {expected}"
+                )
+            }
+            Self::WrongPreconditionerInputDim { expected, actual } => {
+                write!(
+                    f,
+                    "BiCGSTAB preconditioner input dimension is {actual}, expected {expected}"
+                )
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl std::error::Error for BiCGSTABError {}
+
+/// Errors returned by the one-shot [`BiCGSTAB::solve`] helpers.
+#[derive(Debug)]
+pub enum BiCGSTABSolveError<
+    T: ComplexField + Copy,
+    A: SparseMatVec<T>,
+    P: Precond<T> = IdentityPrecond,
+> {
+    /// The caller supplied invalid matrix, vector, or preconditioner dimensions.
+    InvalidInput(BiCGSTABError),
+    /// The iteration reached its limit before satisfying the requested tolerance.
+    NoConvergence(BiCGSTAB<T, A, P>),
+}
+
+impl<T: ComplexField + Copy, A: SparseMatVec<T>, P: Precond<T>> fmt::Display
+    for BiCGSTABSolveError<T, A, P>
+{
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::InvalidInput(err) => err.fmt(f),
+            Self::NoConvergence(_) => {
+                write!(f, "BiCGSTAB did not converge within the iteration limit")
+            }
+        }
+    }
+}
+
+#[cfg(feature = "std")]
+impl<T, A, P> std::error::Error for BiCGSTABSolveError<T, A, P>
+where
+    T: ComplexField + Copy,
+    A: SparseMatVec<T> + fmt::Debug,
+    P: Precond<T> + fmt::Debug,
+{
+}
+
+impl<T: ComplexField + Copy, A: SparseMatVec<T>, P: Precond<T>> BiCGSTABSolveError<T, A, P> {
+    /// Returns the underlying solver when the solve failed due to non-convergence.
+    pub fn into_solver(self) -> Option<BiCGSTAB<T, A, P>> {
+        match self {
+            Self::NoConvergence(solver) => Some(solver),
+            Self::InvalidInput(_) => None,
+        }
+    }
+}
+
+fn validate_bicgstab_dimensions<T: ComplexField + Copy, A: SparseMatVec<T>, P: Precond<T>>(
+    a: &A,
+    preconditioner: &P,
+    x0: &[T],
+    b: &[T],
+) -> Result<(), BiCGSTABError> {
+    if a.nrows() != a.ncols() {
+        return Err(BiCGSTABError::NonSquareMatrix {
+            nrows: a.nrows(),
+            ncols: a.ncols(),
+        });
+    }
+    if x0.len() != a.ncols() {
+        return Err(BiCGSTABError::WrongInitialGuessLen {
+            expected: a.ncols(),
+            actual: x0.len(),
+        });
+    }
+    if b.len() != a.nrows() {
+        return Err(BiCGSTABError::WrongRhsLen {
+            expected: a.nrows(),
+            actual: b.len(),
+        });
+    }
+    if preconditioner.nrows() != a.ncols() {
+        return Err(BiCGSTABError::WrongPreconditionerOutputDim {
+            expected: a.ncols(),
+            actual: preconditioner.nrows(),
+        });
+    }
+    if preconditioner.ncols() != a.ncols() {
+        return Err(BiCGSTABError::WrongPreconditionerInputDim {
+            expected: a.ncols(),
+            actual: preconditioner.ncols(),
+        });
+    }
+    Ok(())
+}
+
 /// Stabilized bi-conjugate gradient solver.
 pub struct BiCGSTAB<T: ComplexField + Copy, A: SparseMatVec<T>, P: Precond<T> = IdentityPrecond> {
     iteration_count: usize,
@@ -95,15 +256,20 @@ where
 {
     /// Initializes a solver with a fresh residual estimate.
     #[inline]
-    #[must_use]
-    pub fn new(a: A, x0: &[T], b: &[T]) -> Self {
+    pub fn new(a: A, x0: &[T], b: &[T]) -> Result<Self, BiCGSTABError> {
         let dim = a.ncols();
         Self::new_with_precond(a, IdentityPrecond { dim }, x0, b)
     }
 
     /// Attempts to solve the system to the given absolute residual tolerance.
-    pub fn solve(a: A, x0: &[T], b: &[T], tol: T::Real, max_iter: usize) -> Result<Self, Self> {
-        let mut solver = Self::new(a, x0, b);
+    pub fn solve(
+        a: A,
+        x0: &[T],
+        b: &[T],
+        tol: T::Real,
+        max_iter: usize,
+    ) -> Result<Self, BiCGSTABSolveError<T, A>> {
+        let mut solver = Self::new(a, x0, b).map_err(BiCGSTABSolveError::InvalidInput)?;
         if solver.err() < tol {
             return Ok(solver);
         }
@@ -118,7 +284,7 @@ where
             }
         }
 
-        Err(solver)
+        Err(BiCGSTABSolveError::NoConvergence(solver))
     }
 }
 
@@ -135,21 +301,13 @@ where
     /// search directions are scaled componentwise by the inverse diagonal
     /// before `A` sees them.
     #[inline]
-    #[must_use]
-    pub fn new_with_precond(a: A, preconditioner: P, x0: &[T], b: &[T]) -> Self {
-        assert_eq!(a.nrows(), a.ncols(), "BiCGSTAB requires a square matrix");
-        assert_eq!(x0.len(), a.ncols(), "Initial guess has the wrong length");
-        assert_eq!(b.len(), a.nrows(), "Right-hand side has the wrong length");
-        assert_eq!(
-            preconditioner.nrows(),
-            a.ncols(),
-            "Preconditioner output dimension has the wrong length",
-        );
-        assert_eq!(
-            preconditioner.ncols(),
-            a.ncols(),
-            "Preconditioner input dimension has the wrong length",
-        );
+    pub fn new_with_precond(
+        a: A,
+        preconditioner: P,
+        x0: &[T],
+        b: &[T],
+    ) -> Result<Self, BiCGSTABError> {
+        validate_bicgstab_dimensions(&a, &preconditioner, x0, b)?;
 
         let n = a.nrows();
         let b_col = col_from_slice(b);
@@ -176,7 +334,7 @@ where
         let z = zero_col::<T>(n);
         let precond_buffer = precond_buffer(&preconditioner);
 
-        Self {
+        Ok(Self {
             iteration_count: 0,
             soft_restart_threshold: from_f64::<T::Real>(0.1),
             soft_restart_count: 0,
@@ -196,7 +354,7 @@ where
             preconditioner,
             precond_buffer,
             rho,
-        }
+        })
     }
 
     /// Attempts to solve the system to the given absolute residual tolerance with a preconditioner.
@@ -211,8 +369,9 @@ where
         b: &[T],
         tol: T::Real,
         max_iter: usize,
-    ) -> Result<Self, Self> {
-        let mut solver = Self::new_with_precond(a, preconditioner, x0, b);
+    ) -> Result<Self, BiCGSTABSolveError<T, A, P>> {
+        let mut solver = Self::new_with_precond(a, preconditioner, x0, b)
+            .map_err(BiCGSTABSolveError::InvalidInput)?;
         if solver.err() < tol {
             return Ok(solver);
         }
@@ -227,7 +386,7 @@ where
             }
         }
 
-        Err(solver)
+        Err(BiCGSTABSolveError::NoConvergence(solver))
     }
 
     /// Resets the shadow residual to avoid a singular update.
@@ -458,7 +617,7 @@ mod test {
 #[cfg(feature = "std")]
 #[cfg(test)]
 mod test {
-    use super::BiCGSTAB;
+    use super::{BiCGSTAB, BiCGSTABError, BiCGSTABSolveError};
     use crate::sparse::col::{col_slice, col_slice_mut};
     use crate::sparse::compensated::{CompensatedField, norm2};
     use crate::sparse::matvec::SparseMatVec;
@@ -691,6 +850,32 @@ mod test {
     }
 
     #[test]
+    fn invalid_dimensions_do_not_panic_in_solve() {
+        let a = SparseRowMat::<usize, f64>::try_new_from_triplets(
+            2,
+            3,
+            &[
+                Triplet::new(0, 0, 1.0),
+                Triplet::new(0, 1, 2.0),
+                Triplet::new(1, 1, 3.0),
+                Triplet::new(1, 2, 4.0),
+            ],
+        )
+        .unwrap();
+
+        let result = std::panic::catch_unwind(|| {
+            BiCGSTAB::solve(a.as_ref(), &[0.0, 0.0, 0.0], &[1.0, 2.0], 1.0e-12, 5)
+        });
+
+        assert!(matches!(
+            result,
+            Ok(Err(BiCGSTABSolveError::InvalidInput(
+                BiCGSTABError::NonSquareMatrix { nrows: 2, ncols: 3 }
+            )))
+        ));
+    }
+
+    #[test]
     fn diagonal_preconditioner_reduces_iterations_on_column_scaled_system() {
         let n = 12usize;
         let scales: Vec<f64> = (0..n).map(|i| 10.0f64.powi(i as i32 - 6)).collect();
@@ -725,10 +910,11 @@ mod test {
         assert!(diagonal.err() < tol);
         match identity {
             Ok(identity) => assert!(diagonal.iteration_count() < identity.iteration_count()),
-            Err(identity) => {
+            Err(BiCGSTABSolveError::NoConvergence(identity)) => {
                 assert!(identity.err() >= tol);
                 assert_eq!(identity.iteration_count(), 200);
             }
+            Err(BiCGSTABSolveError::InvalidInput(err)) => panic!("unexpected invalid input: {err}"),
         }
     }
 
@@ -763,7 +949,9 @@ mod test {
 
         let started = Instant::now();
         let ours = match BiCGSTAB::solve(a.as_ref(), &x0, col_slice(&b), tol, 400) {
-            Ok(solver) | Err(solver) => solver,
+            Ok(solver) => solver,
+            Err(BiCGSTABSolveError::NoConvergence(solver)) => solver,
+            Err(BiCGSTABSolveError::InvalidInput(err)) => panic!("unexpected invalid input: {err}"),
         };
         let elapsed = started.elapsed();
         println!(

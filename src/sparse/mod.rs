@@ -61,7 +61,7 @@ pub mod precond;
 /// Schur-complement operators for block sparse systems.
 pub mod schur;
 
-pub use bicgstab::BiCGSTAB;
+pub use bicgstab::{BiCGSTAB, BiCGSTABError, BiCGSTABSolveError};
 pub use cholesky::{SparseLdlt, SparseLdltError, SparseLlt, SparseLltError};
 pub use compensated::CompensatedField;
 pub use equilibration::{Equilibration, EquilibrationError, EquilibrationParams};
