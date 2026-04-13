@@ -130,6 +130,18 @@ where
         self.unity_feedback()
     }
 
+    /// Returns the control-sensitivity channel
+    /// `KS = C / (1 + P C)` for the supplied controller `C`.
+    pub fn control_sensitivity_with(&self, controller: &Self) -> Result<Self, LtiError> {
+        controller.feedback(self)
+    }
+
+    /// Returns the plant-sensitivity channel
+    /// `PS = P / (1 + P C)` for the supplied controller `C`.
+    pub fn plant_sensitivity_with(&self, controller: &Self) -> Result<Self, LtiError> {
+        self.feedback(controller)
+    }
+
     /// Evaluates the loop transfer on an angular-frequency grid for Nyquist
     /// plotting.
     ///
@@ -211,6 +223,18 @@ where
         self.unity_feedback()
     }
 
+    /// Returns the control-sensitivity channel
+    /// `KS = C / (1 + P C)` for the supplied controller `C`.
+    pub fn control_sensitivity_with(&self, controller: &Self) -> Result<Self, LtiError> {
+        controller.feedback(self)
+    }
+
+    /// Returns the plant-sensitivity channel
+    /// `PS = P / (1 + P C)` for the supplied controller `C`.
+    pub fn plant_sensitivity_with(&self, controller: &Self) -> Result<Self, LtiError> {
+        self.feedback(controller)
+    }
+
     /// Evaluates the loop transfer on an angular-frequency grid for Nyquist
     /// plotting.
     pub fn nyquist_data(&self, angular_frequencies: &[R]) -> Result<NyquistData<R>, LtiError> {
@@ -287,6 +311,22 @@ where
             .to_zpk()
     }
 
+    /// Returns the control-sensitivity channel
+    /// `KS = C / (1 + P C)` for the supplied controller `C`.
+    pub fn control_sensitivity_with(&self, controller: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .control_sensitivity_with(&controller.to_transfer_function()?)?
+            .to_zpk()
+    }
+
+    /// Returns the plant-sensitivity channel
+    /// `PS = P / (1 + P C)` for the supplied controller `C`.
+    pub fn plant_sensitivity_with(&self, controller: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .plant_sensitivity_with(&controller.to_transfer_function()?)?
+            .to_zpk()
+    }
+
     /// Evaluates Nyquist data directly from the factored loop transfer.
     pub fn nyquist_data(&self, angular_frequencies: &[R]) -> Result<NyquistData<R>, LtiError> {
         let samples =
@@ -350,6 +390,22 @@ where
     pub fn complementary_sensitivity(&self) -> Result<Self, LtiError> {
         self.to_transfer_function()?
             .complementary_sensitivity()?
+            .to_zpk()
+    }
+
+    /// Returns the control-sensitivity channel
+    /// `KS = C / (1 + P C)` for the supplied controller `C`.
+    pub fn control_sensitivity_with(&self, controller: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .control_sensitivity_with(&controller.to_transfer_function()?)?
+            .to_zpk()
+    }
+
+    /// Returns the plant-sensitivity channel
+    /// `PS = P / (1 + P C)` for the supplied controller `C`.
+    pub fn plant_sensitivity_with(&self, controller: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .plant_sensitivity_with(&controller.to_transfer_function()?)?
             .to_zpk()
     }
 
@@ -427,6 +483,22 @@ where
             .to_sos()
     }
 
+    /// Returns the control-sensitivity channel
+    /// `KS = C / (1 + P C)` for the supplied controller `C`.
+    pub fn control_sensitivity_with(&self, controller: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .control_sensitivity_with(&controller.to_transfer_function()?)?
+            .to_sos()
+    }
+
+    /// Returns the plant-sensitivity channel
+    /// `PS = P / (1 + P C)` for the supplied controller `C`.
+    pub fn plant_sensitivity_with(&self, controller: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .plant_sensitivity_with(&controller.to_transfer_function()?)?
+            .to_sos()
+    }
+
     /// Evaluates Nyquist data directly from the section cascade.
     pub fn nyquist_data(&self, angular_frequencies: &[R]) -> Result<NyquistData<R>, LtiError> {
         let samples =
@@ -490,6 +562,22 @@ where
     pub fn complementary_sensitivity(&self) -> Result<Self, LtiError> {
         self.to_transfer_function()?
             .complementary_sensitivity()?
+            .to_sos()
+    }
+
+    /// Returns the control-sensitivity channel
+    /// `KS = C / (1 + P C)` for the supplied controller `C`.
+    pub fn control_sensitivity_with(&self, controller: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .control_sensitivity_with(&controller.to_transfer_function()?)?
+            .to_sos()
+    }
+
+    /// Returns the plant-sensitivity channel
+    /// `PS = P / (1 + P C)` for the supplied controller `C`.
+    pub fn plant_sensitivity_with(&self, controller: &Self) -> Result<Self, LtiError> {
+        self.to_transfer_function()?
+            .plant_sensitivity_with(&controller.to_transfer_function()?)?
             .to_sos()
     }
 
@@ -565,6 +653,26 @@ where
         self.to_transfer_function()?.complementary_sensitivity()
     }
 
+    /// Returns the control-sensitivity channel
+    /// `KS = C / (1 + P C)` for the supplied controller `C`.
+    pub fn control_sensitivity_with(
+        &self,
+        controller: &ContinuousTransferFunction<R>,
+    ) -> Result<ContinuousTransferFunction<R>, LtiError> {
+        self.to_transfer_function()?
+            .control_sensitivity_with(controller)
+    }
+
+    /// Returns the plant-sensitivity channel
+    /// `PS = P / (1 + P C)` for the supplied controller `C`.
+    pub fn plant_sensitivity_with(
+        &self,
+        controller: &ContinuousTransferFunction<R>,
+    ) -> Result<ContinuousTransferFunction<R>, LtiError> {
+        self.to_transfer_function()?
+            .plant_sensitivity_with(controller)
+    }
+
     /// Evaluates Nyquist data for a dense real SISO loop transfer.
     pub fn nyquist_data(&self, angular_frequencies: &[R]) -> Result<NyquistData<R>, LtiError> {
         ensure_siso_state_space(self)?;
@@ -635,6 +743,26 @@ where
     /// `T = L / (1 + L)` for the represented SISO loop transfer.
     pub fn complementary_sensitivity(&self) -> Result<DiscreteTransferFunction<R>, LtiError> {
         self.to_transfer_function()?.complementary_sensitivity()
+    }
+
+    /// Returns the control-sensitivity channel
+    /// `KS = C / (1 + P C)` for the supplied controller `C`.
+    pub fn control_sensitivity_with(
+        &self,
+        controller: &DiscreteTransferFunction<R>,
+    ) -> Result<DiscreteTransferFunction<R>, LtiError> {
+        self.to_transfer_function()?
+            .control_sensitivity_with(controller)
+    }
+
+    /// Returns the plant-sensitivity channel
+    /// `PS = P / (1 + P C)` for the supplied controller `C`.
+    pub fn plant_sensitivity_with(
+        &self,
+        controller: &DiscreteTransferFunction<R>,
+    ) -> Result<DiscreteTransferFunction<R>, LtiError> {
+        self.to_transfer_function()?
+            .plant_sensitivity_with(controller)
     }
 
     /// Evaluates Nyquist data for a dense real SISO loop transfer.
@@ -1159,5 +1287,26 @@ mod tests {
             zpk_margins.gain_margin_db.unwrap(),
             1.0e-8,
         );
+    }
+
+    #[test]
+    fn plant_and_control_sensitivity_match_closed_form_arithmetic() {
+        let plant = ContinuousTransferFunction::continuous(vec![2.0], vec![1.0, 1.0]).unwrap();
+        let controller =
+            ContinuousTransferFunction::continuous(vec![1.0, 3.0], vec![1.0, 4.0]).unwrap();
+
+        let ps = plant.plant_sensitivity_with(&controller).unwrap();
+        let ks = plant.control_sensitivity_with(&controller).unwrap();
+        let loop_tf = plant.mul(&controller).unwrap();
+        let expected_ps = plant.feedback(&controller).unwrap();
+        let expected_ks = controller.feedback(&plant).unwrap();
+        let point = faer::complex::Complex::new(0.0, 2.5);
+
+        assert!((ps.evaluate(point) - expected_ps.evaluate(point)).norm() <= 1.0e-12);
+        assert!((ks.evaluate(point) - expected_ks.evaluate(point)).norm() <= 1.0e-12);
+        let lhs = ks.evaluate(point);
+        let rhs = controller.evaluate(point)
+            / (faer::complex::Complex::new(1.0, 0.0) + loop_tf.evaluate(point));
+        assert!((lhs - rhs).norm() <= 1.0e-12);
     }
 }

@@ -166,74 +166,7 @@ where
     }
 }
 
-/// First-order-plus-dead-time process model.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct FopdtModel<R> {
-    /// Steady-state process gain.
-    pub gain: R,
-    /// Dominant first-order lag.
-    pub time_constant: R,
-    /// Input-output dead time.
-    pub delay: R,
-}
-
-impl<R> FopdtModel<R>
-where
-    R: Float + Copy,
-{
-    /// Evaluates the delayed unit-step kernel multiplied by `step_amplitude`
-    /// and shifted by `initial_output`.
-    #[must_use]
-    pub fn step_response_value(
-        &self,
-        time_since_step: R,
-        step_amplitude: R,
-        initial_output: R,
-    ) -> R {
-        if time_since_step <= self.delay {
-            initial_output
-        } else {
-            let theta = time_since_step - self.delay;
-            initial_output
-                + self.gain * step_amplitude * (R::one() - (-(theta / self.time_constant)).exp())
-        }
-    }
-}
-
-/// Second-order-plus-dead-time process model with two real lags.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct SopdtModel<R> {
-    /// Steady-state process gain.
-    pub gain: R,
-    /// Slower first-order lag.
-    pub time_constant_1: R,
-    /// Faster first-order lag.
-    pub time_constant_2: R,
-    /// Input-output dead time.
-    pub delay: R,
-}
-
-impl<R> SopdtModel<R>
-where
-    R: Float + Copy,
-{
-    /// Evaluates the delayed second-order step response for a step of amplitude
-    /// `step_amplitude` and baseline `initial_output`.
-    #[must_use]
-    pub fn step_response_value(
-        &self,
-        time_since_step: R,
-        step_amplitude: R,
-        initial_output: R,
-    ) -> R {
-        if time_since_step <= self.delay {
-            return initial_output;
-        }
-        let theta = time_since_step - self.delay;
-        let lag = second_order_lag_step(theta, self.time_constant_1, self.time_constant_2);
-        initial_output + self.gain * step_amplitude * lag
-    }
-}
+pub use crate::control::lti::{FopdtModel, SopdtModel};
 
 /// Result of fitting a low-order process model to sampled data.
 #[derive(Clone, Debug, PartialEq)]
@@ -1674,26 +1607,6 @@ impl<'a> LeastSquaresProblem<f64, Dyn, U4> for SopdtLmProblem<'a> {
         // small reference fitter and keeps the algebra out of the first pass.
         let mut clone = self.clone();
         differentiate_numerically(&mut clone)
-    }
-}
-
-/// Step response of two cascaded first-order lags driven by a unit step.
-///
-/// When the lags nearly coincide, the ordinary distinct-pole formula suffers
-/// from cancellation, so the repeated-pole limit is used instead.
-fn second_order_lag_step<R>(time: R, tau1: R, tau2: R) -> R
-where
-    R: Float + Copy,
-{
-    let tol = (tau1.abs() + tau2.abs() + R::one()) * R::from(1.0e-8).unwrap();
-    if (tau1 - tau2).abs() <= tol {
-        let tau = (tau1 + tau2) / two::<R>();
-        let scaled = time / tau;
-        R::one() - (R::one() + scaled) * (-scaled).exp()
-    } else {
-        let e1 = (-(time / tau1)).exp();
-        let e2 = (-(time / tau2)).exp();
-        R::one() - (tau1 * e1 - tau2 * e2) / (tau1 - tau2)
     }
 }
 

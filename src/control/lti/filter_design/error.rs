@@ -8,10 +8,16 @@ pub enum FilterDesignError {
     InvalidOrder,
     /// The supplied ripple parameter is invalid.
     InvalidRipple,
+    /// The supplied stopband attenuation parameter is invalid.
+    InvalidAttenuation,
     /// One cutoff frequency is invalid.
     InvalidCutoff { which: &'static str },
     /// Band edges are invalid.
     InvalidBandEdges,
+    /// Passband and stopband shapes are not compatible for order selection.
+    IncompatibleOrderSelectionShape,
+    /// The supplied order-selection specification is not feasible.
+    InfeasibleOrderSelectionSpec,
     /// Sample rate must be positive and finite.
     InvalidSampleRate,
     /// A lower-level LTI conversion or root-extraction helper failed.

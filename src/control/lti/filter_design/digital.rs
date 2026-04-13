@@ -42,7 +42,42 @@ where
     }
 }
 
-fn prewarp_frequency<R>(omega: R, sample_rate: R) -> R
+pub(super) fn maybe_unprewarp_shape<R>(
+    shape: FilterShape<R>,
+    sample_rate: R,
+    prewarp: bool,
+) -> FilterShape<R>
+where
+    R: Float + Copy + RealField,
+{
+    if !prewarp {
+        return shape;
+    }
+    match shape {
+        FilterShape::Lowpass { cutoff } => FilterShape::Lowpass {
+            cutoff: unprewarp_frequency(cutoff, sample_rate),
+        },
+        FilterShape::Highpass { cutoff } => FilterShape::Highpass {
+            cutoff: unprewarp_frequency(cutoff, sample_rate),
+        },
+        FilterShape::Bandpass {
+            low_cutoff,
+            high_cutoff,
+        } => FilterShape::Bandpass {
+            low_cutoff: unprewarp_frequency(low_cutoff, sample_rate),
+            high_cutoff: unprewarp_frequency(high_cutoff, sample_rate),
+        },
+        FilterShape::Bandstop {
+            low_cutoff,
+            high_cutoff,
+        } => FilterShape::Bandstop {
+            low_cutoff: unprewarp_frequency(low_cutoff, sample_rate),
+            high_cutoff: unprewarp_frequency(high_cutoff, sample_rate),
+        },
+    }
+}
+
+pub(super) fn prewarp_frequency<R>(omega: R, sample_rate: R) -> R
 where
     R: Float + Copy + RealField,
 {
@@ -50,4 +85,12 @@ where
     // corresponding analog frequency is 2fs * tan(omega / (2fs)).
     let two = R::one() + R::one();
     two * sample_rate * (omega / (two * sample_rate)).tan()
+}
+
+fn unprewarp_frequency<R>(omega: R, sample_rate: R) -> R
+where
+    R: Float + Copy + RealField,
+{
+    let two = R::one() + R::one();
+    two * sample_rate * (omega / (two * sample_rate)).atan()
 }

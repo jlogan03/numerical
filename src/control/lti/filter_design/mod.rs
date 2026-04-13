@@ -14,6 +14,7 @@
 //! - Chebyshev Type I
 //! - Bessel, analog only
 //! - lowpass / highpass / bandpass / bandstop
+//! - minimum-order Butterworth and Chebyshev-I selection helpers
 //!
 //! Digital Bessel design is intentionally not exposed in the digital family
 //! enum. A bilinear-transformed Bessel filter is mathematically possible, but
@@ -22,13 +23,19 @@
 
 mod digital;
 mod error;
+mod order;
 mod prototype;
 mod spec;
 mod transform;
 
 pub use error::FilterDesignError;
+pub use order::{
+    ButterworthOrderResult, Chebyshev1OrderResult, buttord_analog, buttord_digital,
+    cheb1ord_analog, cheb1ord_digital,
+};
 pub use spec::{
-    AnalogFilterFamily, AnalogFilterSpec, DigitalFilterFamily, DigitalFilterSpec, FilterShape,
+    AnalogFilterFamily, AnalogFilterSpec, AnalogOrderSelectionSpec, DigitalFilterFamily,
+    DigitalFilterSpec, DigitalOrderSelectionSpec, FilterShape,
 };
 
 use digital::maybe_prewarp_shape;

@@ -11,9 +11,13 @@
 //!
 //! - dense state-space analysis lives in `analysis`
 //! - dense sampled responses live in `response`
+//! - sampled response metrics live in `response_metrics`
 //! - fixed-timestep digital filtering helpers live in `sim`
 //! - real-coefficient SISO alternate representations live in
 //!   `transfer_function`, `zpk`, and `sos`
+//! - explicit continuous delay-aware process models live in `process_models`
+//! - classical loop-analysis helpers live in `loop_analysis` and `root_locus`
+//! - IIR design and order-selection helpers live in `filter_design`
 //! - sparse CSC-backed state-space models support transfer evaluation,
 //!   frequency response, and discrete-time simulation through the same
 //!   conceptual API
@@ -29,7 +33,10 @@ mod filter_design;
 mod fir;
 mod loop_analysis;
 mod plot_data;
+mod process_models;
 mod response;
+mod response_metrics;
+mod root_locus;
 mod sim;
 mod sos;
 pub mod state_space;
@@ -39,17 +46,21 @@ mod zpk;
 
 pub use error::LtiError;
 pub use filter_design::{
-    AnalogFilterFamily, AnalogFilterSpec, DigitalFilterFamily, DigitalFilterSpec,
-    FilterDesignError, FilterShape, design_analog_filter_sos, design_analog_filter_tf,
-    design_analog_filter_zpk, design_digital_filter_sos, design_digital_filter_tf,
-    design_digital_filter_zpk,
+    AnalogFilterFamily, AnalogFilterSpec, AnalogOrderSelectionSpec, ButterworthOrderResult,
+    Chebyshev1OrderResult, DigitalFilterFamily, DigitalFilterSpec, DigitalOrderSelectionSpec,
+    FilterDesignError, FilterShape, buttord_analog, buttord_digital, cheb1ord_analog,
+    cheb1ord_digital, design_analog_filter_sos, design_analog_filter_tf, design_analog_filter_zpk,
+    design_digital_filter_sos, design_digital_filter_tf, design_digital_filter_zpk,
 };
 pub use fir::{Fir, FirFilterState, SavGolSpec, design_savgol};
 pub use loop_analysis::{LoopCrossovers, LoopMargins, NicholsData, NyquistData};
 pub use plot_data::{BodeData, PoleZeroData};
+pub use process_models::{FopdtModel, SopdtModel};
 pub use response::{
     ContinuousImpulseResponse, ContinuousSimulation, DiscreteSimulation, SampledResponse,
 };
+pub use response_metrics::{StepResponseMetricParams, StepResponseMetrics};
+pub use root_locus::{RootLocusBranch, RootLocusData};
 pub use sim::{
     FiltFiltPadLen, FiltFiltPadMode, FiltFiltParams, FilteredSignal, SosFilterState,
     StatefulFilteredSignal,

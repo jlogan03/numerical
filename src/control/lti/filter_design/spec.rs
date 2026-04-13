@@ -71,6 +71,43 @@ where
     }
 }
 
+/// Specification for analog filter-order selection.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AnalogOrderSelectionSpec<R> {
+    /// Passband edge specification.
+    pub passband: FilterShape<R>,
+    /// Stopband edge specification.
+    pub stopband: FilterShape<R>,
+    /// Maximum passband ripple in dB.
+    pub passband_ripple_db: R,
+    /// Minimum stopband attenuation in dB.
+    pub stopband_attenuation_db: R,
+}
+
+impl<R> AnalogOrderSelectionSpec<R>
+where
+    R: Float + Copy + RealField,
+{
+    /// Creates and validates an analog filter-order-selection specification.
+    pub fn new(
+        passband: FilterShape<R>,
+        stopband: FilterShape<R>,
+        passband_ripple_db: R,
+        stopband_attenuation_db: R,
+    ) -> Result<Self, FilterDesignError> {
+        validate_shape(passband)?;
+        validate_shape(stopband)?;
+        validate_ripple(passband_ripple_db)?;
+        validate_attenuation(stopband_attenuation_db)?;
+        Ok(Self {
+            passband,
+            stopband,
+            passband_ripple_db,
+            stopband_attenuation_db,
+        })
+    }
+}
+
 /// Specification for digital IIR filter design.
 ///
 /// The cutoff frequencies in `shape` are interpreted as physical angular
@@ -127,6 +164,63 @@ where
     }
 }
 
+/// Specification for digital filter-order selection.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DigitalOrderSelectionSpec<R> {
+    /// Passband edge specification in physical angular-frequency units.
+    pub passband: FilterShape<R>,
+    /// Stopband edge specification in physical angular-frequency units.
+    pub stopband: FilterShape<R>,
+    /// Maximum passband ripple in dB.
+    pub passband_ripple_db: R,
+    /// Minimum stopband attenuation in dB.
+    pub stopband_attenuation_db: R,
+    /// Sampling rate in samples per unit time.
+    pub sample_rate: R,
+    /// Whether to prewarp the supplied digital edge frequencies before the
+    /// bilinear-transform design path.
+    pub prewarp: bool,
+}
+
+impl<R> DigitalOrderSelectionSpec<R>
+where
+    R: Float + Copy + RealField,
+{
+    /// Creates and validates a digital filter-order-selection specification.
+    pub fn new(
+        passband: FilterShape<R>,
+        stopband: FilterShape<R>,
+        passband_ripple_db: R,
+        stopband_attenuation_db: R,
+        sample_rate: R,
+    ) -> Result<Self, FilterDesignError> {
+        validate_shape(passband)?;
+        validate_shape(stopband)?;
+        validate_ripple(passband_ripple_db)?;
+        validate_attenuation(stopband_attenuation_db)?;
+        if !sample_rate.is_finite() || sample_rate <= R::zero() {
+            return Err(FilterDesignError::InvalidSampleRate);
+        }
+        validate_digital_shape(passband, sample_rate)?;
+        validate_digital_shape(stopband, sample_rate)?;
+        Ok(Self {
+            passband,
+            stopband,
+            passband_ripple_db,
+            stopband_attenuation_db,
+            sample_rate,
+            prewarp: true,
+        })
+    }
+
+    /// Overrides the default prewarp behavior.
+    #[must_use]
+    pub fn with_prewarp(mut self, prewarp: bool) -> Self {
+        self.prewarp = prewarp;
+        self
+    }
+}
+
 fn validate_common<R: Float + Copy + RealField>(
     order: usize,
     shape: FilterShape<R>,
@@ -137,7 +231,7 @@ fn validate_common<R: Float + Copy + RealField>(
     validate_shape(shape)
 }
 
-fn validate_shape<R: Float + Copy + RealField>(
+pub(super) fn validate_shape<R: Float + Copy + RealField>(
     shape: FilterShape<R>,
 ) -> Result<(), FilterDesignError> {
     match shape {
@@ -180,7 +274,7 @@ fn validate_digital_family<R: Float + Copy + RealField>(
     }
 }
 
-fn validate_digital_shape<R: Float + Copy + RealField>(
+pub(super) fn validate_digital_shape<R: Float + Copy + RealField>(
     shape: FilterShape<R>,
     sample_rate: R,
 ) -> Result<(), FilterDesignError> {
@@ -219,9 +313,21 @@ fn validate_positive_cutoff<R: Float + Copy + RealField>(
     }
 }
 
-fn validate_ripple<R: Float + Copy + RealField>(ripple_db: R) -> Result<(), FilterDesignError> {
+pub(super) fn validate_ripple<R: Float + Copy + RealField>(
+    ripple_db: R,
+) -> Result<(), FilterDesignError> {
     if !ripple_db.is_finite() || ripple_db <= R::zero() {
         Err(FilterDesignError::InvalidRipple)
+    } else {
+        Ok(())
+    }
+}
+
+pub(super) fn validate_attenuation<R: Float + Copy + RealField>(
+    attenuation_db: R,
+) -> Result<(), FilterDesignError> {
+    if !attenuation_db.is_finite() || attenuation_db <= R::zero() {
+        Err(FilterDesignError::InvalidAttenuation)
     } else {
         Ok(())
     }

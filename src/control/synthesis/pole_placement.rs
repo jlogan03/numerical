@@ -1,10 +1,11 @@
 //! Dense classical pole-placement utilities.
 //!
-//! The first implementation is intentionally narrow:
+//! The current implementation is dense and real-valued:
 //!
-//! - dense real systems only
-//! - SISO state-feedback pole placement
-//! - SISO observer pole placement by duality
+//! - SISO state feedback uses the Ackermann construction
+//! - MIMO state feedback uses an iterative eigenvector-selection path for real
+//!   desired poles
+//! - observer placement is always formed by duality on `(A^T, C^T)`
 //!
 //! The two public entry-point families solve different problems:
 //!
@@ -13,12 +14,14 @@
 //! - `place_observer_poles*` designs an observer gain `L` for the estimator
 //!   error dynamics and places the poles of `A - L C`
 //!
-//! The algorithm is the standard Ackermann construction. That is appropriate
-//! for small and moderate classical-control problems, but it is not intended as
-//! a robust general MIMO pole-assignment package.
+//! The MIMO path is still intentionally first-pass: it is useful for dense
+//! real systems and real desired poles, but it is not yet a full general
+//! eigenstructure-assignment package.
 
 use crate::control::lti::{ContinuousStateSpace, DiscreteStateSpace};
-use crate::decomp::{DecompError, DenseDecompParams, dense_eigenvalues, dense_svd};
+use crate::decomp::{
+    DecompError, DenseDecompParams, dense_eigenvalues, dense_self_adjoint_eigen, dense_svd,
+};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use core::fmt;
 use faer::complex::Complex;
@@ -65,19 +68,17 @@ pub enum PolePlacementError {
         actual_nrows: usize,
         actual_ncols: usize,
     },
-    /// The first state-feedback implementation only supports one input.
-    MultiInputStateFeedback { ninputs: usize },
-    /// The first observer-placement implementation only supports one output.
-    MultiOutputObserver { noutputs: usize },
     /// The desired pole list length did not match the system order.
     PoleCountMismatch { expected: usize, actual: usize },
     /// The desired pole list contained a non-finite entry.
     NonFiniteDesiredPoles,
     /// The requested poles do not define a real monic polynomial.
     NonConjugatePoleSet,
-    /// The SISO pair `(A, B)` was not numerically controllable.
+    /// The first dense MIMO implementation only supports real desired poles.
+    ComplexMimoPolesUnsupported,
+    /// The pair `(A, B)` was not numerically controllable.
     Uncontrollable,
-    /// The SISO pair `(A, C)` was not numerically observable.
+    /// The pair `(A, C)` was not numerically observable.
     Unobservable,
     /// A decomposition helper failed.
     Decomp(DecompError),
@@ -99,13 +100,18 @@ impl From<DecompError> for PolePlacementError {
     }
 }
 
-/// Places the poles of a dense real continuous-time SISO pair `(A, B)`.
+/// Places the poles of a dense real continuous-time pair `(A, B)`.
 ///
 /// The returned gain `K` uses the convention `u = -K x`, so the placed matrix
 /// is `A - B K`.
 ///
 /// This is the controller-design path. Use [`place_observer_poles_dense`] when
 /// you instead want to shape the estimator dynamics `A - L C`.
+///
+/// The current dense implementation uses:
+///
+/// - Ackermann for SISO systems
+/// - an iterative real-pole MIMO path for `m > 1`
 pub fn place_poles_dense<T>(
     a: MatRef<'_, T>,
     b: MatRef<'_, T>,
@@ -118,10 +124,7 @@ where
     place_state_feedback_impl(a, b, desired_poles)
 }
 
-/// Places the poles of a dense real discrete-time SISO pair `(A, B)`.
-///
-/// The algorithm is the same Ackermann construction as the continuous-time
-/// path; only the interpretation of the requested poles differs.
+/// Places the poles of a dense real discrete-time pair `(A, B)`.
 ///
 /// As in the continuous-time case, this designs a state-feedback gain `K`
 /// rather than an observer gain `L`.
@@ -179,7 +182,7 @@ where
     T: CompensatedField + RealField,
     T::Real: Float + Copy + RealField,
 {
-    /// Places the poles of the dense real SISO continuous-time system.
+    /// Places the poles of the dense real continuous-time system.
     ///
     /// This returns the state-feedback gain `K` for `u = -K x`, so the placed
     /// matrix is `A - B K`.
@@ -208,7 +211,7 @@ where
     T: CompensatedField + RealField,
     T::Real: Float + Copy + RealField,
 {
-    /// Places the poles of the dense real SISO discrete-time system.
+    /// Places the poles of the dense real discrete-time system.
     ///
     /// This returns the state-feedback gain `K` for `u[k] = -K x[k]`.
     pub fn place_poles(
@@ -240,33 +243,25 @@ where
     T::Real: Float + Copy + RealField,
 {
     validate_state_feedback_dims(a, b, desired_poles.len())?;
-    let coeffs = real_monic_polynomial_from_roots(desired_poles)?;
 
     let ctrb = controllability_matrix(a, b);
     if numerical_rank(ctrb.as_ref())? != a.nrows() {
         return Err(PolePlacementError::Uncontrollable);
     }
 
-    let phi_a = evaluate_real_monic_polynomial_at_matrix(a, &coeffs)?;
-    let solution = ctrb.full_piv_lu().solve(phi_a.as_ref());
-    if !all_finite(solution.as_ref()) {
-        return Err(PolePlacementError::Uncontrollable);
+    if b.ncols() == 1 {
+        return place_state_feedback_siso_ackermann(a, b, desired_poles);
     }
 
-    // Ackermann extracts the last row of `W_c^-1 p(A)` for the SISO gain.
-    let gain = Mat::from_fn(1, a.nrows(), |_, col| solution[(a.nrows() - 1, col)]);
-    let bk = dense_mul(b, gain.as_ref());
-    let placed = dense_sub(a, bk.as_ref());
-    let (achieved_poles, placement_residual) =
-        achieved_pole_diagnostics(placed.as_ref(), desired_poles)?;
+    if desired_poles
+        .iter()
+        .any(|pole| pole.im.abs() > pole_tol::<T>(pole.re))
+    {
+        return Err(PolePlacementError::ComplexMimoPolesUnsupported);
+    }
 
-    Ok(PolePlacementSolve {
-        gain,
-        placed_matrix: placed,
-        requested_poles: desired_poles.to_vec(),
-        achieved_poles,
-        placement_residual,
-    })
+    let desired_real = desired_poles.iter().map(|pole| pole.re).collect::<Vec<_>>();
+    place_state_feedback_mimo_real(a, b, &desired_real, desired_poles)
 }
 
 fn place_observer_impl<T>(
@@ -302,6 +297,137 @@ where
     })
 }
 
+fn place_state_feedback_siso_ackermann<T>(
+    a: MatRef<'_, T>,
+    b: MatRef<'_, T>,
+    desired_poles: &[Complex<T::Real>],
+) -> Result<PolePlacementSolve<T>, PolePlacementError>
+where
+    T: CompensatedField + RealField,
+    T::Real: Float + Copy + RealField,
+{
+    let coeffs = real_monic_polynomial_from_roots(desired_poles)?;
+    let ctrb = controllability_matrix(a, b);
+    let phi_a = evaluate_real_monic_polynomial_at_matrix(a, &coeffs)?;
+    let solution = ctrb.full_piv_lu().solve(phi_a.as_ref());
+    if !all_finite(solution.as_ref()) {
+        return Err(PolePlacementError::Uncontrollable);
+    }
+
+    let gain = Mat::from_fn(1, a.nrows(), |_, col| solution[(a.nrows() - 1, col)]);
+    let bk = dense_mul(b, gain.as_ref());
+    let placed = dense_sub(a, bk.as_ref());
+    let (achieved_poles, placement_residual) =
+        achieved_pole_diagnostics(placed.as_ref(), desired_poles)?;
+
+    Ok(PolePlacementSolve {
+        gain,
+        placed_matrix: placed,
+        requested_poles: desired_poles.to_vec(),
+        achieved_poles,
+        placement_residual,
+    })
+}
+
+fn place_state_feedback_mimo_real<T>(
+    a: MatRef<'_, T>,
+    b: MatRef<'_, T>,
+    desired_poles_real: &[T::Real],
+    desired_poles: &[Complex<T::Real>],
+) -> Result<PolePlacementSolve<T>, PolePlacementError>
+where
+    T: CompensatedField + RealField,
+    T::Real: Float + Copy + RealField,
+{
+    let n = a.nrows();
+    let m = b.ncols();
+    let mut x_bases = Vec::with_capacity(n);
+    let mut g_bases = Vec::with_capacity(n);
+    let mut x_cols = Vec::with_capacity(n);
+    let mut g_cols = Vec::with_capacity(n);
+
+    for &pole in desired_poles_real {
+        // Build a basis for the nullspace of `[A - lambda I, -B]`. Any vector
+        // in that nullspace encodes a candidate eigenvector / input-direction
+        // pair satisfying `(A - lambda I) x = B g`.
+        let basis = nullspace_basis(a, b, pole)?;
+        let x_basis = Mat::from_fn(n, m, |row, col| basis[(row, col)]);
+        let g_basis = Mat::from_fn(m, m, |row, col| basis[(n + row, col)]);
+
+        let mut best_idx = 0usize;
+        let mut best_norm = T::Real::zero();
+        for col in 0..m {
+            let norm = vector_norm_sq(x_basis.as_ref(), col).sqrt();
+            if norm > best_norm {
+                best_norm = norm;
+                best_idx = col;
+            }
+        }
+        if best_norm <= pole_tol::<T>(pole) {
+            return Err(PolePlacementError::Uncontrollable);
+        }
+
+        let x_col = normalize_column(x_basis.as_ref(), best_idx);
+        let g_col = scale_column(g_basis.as_ref(), best_idx, T::Real::one() / best_norm);
+        x_bases.push(x_basis);
+        g_bases.push(g_basis);
+        x_cols.push(x_col);
+        g_cols.push(g_col);
+    }
+
+    for _ in 0..8 {
+        for idx in 0..n {
+            // KNV-style refinement: choose the current eigenvector inside its
+            // admissible subspace so it is as orthogonal as possible to the
+            // other assigned eigenvectors.
+            let q = complement_direction(&x_cols, idx)?;
+            let coeffs = Mat::from_fn(m, 1, |row, _| {
+                let mut acc = CompensatedSum::<T>::default();
+                for k in 0..n {
+                    acc.add(x_bases[idx][(k, row)] * q[(k, 0)]);
+                }
+                acc.finish()
+            });
+            let coeff_norm = vector_norm_sq(coeffs.as_ref(), 0).sqrt();
+            if coeff_norm <= pole_tol::<T>(desired_poles_real[idx]) {
+                continue;
+            }
+            let x = dense_mul(x_bases[idx].as_ref(), coeffs.as_ref());
+            let x_norm = vector_norm_sq(x.as_ref(), 0).sqrt();
+            if x_norm <= pole_tol::<T>(desired_poles_real[idx]) {
+                continue;
+            }
+            x_cols[idx] = scale_matrix(x.as_ref(), T::Real::one() / x_norm);
+            let g = dense_mul(g_bases[idx].as_ref(), coeffs.as_ref());
+            g_cols[idx] = scale_matrix(g.as_ref(), T::Real::one() / x_norm);
+        }
+    }
+
+    let x = assemble_columns(&x_cols);
+    if numerical_rank(x.as_ref())? != n {
+        return Err(PolePlacementError::Uncontrollable);
+    }
+    let g = assemble_columns(&g_cols);
+    let gain_t = x.full_piv_lu().solve(transpose(g.as_ref()).as_ref());
+    let gain = transpose(gain_t.as_ref());
+    if !all_finite(gain.as_ref()) {
+        return Err(PolePlacementError::Uncontrollable);
+    }
+
+    let bk = dense_mul(b, gain.as_ref());
+    let placed = dense_sub(a, bk.as_ref());
+    let (achieved_poles, placement_residual) =
+        achieved_pole_diagnostics(placed.as_ref(), desired_poles)?;
+
+    Ok(PolePlacementSolve {
+        gain,
+        placed_matrix: placed,
+        requested_poles: desired_poles.to_vec(),
+        achieved_poles,
+        placement_residual,
+    })
+}
+
 fn validate_state_feedback_dims<T>(
     a: MatRef<'_, T>,
     b: MatRef<'_, T>,
@@ -321,9 +447,6 @@ fn validate_state_feedback_dims<T>(
             actual_nrows: b.nrows(),
             actual_ncols: b.ncols(),
         });
-    }
-    if b.ncols() != 1 {
-        return Err(PolePlacementError::MultiInputStateFeedback { ninputs: b.ncols() });
     }
     if n_poles != a.nrows() {
         return Err(PolePlacementError::PoleCountMismatch {
@@ -354,11 +477,6 @@ fn validate_observer_dims<T>(
             actual_ncols: c.ncols(),
         });
     }
-    if c.nrows() != 1 {
-        return Err(PolePlacementError::MultiOutputObserver {
-            noutputs: c.nrows(),
-        });
-    }
     if n_poles != a.nrows() {
         return Err(PolePlacementError::PoleCountMismatch {
             expected: a.nrows(),
@@ -374,17 +492,91 @@ where
     T::Real: Float + Copy,
 {
     let n = a.nrows();
-    let mut out = Mat::zeros(n, n);
-    let mut block = Mat::from_fn(n, 1, |row, _| b[(row, 0)]);
+    let m = b.ncols();
+    let mut out = Mat::zeros(n, n * m);
+    let mut block = Mat::from_fn(n, m, |row, col| b[(row, col)]);
     for k in 0..n {
         for row in 0..n {
-            out[(row, k)] = block[(row, 0)];
+            for col in 0..m {
+                out[(row, k * m + col)] = block[(row, col)];
+            }
         }
         if k + 1 != n {
             block = dense_mul(a, block.as_ref());
         }
     }
     out
+}
+
+fn nullspace_basis<T>(
+    a: MatRef<'_, T>,
+    b: MatRef<'_, T>,
+    pole: T::Real,
+) -> Result<Mat<T>, PolePlacementError>
+where
+    T: CompensatedField + RealField,
+    T::Real: Float + Copy + RealField,
+{
+    let n = a.nrows();
+    let m = b.ncols();
+    let system = Mat::from_fn(n, n + m, |row, col| {
+        if col < n {
+            let diag = if row == col {
+                T::from_real_imag(pole, T::Real::zero())
+            } else {
+                T::zero()
+            };
+            a[(row, col)] - diag
+        } else {
+            -b[(row, col - n)]
+        }
+    });
+    // Extract the trailing nullspace basis from the Gram matrix eigenvectors.
+    // This keeps the implementation inside the existing dense decomposition
+    // surface instead of depending on a separate nullspace routine.
+    let gram = gram_matrix(system.as_ref());
+    let eig = dense_self_adjoint_eigen(gram.as_ref(), &DenseDecompParams::default())?;
+    let tol = eig.values[0].abs().max(T::Real::one())
+        * from_f64::<T::Real>(256.0)
+        * eps::<T::Real>().sqrt();
+    let mut basis = Mat::zeros(n + m, m);
+    for j in 0..m {
+        let src = eig.vectors.ncols() - m + j;
+        if eig.values[src].abs() > tol {
+            return Err(PolePlacementError::Uncontrollable);
+        }
+        for row in 0..(n + m) {
+            basis[(row, j)] = eig.vectors[(row, src)];
+        }
+    }
+    Ok(basis)
+}
+
+fn complement_direction<T>(
+    columns: &[Mat<T>],
+    skip_idx: usize,
+) -> Result<Mat<T>, PolePlacementError>
+where
+    T: CompensatedField + RealField,
+    T::Real: Float + Copy + RealField,
+{
+    let n = columns[0].nrows();
+    let k = columns.len().saturating_sub(1);
+    if k == 0 {
+        return Ok(Mat::from_fn(n, 1, |row, _| {
+            if row == 0 { T::one() } else { T::zero() }
+        }));
+    }
+    let others = Mat::from_fn(n, k, |row, col| {
+        let src = if col < skip_idx { col } else { col + 1 };
+        columns[src][(row, 0)]
+    });
+    // Use the eigenvector associated with the smallest Gram eigenvalue as a
+    // direction in the orthogonal complement of the other columns.
+    let gram = dense_mul(others.as_ref(), transpose(others.as_ref()).as_ref());
+    let eig = dense_self_adjoint_eigen(gram.as_ref(), &DenseDecompParams::default())?;
+    let last = eig.vectors.ncols() - 1;
+    Ok(Mat::from_fn(n, 1, |row, _| eig.vectors[(row, last)]))
 }
 
 fn numerical_rank<T>(matrix: MatRef<'_, T>) -> Result<usize, PolePlacementError>
@@ -561,6 +753,82 @@ where
     (0..matrix.ncols()).all(|col| (0..matrix.nrows()).all(|row| matrix[(row, col)].is_finite()))
 }
 
+fn gram_matrix<T>(matrix: MatRef<'_, T>) -> Mat<T>
+where
+    T: CompensatedField + RealField,
+    T::Real: Float + Copy,
+{
+    let cols = matrix.ncols();
+    let rows = matrix.nrows();
+    Mat::from_fn(cols, cols, |i, j| {
+        let mut acc = CompensatedSum::<T>::default();
+        for k in 0..rows {
+            acc.add(matrix[(k, i)] * matrix[(k, j)]);
+        }
+        acc.finish()
+    })
+}
+
+fn vector_norm_sq<T>(matrix: MatRef<'_, T>, col: usize) -> T::Real
+where
+    T: CompensatedField + RealField,
+    T::Real: Float + Copy,
+{
+    let mut acc = T::Real::zero();
+    for row in 0..matrix.nrows() {
+        let value = matrix[(row, col)].abs();
+        acc = acc + value * value;
+    }
+    acc
+}
+
+fn normalize_column<T>(matrix: MatRef<'_, T>, col: usize) -> Mat<T>
+where
+    T: CompensatedField + RealField,
+    T::Real: Float + Copy,
+{
+    let norm = vector_norm_sq(matrix, col).sqrt();
+    scale_column(matrix, col, T::Real::one() / norm)
+}
+
+fn scale_column<T>(matrix: MatRef<'_, T>, col: usize, scale: T::Real) -> Mat<T>
+where
+    T: CompensatedField + RealField,
+    T::Real: Float + Copy,
+{
+    Mat::from_fn(matrix.nrows(), 1, |row, _| {
+        matrix[(row, col)] * T::from_real_imag(scale, T::Real::zero())
+    })
+}
+
+fn scale_matrix<T>(matrix: MatRef<'_, T>, scale: T::Real) -> Mat<T>
+where
+    T: CompensatedField + RealField,
+    T::Real: Float + Copy,
+{
+    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
+        matrix[(row, col)] * T::from_real_imag(scale, T::Real::zero())
+    })
+}
+
+fn assemble_columns<T>(columns: &[Mat<T>]) -> Mat<T>
+where
+    T: CompensatedField + RealField,
+    T::Real: Float + Copy,
+{
+    Mat::from_fn(columns[0].nrows(), columns.len(), |row, col| {
+        columns[col][(row, 0)]
+    })
+}
+
+fn pole_tol<T>(scale: T::Real) -> T::Real
+where
+    T: CompensatedField + RealField,
+    T::Real: Float + Copy,
+{
+    from_f64::<T::Real>(256.0) * eps::<T::Real>().sqrt() * scale.abs().max(T::Real::one())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -672,31 +940,35 @@ mod tests {
     }
 
     #[test]
-    fn multi_input_and_multi_output_paths_are_rejected() {
+    fn mimo_state_feedback_and_observer_place_real_poles() {
         let a = Mat::from_fn(2, 2, |row, col| if row == col { 1.0 } else { 0.0 });
         let b = Mat::from_fn(2, 2, |row, col| if row == col { 1.0 } else { 0.0 });
         let c = Mat::from_fn(2, 2, |row, col| if row == col { 1.0 } else { 0.0 });
+        let desired = [Complex::new(-1.0, 0.0), Complex::new(-2.0, 0.0)];
 
-        let fb = place_poles_dense(
+        let fb = place_poles_dense(a.as_ref(), b.as_ref(), &desired).unwrap();
+        let obs = place_observer_poles_dense(a.as_ref(), c.as_ref(), &desired).unwrap();
+
+        let mut expected = desired.to_vec();
+        expected.sort_by(|lhs, rhs| super::compare_poles(*lhs, *rhs));
+        assert_poles_close(&fb.achieved_poles, &expected, 1.0e-8);
+        assert_poles_close(&obs.achieved_poles, &expected, 1.0e-8);
+    }
+
+    #[test]
+    fn mimo_complex_poles_are_rejected_in_first_pass() {
+        let a = Mat::from_fn(2, 2, |row, col| if row == col { 1.0 } else { 0.0 });
+        let b = Mat::from_fn(2, 2, |row, col| if row == col { 1.0 } else { 0.0 });
+
+        let err = place_poles_dense(
             a.as_ref(),
             b.as_ref(),
-            &[Complex::new(-1.0, 0.0), Complex::new(-2.0, 0.0)],
+            &[Complex::new(-1.0, 1.0), Complex::new(-1.0, -1.0)],
         )
         .unwrap_err();
         assert!(matches!(
-            fb,
-            PolePlacementError::MultiInputStateFeedback { .. }
-        ));
-
-        let obs = place_observer_poles_dense(
-            a.as_ref(),
-            c.as_ref(),
-            &[Complex::new(-1.0, 0.0), Complex::new(-2.0, 0.0)],
-        )
-        .unwrap_err();
-        assert!(matches!(
-            obs,
-            PolePlacementError::MultiOutputObserver { .. }
+            err,
+            PolePlacementError::ComplexMimoPolesUnsupported
         ));
     }
 
