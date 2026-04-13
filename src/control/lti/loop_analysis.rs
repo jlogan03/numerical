@@ -10,6 +10,8 @@
 //! unwrapped on the caller's frequency grid before any crossover or margin
 //! logic runs. That keeps `-180 deg` crossings numerically meaningful even
 //! when the raw pointwise phase jumps across the principal `atan2` branch cut.
+//! Any helper that returns or consumes unwrapped phase therefore requires a
+//! monotone nondecreasing frequency grid.
 //!
 //! # Two Intuitions
 //!
@@ -51,7 +53,8 @@
 use super::{
     ContinuousSos, ContinuousStateSpace, ContinuousTime, ContinuousTransferFunction, ContinuousZpk,
     DiscreteSos, DiscreteStateSpace, DiscreteTime, DiscreteTransferFunction, DiscreteZpk, LtiError,
-    TransferFunction, util::unwrap_phase_deg,
+    TransferFunction,
+    util::{unwrap_phase_deg, validate_nonnegative_monotone_grid},
 };
 use crate::scalar::mul_add;
 use faer::complex::Complex;
@@ -110,7 +113,8 @@ pub struct NyquistData<R> {
     pub values: Vec<Complex<R>>,
 }
 
-/// Nichols-plot data sampled on an angular-frequency grid.
+/// Nichols-plot data sampled on a monotone nondecreasing angular-frequency
+/// grid.
 #[derive(Clone, Debug, PartialEq)]
 pub struct NicholsData<R> {
     /// Angular frequencies at which the loop transfer map was evaluated.
@@ -201,10 +205,11 @@ where
     /// plotting.
     ///
     /// Phase is unwrapped on the provided grid so the returned trace is
-    /// continuous across principal-angle branch cuts.
+    /// continuous across principal-angle branch cuts. Because of that
+    /// unwrapping, the frequency grid must be monotone nondecreasing.
     pub fn nichols_data(&self, angular_frequencies: &[R]) -> Result<NicholsData<R>, LtiError> {
         let samples =
-            loop_samples_from_evaluator(angular_frequencies, "nichols_data", false, |w| {
+            loop_samples_from_evaluator(angular_frequencies, "nichols_data", true, |w| {
                 Ok(self.evaluate(Complex::new(R::zero(), w)))
             })?;
         Ok(NicholsData {
@@ -293,7 +298,7 @@ where
     pub fn nichols_data(&self, angular_frequencies: &[R]) -> Result<NicholsData<R>, LtiError> {
         let dt = self.sample_time();
         let samples =
-            loop_samples_from_evaluator(angular_frequencies, "nichols_data", false, |w| {
+            loop_samples_from_evaluator(angular_frequencies, "nichols_data", true, |w| {
                 let phase = w * dt;
                 Ok(self.evaluate(Complex::new(phase.cos(), phase.sin())))
             })?;
@@ -380,7 +385,7 @@ where
     /// Evaluates Nichols data directly from the factored loop transfer.
     pub fn nichols_data(&self, angular_frequencies: &[R]) -> Result<NicholsData<R>, LtiError> {
         let samples =
-            loop_samples_from_evaluator(angular_frequencies, "nichols_data", false, |w| {
+            loop_samples_from_evaluator(angular_frequencies, "nichols_data", true, |w| {
                 Ok(self.evaluate(Complex::new(R::zero(), w)))
             })?;
         Ok(NicholsData {
@@ -465,7 +470,7 @@ where
     pub fn nichols_data(&self, angular_frequencies: &[R]) -> Result<NicholsData<R>, LtiError> {
         let dt = self.sample_time();
         let samples =
-            loop_samples_from_evaluator(angular_frequencies, "nichols_data", false, |w| {
+            loop_samples_from_evaluator(angular_frequencies, "nichols_data", true, |w| {
                 let phase = w * dt;
                 Ok(self.evaluate(Complex::new(phase.cos(), phase.sin())))
             })?;
@@ -552,7 +557,7 @@ where
     /// Evaluates Nichols data directly from the section cascade.
     pub fn nichols_data(&self, angular_frequencies: &[R]) -> Result<NicholsData<R>, LtiError> {
         let samples =
-            loop_samples_from_evaluator(angular_frequencies, "nichols_data", false, |w| {
+            loop_samples_from_evaluator(angular_frequencies, "nichols_data", true, |w| {
                 Ok(self.evaluate(Complex::new(R::zero(), w)))
             })?;
         Ok(NicholsData {
@@ -637,7 +642,7 @@ where
     pub fn nichols_data(&self, angular_frequencies: &[R]) -> Result<NicholsData<R>, LtiError> {
         let dt = self.sample_time();
         let samples =
-            loop_samples_from_evaluator(angular_frequencies, "nichols_data", false, |w| {
+            loop_samples_from_evaluator(angular_frequencies, "nichols_data", true, |w| {
                 let phase = w * dt;
                 Ok(self.evaluate(Complex::new(phase.cos(), phase.sin())))
             })?;
@@ -729,7 +734,7 @@ where
     pub fn nichols_data(&self, angular_frequencies: &[R]) -> Result<NicholsData<R>, LtiError> {
         ensure_siso_state_space(self)?;
         let samples =
-            loop_samples_from_evaluator(angular_frequencies, "nichols_data", false, |w| {
+            loop_samples_from_evaluator(angular_frequencies, "nichols_data", true, |w| {
                 self.transfer_at(Complex::new(R::zero(), w))
                     .map(|value| value[(0, 0)])
             })?;
@@ -824,7 +829,7 @@ where
         ensure_siso_state_space(self)?;
         let dt = self.sample_time();
         let samples =
-            loop_samples_from_evaluator(angular_frequencies, "nichols_data", false, |w| {
+            loop_samples_from_evaluator(angular_frequencies, "nichols_data", true, |w| {
                 let phase = w * dt;
                 self.transfer_at(Complex::new(phase.cos(), phase.sin()))
                     .map(|value| value[(0, 0)])
@@ -937,19 +942,16 @@ fn validate_frequency_grid<R>(
 where
     R: Float + Copy + RealField,
 {
-    for &omega in angular_frequencies {
-        if !omega.is_finite() || omega < R::zero() {
-            return Err(LtiError::InvalidSamplePoint { which });
+    if require_monotone {
+        validate_nonnegative_monotone_grid(angular_frequencies, which)
+    } else {
+        for &omega in angular_frequencies {
+            if !omega.is_finite() || omega < R::zero() {
+                return Err(LtiError::InvalidSamplePoint { which });
+            }
         }
+        Ok(())
     }
-    if require_monotone
-        && angular_frequencies
-            .windows(2)
-            .any(|window| window[1] < window[0])
-    {
-        return Err(LtiError::InvalidSampleGrid { which });
-    }
-    Ok(())
 }
 
 fn loop_crossovers_from_samples<R>(samples: &LoopSamples<R>) -> Result<LoopCrossovers<R>, LtiError>
@@ -1189,6 +1191,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{ContinuousTransferFunction, DiscreteTransferFunction};
+    use crate::control::lti::LtiError;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
         let err = (lhs - rhs).abs();
@@ -1346,5 +1349,18 @@ mod tests {
         let rhs = controller.evaluate(point)
             / (faer::complex::Complex::new(1.0, 0.0) + loop_tf.evaluate(point));
         assert!((lhs - rhs).norm() <= 1.0e-12);
+    }
+
+    #[test]
+    fn nichols_data_rejects_unsorted_frequency_grid() {
+        let loop_tf =
+            ContinuousTransferFunction::continuous(vec![1.0], vec![1.0, 3.0, 3.0, 1.0]).unwrap();
+
+        assert!(matches!(
+            loop_tf.nichols_data(&[100.0, 1.0]),
+            Err(LtiError::InvalidSampleGrid {
+                which: "nichols_data"
+            })
+        ));
     }
 }

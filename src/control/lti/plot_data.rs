@@ -4,17 +4,21 @@
 //! the crate, but callers can reuse these helpers to produce consistent Bode
 //! and pole-zero inputs from any supported SISO LTI representation. Bode phase
 //! is returned in unwrapped form so downstream plotting code can decide
-//! whether to display continuity-preserving or wrapped traces.
+//! whether to display continuity-preserving or wrapped traces. Because that
+//! phase is unwrapped, the input frequency grid must be monotone
+//! nondecreasing.
 
 use super::{
     ContinuousSos, ContinuousStateSpace, ContinuousTransferFunction, ContinuousZpk, DiscreteSos,
-    DiscreteStateSpace, DiscreteTransferFunction, DiscreteZpk, LtiError, util::unwrap_phase_deg,
+    DiscreteStateSpace, DiscreteTransferFunction, DiscreteZpk, LtiError,
+    util::{unwrap_phase_deg, validate_nonnegative_monotone_grid},
 };
 use faer::complex::Complex;
 use faer_traits::RealField;
 use num_traits::Float;
 
-/// Bode-plot data evaluated on an angular-frequency grid.
+/// Bode-plot data evaluated on a monotone nondecreasing angular-frequency
+/// grid.
 #[derive(Clone, Debug, PartialEq)]
 pub struct BodeData<R> {
     /// Angular frequencies at which the transfer map was evaluated.
@@ -42,7 +46,8 @@ where
     /// Evaluates bode magnitude and phase on an angular-frequency grid.
     ///
     /// The grid is interpreted in continuous-time angular frequency units and
-    /// evaluated at `s = j * omega`.
+    /// evaluated at `s = j * omega`. Because phase is returned in unwrapped
+    /// form, the frequency grid must be monotone nondecreasing.
     pub fn bode_data(&self, angular_frequencies: &[R]) -> Result<BodeData<R>, LtiError> {
         bode_from_evaluator(angular_frequencies, |omega| {
             Ok(self.evaluate(Complex::new(R::zero(), omega)))
@@ -66,7 +71,9 @@ where
     /// Evaluates bode magnitude and phase on an angular-frequency grid.
     ///
     /// The grid is interpreted in physical angular frequency units and mapped
-    /// to the unit circle as `z = exp(j * omega * dt)`.
+    /// to the unit circle as `z = exp(j * omega * dt)`. Because phase is
+    /// returned in unwrapped form, the frequency grid must be monotone
+    /// nondecreasing.
     pub fn bode_data(&self, angular_frequencies: &[R]) -> Result<BodeData<R>, LtiError> {
         let dt = self.sample_time();
         bode_from_evaluator(angular_frequencies, |omega| {
@@ -240,12 +247,10 @@ where
     // Keep the plotting layer opinionated but minimal: validate the grid, turn
     // complex samples into magnitude/phase, then unwrap the phase trace once
     // at the end so the result is continuous on the caller's grid.
+    validate_nonnegative_monotone_grid(angular_frequencies, "bode_data")?;
     let mut magnitude_db = Vec::with_capacity(angular_frequencies.len());
     let mut phase_deg_wrapped = Vec::with_capacity(angular_frequencies.len());
     for &omega in angular_frequencies {
-        if !omega.is_finite() || omega < R::zero() {
-            return Err(LtiError::InvalidSamplePoint { which: "bode_data" });
-        }
         let value = evaluate(omega)?;
         magnitude_db.push(R::from(20.0).unwrap() * value.norm().log10());
         phase_deg_wrapped.push(value.im.atan2(value.re).to_degrees());
@@ -260,6 +265,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{ContinuousTransferFunction, DiscreteTransferFunction};
+    use crate::control::lti::LtiError;
     use faer::complex::Complex;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
@@ -294,6 +300,17 @@ mod tests {
                 .windows(2)
                 .all(|window| window[1] <= window[0])
         );
+    }
+
+    #[test]
+    fn bode_data_rejects_unsorted_frequency_grid() {
+        let tf =
+            ContinuousTransferFunction::continuous(vec![1.0], vec![1.0, 3.0, 3.0, 1.0]).unwrap();
+
+        assert!(matches!(
+            tf.bode_data(&[100.0, 1.0]),
+            Err(LtiError::InvalidSampleGrid { which: "bode_data" })
+        ));
     }
 
     #[test]

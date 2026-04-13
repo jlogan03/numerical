@@ -54,6 +54,26 @@ pub(crate) fn validate_sample_time<R: Float + RealField>(sample_time: R) -> Resu
     }
 }
 
+/// Validates a finite, nonnegative, monotone nondecreasing numeric grid.
+///
+/// This is shared by the phase-unwrapped frequency-domain helpers and any
+/// time-domain API that interprets the supplied points as absolute times from
+/// a causal origin.
+pub(crate) fn validate_nonnegative_monotone_grid<R: Float + Copy + RealField>(
+    sample_points: &[R],
+    which: &'static str,
+) -> Result<(), LtiError> {
+    for &sample in sample_points {
+        if !sample.is_finite() || sample < R::zero() {
+            return Err(LtiError::InvalidSamplePoint { which });
+        }
+    }
+    if sample_points.windows(2).any(|window| window[1] < window[0]) {
+        return Err(LtiError::InvalidSampleGrid { which });
+    }
+    Ok(())
+}
+
 /// Drops leading zeros from a real polynomial coefficient vector.
 ///
 /// The polynomial utilities normalize coefficients to descending-power form

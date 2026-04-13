@@ -42,6 +42,7 @@ use super::state_space::convert::matrix_exponential;
 use super::state_space::{
     ContinuousStateSpace, DiscreteStateSpace, SparseContinuousStateSpace, SparseDiscreteStateSpace,
 };
+use super::util::validate_nonnegative_monotone_grid;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum, sum2};
 use crate::sparse::matvec::SparseMatVec;
 use faer::complex::Complex;
@@ -155,13 +156,15 @@ where
     /// times.
     ///
     /// Each returned matrix maps an input-channel unit step to the output
-    /// vector at that time. The exact dense formula is obtained from the same
-    /// lifted exponential used by zero-order-hold discretization.
+    /// vector at that absolute time from the step origin. The sample grid must
+    /// be monotone nondecreasing so each returned block has an unambiguous
+    /// temporal interpretation. The exact dense formula is obtained from the
+    /// same lifted exponential used by zero-order-hold discretization.
     pub fn step_response(
         &self,
         sample_times: &[T::Real],
     ) -> Result<SampledResponse<T::Real, T>, LtiError> {
-        validate_nonnegative_grid(sample_times, "continuous step response")?;
+        validate_nonnegative_monotone_grid(sample_times, "continuous step response")?;
         Ok(SampledResponse {
             sample_points: sample_times.to_vec(),
             values: dense_continuous_step_blocks(self, sample_times)?,
@@ -698,17 +701,12 @@ where
     T::Real: Float + Copy + RealField,
 {
     let mut blocks = Vec::with_capacity(sample_times.len());
-    let mut state = Mat::<T>::zeros(system.nstates(), system.ninputs());
-    for k in 0..sample_times.len() {
+    for &time in sample_times {
+        let (_, bd) = continuous_interval_maps(system, time)?;
         blocks.push(dense_add(
-            dense_mul(system.c(), state.as_ref()).as_ref(),
+            dense_mul(system.c(), bd.as_ref()).as_ref(),
             system.d(),
         ));
-        if k + 1 < sample_times.len() {
-            let dt = sample_times[k + 1] - sample_times[k];
-            let (ad, bd) = continuous_interval_maps(system, dt)?;
-            state = dense_add(dense_mul(ad.as_ref(), state.as_ref()).as_ref(), bd.as_ref());
-        }
     }
     Ok(blocks)
 }
@@ -847,6 +845,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::{ContinuousImpulseResponse, SampledResponse};
+    use crate::control::lti::LtiError;
     use crate::control::lti::state_space::{
         ContinuousStateSpace, DiscreteStateSpace, SparseContinuousStateSpace,
         SparseDiscreteStateSpace,
@@ -941,6 +940,47 @@ mod tests {
             Mat::from_fn(1, 1, |_, _| 5.0 + 6.0 * (1.0 - (-2.0f64).exp())).as_ref(),
             1.0e-12,
         );
+    }
+
+    #[test]
+    fn continuous_step_response_uses_absolute_sample_times() {
+        let sys = ContinuousStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| -1.0),
+            Mat::from_fn(1, 1, |_, _| 1.0),
+            Mat::from_fn(1, 1, |_, _| 1.0),
+            Mat::from_fn(1, 1, |_, _| 0.0),
+        )
+        .unwrap();
+
+        let response: SampledResponse<f64, f64> = sys.step_response(&[1.0, 2.0]).unwrap();
+        assert_close_real(
+            response.values[0].as_ref(),
+            Mat::from_fn(1, 1, |_, _| 1.0 - (-1.0f64).exp()).as_ref(),
+            1.0e-12,
+        );
+        assert_close_real(
+            response.values[1].as_ref(),
+            Mat::from_fn(1, 1, |_, _| 1.0 - (-2.0f64).exp()).as_ref(),
+            1.0e-12,
+        );
+    }
+
+    #[test]
+    fn continuous_step_response_rejects_decreasing_time_grid() {
+        let sys = ContinuousStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| -1.0),
+            Mat::from_fn(1, 1, |_, _| 1.0),
+            Mat::from_fn(1, 1, |_, _| 1.0),
+            Mat::from_fn(1, 1, |_, _| 0.0),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            sys.step_response(&[1.0, 0.5]),
+            Err(LtiError::InvalidSampleGrid {
+                which: "continuous step response"
+            })
+        ));
     }
 
     #[test]

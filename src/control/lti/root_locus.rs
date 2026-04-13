@@ -36,6 +36,9 @@
 //!
 //! - Branch tracking is heuristic and should be interpreted as plotting help,
 //!   not as a proof of topological branch identity.
+//! - Branch samples are stored as optional poles so proper-but-not-strictly-
+//!   proper loops can represent gains where the closed-loop polynomial drops
+//!   degree and a finite pole disappears.
 //! - The helper intentionally stays SISO because scalar loop gain is the
 //!   classical root-locus setting.
 
@@ -52,7 +55,10 @@ use num_traits::Float;
 #[derive(Clone, Debug, PartialEq)]
 pub struct RootLocusBranch<R> {
     /// Closed-loop poles assigned to this branch at each sampled gain.
-    pub poles: Vec<Complex<R>>,
+    ///
+    /// `None` marks gains where the closed-loop characteristic polynomial
+    /// drops degree and the corresponding branch has no finite pole.
+    pub poles: Vec<Option<Complex<R>>>,
 }
 
 /// Sampled root-locus data for a SISO open-loop transfer.
@@ -164,24 +170,23 @@ where
 {
     validate_gain_grid(gains)?;
     let mut poles = Vec::with_capacity(gains.len());
-    let mut branches = Vec::<RootLocusBranch<R>>::new();
 
     for &gain in gains {
         // For unity negative feedback, the closed-loop poles solve
         // `D(s) + k N(s) = 0`.
         let closed_loop_denominator = poly_add_aligned(denominator, &scale_poly(numerator, gain));
         let roots = sort_roots(poly_roots(&closed_loop_denominator)?);
-
-        if branches.is_empty() {
-            branches = roots
-                .iter()
-                .map(|&pole| RootLocusBranch { poles: vec![pole] })
-                .collect();
-        } else if branches.len() == roots.len() {
-            assign_roots_to_branches(&mut branches, &roots);
-        }
-
         poles.push(roots);
+    }
+
+    let max_root_count = poles.iter().map(Vec::len).max().unwrap_or(0);
+    let mut branches = (0..max_root_count)
+        .map(|_| RootLocusBranch {
+            poles: Vec::with_capacity(gains.len()),
+        })
+        .collect::<Vec<_>>();
+    for roots in &poles {
+        assign_roots_to_branches(&mut branches, roots);
     }
 
     Ok(RootLocusData {
@@ -246,9 +251,16 @@ fn assign_roots_to_branches<R>(branches: &mut [RootLocusBranch<R>], roots: &[Com
 where
     R: Float + Copy + RealField,
 {
+    if branches.is_empty() {
+        return;
+    }
+
+    let next_len = branches[0].poles.len() + 1;
     let mut used = vec![false; roots.len()];
-    for branch in branches {
-        let prev = *branch.poles.last().unwrap();
+    for branch in branches.iter_mut() {
+        let Some(prev) = branch.poles.iter().rev().find_map(|&pole| pole) else {
+            continue;
+        };
         let mut best_idx = None;
         let mut best_dist = R::infinity();
         for (idx, &root) in roots.iter().enumerate() {
@@ -266,8 +278,23 @@ where
         }
         if let Some(idx) = best_idx {
             used[idx] = true;
-            branch.poles.push(roots[idx]);
+            branch.poles.push(Some(roots[idx]));
+        } else {
+            branch.poles.push(None);
         }
+    }
+
+    let mut unused_roots = roots
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, &root)| (!used[idx]).then_some(root));
+    for branch in branches.iter_mut() {
+        if branch.poles.len() == next_len {
+            continue;
+        }
+        branch
+            .poles
+            .push(unused_roots.next().map(Some).unwrap_or(None));
     }
 }
 
@@ -288,6 +315,19 @@ mod tests {
             assert_eq!(lhs_roots.len(), rhs_roots.len());
             for (&lhs_root, &rhs_root) in lhs_roots.iter().zip(rhs_roots.iter()) {
                 assert!((lhs_root - rhs_root).norm() <= tol);
+            }
+        }
+        assert_eq!(lhs.branches.len(), rhs.branches.len());
+        for (lhs_branch, rhs_branch) in lhs.branches.iter().zip(rhs.branches.iter()) {
+            assert_eq!(lhs_branch.poles.len(), rhs_branch.poles.len());
+            for (lhs_pole, rhs_pole) in lhs_branch.poles.iter().zip(rhs_branch.poles.iter()) {
+                match (lhs_pole, rhs_pole) {
+                    (Some(lhs_pole), Some(rhs_pole)) => {
+                        assert!((*lhs_pole - *rhs_pole).norm() <= tol);
+                    }
+                    (None, None) => {}
+                    _ => panic!("root-locus branch occupancy mismatch"),
+                }
             }
         }
     }
@@ -324,5 +364,21 @@ mod tests {
         assert_root_locus_close(&tf_data, &zpk_data, 1.0e-10);
         assert_root_locus_close(&tf_data, &sos_data, 1.0e-10);
         assert_root_locus_close(&tf_data, &ss_data, 1.0e-10);
+    }
+
+    #[test]
+    fn root_locus_branches_remain_aligned_when_finite_pole_count_drops() {
+        let loop_tf =
+            ContinuousTransferFunction::continuous(vec![-1.0, 1.0], vec![1.0, 2.0]).unwrap();
+        let gains = vec![0.0, 1.0, 2.0];
+        let locus = loop_tf.root_locus_data(&gains).unwrap();
+
+        assert_eq!(locus.gains, gains);
+        assert_eq!(locus.poles[0].len(), 1);
+        assert!(locus.poles[1].is_empty());
+        assert_eq!(locus.poles[2].len(), 1);
+        assert_eq!(locus.branches.len(), 1);
+        assert_eq!(locus.branches[0].poles.len(), locus.gains.len());
+        assert!(locus.branches[0].poles[1].is_none());
     }
 }
