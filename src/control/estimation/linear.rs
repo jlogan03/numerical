@@ -14,6 +14,41 @@
 //!
 //! - [`SteadyStateKalmanFilter`] for discrete-time fixed-gain observation
 //! - [`ContinuousObserver`] for continuous-time fixed-gain observation
+//!
+//! # Two Intuitions
+//!
+//! 1. **Design view.** The `LQE` / `DLQE` side computes the observer gain you
+//!    would choose if the model and noise covariances were fixed forever.
+//! 2. **Runtime view.** The Kalman-filter side turns that design into an online
+//!    predict/update process that combines the model prediction with each new
+//!    measurement.
+//!
+//! # Glossary
+//!
+//! - **Observer gain `L`:** Injection gain multiplying the innovation.
+//! - **Innovation:** Residual between the measured and predicted output.
+//! - **Posterior / prior:** After- and before-measurement estimates.
+//! - **Joseph update:** Covariance update that better preserves positive
+//!   semidefiniteness in floating point.
+//!
+//! # Mathematical Formulation
+//!
+//! The core linear runtime equations are:
+//!
+//! - predict: `x^- = A x + B u`, `P^- = A P A^H + W`
+//! - update: `K = P^- C^H (C P^- C^H + V)^-1`
+//! - posterior: `x^+ = x^- + K (y - C x^- - D u)`
+//!
+//! Steady-state design solves the dual Riccati equation to obtain a fixed
+//! observer gain `L`.
+//!
+//! # Implementation Notes
+//!
+//! - The current runtime Kalman filter is discrete-time only.
+//! - Continuous runtime support is currently fixed-gain observer evaluation,
+//!   not a continuous covariance ODE integrator.
+//! - Design and runtime live together so the fixed-gain wrappers can be built
+//!   directly from `LQE` / `DLQE` results.
 
 use crate::control::lti::{ContinuousStateSpace, DiscreteStateSpace};
 use crate::control::matrix_equations::{RiccatiError, solve_care_dense, solve_dare_dense};

@@ -10,6 +10,43 @@
 //! unwrapped on the caller's frequency grid before any crossover or margin
 //! logic runs. That keeps `-180 deg` crossings numerically meaningful even
 //! when the raw pointwise phase jumps across the principal `atan2` branch cut.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Robustness view.** Loop analysis asks how much modeling error or extra
+//!    loop gain the closed loop can tolerate before it stops behaving well.
+//! 2. **Channel view.** The same helpers describe how different signals move
+//!    through a feedback loop: disturbances through `S`, sensor noise through
+//!    `T`, and controller effort through `KS`.
+//!
+//! # Glossary
+//!
+//! - **Loop transfer `L`:** Usually `P C` for plant `P` and controller `C`.
+//! - **Sensitivity `S`:** `1 / (1 + L)`.
+//! - **Complementary sensitivity `T`:** `L / (1 + L)`.
+//! - **Gain margin / phase margin:** Classical robustness margins defined at
+//!   phase and gain crossovers.
+//!
+//! # Mathematical Formulation
+//!
+//! The module constructs:
+//!
+//! - `S = 1 / (1 + L)`
+//! - `T = L / (1 + L)`
+//! - `KS = C / (1 + L)`
+//! - `PS = P / (1 + L)`
+//!
+//! and estimates crossover frequencies and margins from sampled evaluations of
+//! `L(jw)` or `L(e^{jw dt})`.
+//!
+//! # Implementation Notes
+//!
+//! - Margin and crossover detection is sampled-grid based and therefore only
+//!   as accurate as the caller's frequency grid.
+//! - Nichols and Nyquist helpers return data only; they do not perform
+//!   plotting or winding-number analysis.
+//! - Phase unwrapping is shared with the Bode-data path to keep the frequency
+//!   analysis conventions aligned.
 
 use super::{
     ContinuousSos, ContinuousStateSpace, ContinuousTime, ContinuousTransferFunction, ContinuousZpk,

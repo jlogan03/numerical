@@ -16,6 +16,41 @@
 //!
 //! with `Q` interpreted directly in state coordinates and `R` interpreted
 //! directly in measurement coordinates.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Local-linear view.** EKF says "pretend the nonlinear model is linear
+//!    right here" and then run a Kalman-style update on that local model.
+//! 2. **Deterministic-sampling view.** UKF says "sample the uncertainty
+//!    directly, push those points through the nonlinear model, then rebuild the
+//!    mean and covariance from the transformed cloud."
+//!
+//! # Glossary
+//!
+//! - **Jacobian:** Local derivative used by EKF linearization.
+//! - **Sigma points:** Deterministic support points used by the UKF.
+//! - **Cross covariance:** Covariance between predicted state and predicted
+//!   measurement, used to form the UKF gain.
+//! - **Additive-noise model:** Process and measurement noise enter by
+//!   covariance addition rather than through separate noise-input maps.
+//!
+//! # Mathematical Formulation
+//!
+//! The shared nonlinear model form is:
+//!
+//! - `x[k+1] = f(x[k], u[k]) + w[k]`
+//! - `y[k] = h(x[k], u[k]) + v[k]`
+//!
+//! EKF uses Jacobians `F = df/dx`, `H = dh/dx`. UKF reconstructs means and
+//! covariances from propagated weighted sigma points.
+//!
+//! # Implementation Notes
+//!
+//! - The first nonlinear surface is discrete-time only.
+//! - UKF sigma-point placement is pluggable so callers can provide custom
+//!   weighted point sets around discontinuities or hybrid boundaries.
+//! - The same covariance-update policy enum as the linear layer is reused so
+//!   Joseph-form and simpler updates stay aligned across estimator families.
 
 use super::CovarianceUpdate;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};

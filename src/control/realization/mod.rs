@@ -53,6 +53,34 @@
 //! - Brunton and Kutz, *Data-Driven Science and Engineering*, 2nd ed.,
 //!   Cambridge University Press, 2022, especially the realization and
 //!   identification material in Section 9.3.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Data-structure view.** This module packages the discrete response data
+//!    that realization algorithms manipulate before they ever produce a state
+//!    matrix.
+//! 2. **Shared-currency view.** It is also the common layer between
+//!    simulation-derived Markov parameters, OKID output, and ERA input.
+//!
+//! # Glossary
+//!
+//! - **Markov parameter:** Discrete impulse-response block.
+//! - **Block-Hankel matrix:** Dense matrix formed by arranging Markov blocks on
+//!   anti-diagonals.
+//! - **Shifted Hankel pair:** Two Hankel matrices offset by one Markov index.
+//!
+//! # Mathematical Formulation
+//!
+//! For a discrete-time state-space system, the Markov sequence is
+//! `H_0 = D`, `H_k = C A^(k-1) B`, and Hankel matrices are built by arranging
+//! those blocks into a structured dense matrix that exposes shift invariance.
+//!
+//! # Implementation Notes
+//!
+//! - The module is intentionally representation-focused; it does not attempt to
+//!   realize a state-space model by itself.
+//! - Dense block assembly is used because that is the right practical trade for
+//!   the current ERA/OKID workflow.
 
 mod error;
 mod hankel;

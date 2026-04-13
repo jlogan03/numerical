@@ -7,6 +7,38 @@
 //!
 //! They are still linear and time-invariant, but they are not finite-order
 //! rational transfer functions because of the explicit `exp(-Ls)` delay term.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Process-control view.** These models capture the dominant gain, lag,
+//!    and delay that matter for everyday tuning and process interpretation.
+//! 2. **Delay-honest view.** They also serve as a reminder that pure delay is
+//!    linear but not a finite-order rational transfer function, so it deserves
+//!    an explicit model surface instead of being hidden in a polynomial proxy.
+//!
+//! # Glossary
+//!
+//! - **FOPDT:** First-order-plus-dead-time model.
+//! - **SOPDT:** Second-order-plus-dead-time model.
+//! - **Dead time / transport delay:** Pure delay factor `exp(-L s)`.
+//!
+//! # Mathematical Formulation
+//!
+//! The two model families exposed here are:
+//!
+//! - `FOPDT: K exp(-L s) / (tau s + 1)`
+//! - `SOPDT: K exp(-L s) / ((tau_1 s + 1)(tau_2 s + 1))`
+//!
+//! Frequency response evaluates the delay exactly, and time-domain step
+//! response helpers use the corresponding delayed closed forms.
+//!
+//! # Implementation Notes
+//!
+//! - The models are continuous-time only in this first pass.
+//! - Delay is preserved explicitly in analysis helpers rather than converted to
+//!   a rational approximation.
+//! - These public types are shared with the PID-design layer so fitted process
+//!   models and hand-specified ones follow the same contract.
 
 use super::{BodeData, LtiError, NicholsData, NyquistData, util::unwrap_phase_deg};
 use faer::complex::Complex;

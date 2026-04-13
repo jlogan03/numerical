@@ -17,6 +17,37 @@
 //! That is not the asymptotically best dense algorithm, but it is a reliable
 //! reference path that fits the current control module cleanly and unlocks
 //! dense discrete Gramians for balanced truncation work.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Sampled-energy view.** Stein equations play the same role for
+//!    discrete-time systems that Lyapunov equations play for continuous-time
+//!    systems.
+//! 2. **Lifted-linear-system view.** The dense path again treats the matrix
+//!    equation as an ordinary linear system after vectorization.
+//!
+//! # Glossary
+//!
+//! - **Cayley transform:** Map used here to reuse continuous-time LR-ADI ideas
+//!   on a discrete-time problem.
+//! - **Stein equation:** Discrete-time Gramian equation `X - A X A^H = Q`.
+//!
+//! # Mathematical Formulation
+//!
+//! The dense reference problem is:
+//!
+//! - `X - A X A^H = Q`
+//!
+//! The sparse low-rank path maps the discrete equation to a continuous-time
+//! Lyapunov problem via a Cayley transform, then reuses low-rank ADI.
+//!
+//! # Implementation Notes
+//!
+//! - Dense solves are exact reference-style solves for modest problem sizes.
+//! - Sparse solves inherit the shift policy from the continuous low-rank
+//!   Lyapunov implementation after the Cayley map.
+//! - The API mirrors the Lyapunov module on purpose so dense/sparse Gramian
+//!   workflows line up across time domains.
 
 use super::lyapunov::{LowRankLyapunovSolve, LyapunovParams, ShiftStrategy};
 use crate::sparse::SparseLuError;

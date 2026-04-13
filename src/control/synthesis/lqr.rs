@@ -8,6 +8,36 @@
 //! - Riccati solution `X`
 //! - closed-loop state matrix `A - B K`
 //! - residual and stabilizing diagnostics
+//!
+//! # Two Intuitions
+//!
+//! 1. **Optimal-tradeoff view.** LQR chooses the feedback gain that best
+//!    balances state regulation against control effort for a quadratic cost.
+//! 2. **Packaging view.** In code, this module is mostly a thin adapter that
+//!    turns a Riccati solve into the controller-side quantities users actually
+//!    want to inspect.
+//!
+//! # Glossary
+//!
+//! - **Quadratic cost:** Objective weighting state error by `Q` and control
+//!   effort by `R`.
+//! - **Stabilizing solution:** Riccati solution whose induced closed loop is
+//!   stable.
+//!
+//! # Mathematical Formulation
+//!
+//! The returned gain satisfies:
+//!
+//! - continuous: `u = -K x`, `K = R^-1 B^H X`
+//! - discrete: `u = -K x`, `K = (R + B^H X B)^-1 B^H X A`
+//!
+//! where `X` is the CARE or DARE solution.
+//!
+//! # Implementation Notes
+//!
+//! - The module intentionally contains little new linear algebra.
+//! - All numerical difficulty is delegated to the Riccati layer, and the solve
+//!   diagnostics are forwarded into the returned `LqrSolve`.
 
 use crate::control::matrix_equations::{RiccatiError, solve_care_dense, solve_dare_dense};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};

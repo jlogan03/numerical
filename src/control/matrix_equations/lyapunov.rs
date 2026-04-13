@@ -26,6 +26,39 @@
 //!
 //! This keeps the implementation numerically explicit and lets later work add
 //! shift heuristics or promoted complex shifts without rewriting the outer API.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Energy view.** The Lyapunov equation measures how much state energy is
+//!    reachable or observable in a stable continuous-time system.
+//! 2. **Linear-system view.** It is also just a linear equation in the unknown
+//!    entries of `X`; the dense solver literally treats it that way by
+//!    vectorizing the matrix.
+//!
+//! # Glossary
+//!
+//! - **Gramian:** Positive semidefinite matrix summarizing reachability or
+//!   observability energy.
+//! - **LR-ADI:** Low-rank alternating-direction implicit iteration.
+//! - **Residual factor:** Low-rank factor whose norm bounds the current
+//!   Lyapunov residual.
+//!
+//! # Mathematical Formulation
+//!
+//! The core equation is:
+//!
+//! - `A X + X A^H + Q = 0`
+//!
+//! Dense solves vectorize this into a Kronecker-sum system. Sparse low-rank
+//! solves seek `X ≈ Z Z^H` through LR-ADI.
+//!
+//! # Implementation Notes
+//!
+//! - Dense solves favor clarity and reference correctness over asymptotic
+//!   optimality.
+//! - Sparse solves currently require user-provided ADI shifts.
+//! - The same solver surface underlies the controllability and observability
+//!   Gramian helper entry points.
 
 use crate::sparse::compensated::{CompensatedField, CompensatedSum, sum2};
 use crate::sparse::{SparseLu, SparseLuError};

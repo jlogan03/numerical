@@ -11,6 +11,51 @@
 //! matrix-equation routines in [`crate::control::matrix_equations::lyapunov`]. It gives those routines a
 //! structured `A/B/C/D` home and makes the time domain part of the type
 //! instead of leaving it as an implicit convention at the call site.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Dynamics view.** State space exposes the internal memory of a system:
+//!    `x` stores what the past is still doing to the future.
+//! 2. **Interconnection view.** It is also the representation in which
+//!    composition, feedback, observers, and model reduction are easiest to
+//!    express without inflating polynomial degree.
+//!
+//! # Glossary
+//!
+//! - **State matrix `A`:** Internal dynamics.
+//! - **Input matrix `B`:** How the input drives the state.
+//! - **Output matrix `C`:** How the state is observed.
+//! - **Feedthrough `D`:** Instantaneous input-output map.
+//! - **ZOH:** Zero-order hold, the standard sampled-input assumption for `c2d`.
+//!
+//! # Mathematical Formulation
+//!
+//! The same `A/B/C/D` storage supports both:
+//!
+//! - continuous time: `x' = A x + B u`, `y = C x + D u`
+//! - discrete time: `x[k+1] = A x[k] + B u[k]`, `y[k] = C x[k] + D u[k]`
+//!
+//! Similarity-related realizations represent the same external transfer map,
+//! but in different internal coordinates.
+//!
+//! # Implementation Notes
+//!
+//! - The time domain is carried in the type, not as a loose runtime flag.
+//! - Dense state space is the main manipulation surface; sparse state space is
+//!   available where the algorithms are already credible.
+//! - Exact discrete integer delays are represented by explicit shift-register
+//!   state augmentation.
+//!
+//! # Feature Matrix
+//!
+//! | Feature | Dense continuous | Dense discrete | Sparse continuous | Sparse discrete |
+//! | --- | --- | --- | --- | --- |
+//! | Construction / validation | yes | yes | yes | yes |
+//! | `c2d` / `d2c` | yes | yes | no | no |
+//! | Structural composition | yes | yes | no | no |
+//! | Gramian adapters | yes | yes | no | no |
+//! | Controller / observer helpers | yes | yes | no | no |
+//! | Exact integer delays | no | yes | no | no |
 
 pub(crate) mod convert;
 mod domain;

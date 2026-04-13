@@ -1,3 +1,30 @@
+//! Discrete-time Markov-parameter sequences.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Impulse-response view.** A Markov sequence is the system's
+//!    impulse-response written one sample block at a time.
+//! 2. **Identification-currency view.** It is the format that identification
+//!    and realization algorithms exchange before they decide on any particular
+//!    internal state coordinates.
+//!
+//! # Glossary
+//!
+//! - **Markov block `H_k`:** Output-by-input impulse-response block at lag `k`.
+//! - **Direct term `D`:** Zeroth Markov block `H_0`.
+//!
+//! # Mathematical Formulation
+//!
+//! For a discrete-time state-space model,
+//! `H_0 = D` and `H_k = C A^(k-1) B` for `k >= 1`.
+//!
+//! # Implementation Notes
+//!
+//! - The container enforces a single fixed block shape because later Hankel
+//!   assembly depends on that rectangular block grid.
+//! - Sparse and dense state-space helpers both materialize their Markov
+//!   sequences into the same owned dense block representation.
+
 use super::error::RealizationError;
 use super::hankel::{BlockHankel, ShiftedBlockHankelPair};
 use crate::control::lti::{DiscreteStateSpace, SparseDiscreteStateSpace};

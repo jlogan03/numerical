@@ -11,6 +11,34 @@
 //! The resulting projection factors can be used directly by balanced
 //! truncation, but they are also useful on their own for model-order analysis
 //! and future realization algorithms.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Balancing-core view.** HSVD is the algebraic middle layer between raw
+//!    Gramian data and a reduced model.
+//! 2. **Energy-ranking view.** It tells you which state directions are jointly
+//!    easy to control and easy to observe, then orders those directions by
+//!    importance.
+//!
+//! # Glossary
+//!
+//! - **Hankel singular value:** Magnitude measuring joint
+//!   controllability/observability importance.
+//! - **Balancing core:** Matrix built from Gramian factors before the SVD.
+//! - **Projection operators:** Left/right maps used to compress the state.
+//!
+//! # Mathematical Formulation
+//!
+//! Given Gramian factors `Rc` and `Ro`, the module forms the core `Ro^H Rc`,
+//! computes its SVD, and uses the retained factors to assemble balanced
+//! projection operators.
+//!
+//! # Implementation Notes
+//!
+//! - Dense Gramian inputs go through explicit PSD factor extraction.
+//! - The same retained internals are reused directly by balanced truncation.
+//! - Truncation policy is centralized in `HsvdParams` so higher layers see the
+//!   same order/tolerance behavior.
 
 use crate::decomp::{DecompError, DenseDecompParams, dense_self_adjoint_eigen, dense_svd};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};

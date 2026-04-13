@@ -12,6 +12,35 @@
 //! the caller to own the numeric factor storage directly, so this module keeps
 //! an owned `Vec<T>` of factor values and rebuilds short-lived `LltRef` /
 //! `LdltRef` views when solving.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Factorization view.** Cholesky solves a sparse linear system by
+//!    factoring a structured positive-definite or symmetric-indefinite matrix
+//!    once and then reusing the factors.
+//! 2. **Staged-wrapper view.** This module is also about preserving `faer`'s
+//!    symbolic/numeric split so repeated solves on the same sparsity pattern do
+//!    not redo the expensive symbolic work.
+//!
+//! # Glossary
+//!
+//! - **LLT / LDLT:** Cholesky-style factorizations for SPD and symmetric
+//!   indefinite systems.
+//! - **Symbolic analysis:** Pattern-only phase that allocates and orders the
+//!   factorization.
+//! - **Numeric refactorization:** Reuse of the symbolic analysis with new
+//!   numeric values.
+//!
+//! # Mathematical Formulation
+//!
+//! The solver factors the sparse system matrix into triangular pieces and then
+//! applies forward/back substitution, optionally reused as a preconditioner.
+//!
+//! # Implementation Notes
+//!
+//! - Numeric values are owned in a Rust `Vec<T>` so refactorization can happen
+//!   in place.
+//! - The same wrapper acts as both direct solver and iterative preconditioner.
 
 use super::col::col_from_slice;
 use super::precond::Precond;

@@ -28,6 +28,38 @@
 //! The returned result always includes the actual projection operators used to
 //! build the reduced model, and can optionally retain more of the internal
 //! balancing algebra on request.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Input-output view.** Balanced truncation removes states that are both
+//!    hard to reach from the inputs and hard to see at the outputs.
+//! 2. **Projection view.** It is also just a carefully chosen pair of left and
+//!    right projection matrices built from the HSVD core.
+//!
+//! # Glossary
+//!
+//! - **Balanced coordinates:** Coordinates where controllability and
+//!   observability energies are aligned and diagonalized together.
+//! - **Tail bound:** Classical balanced-truncation error bound based on
+//!   discarded Hankel singular values.
+//!
+//! # Mathematical Formulation
+//!
+//! The module solves the appropriate Gramians, computes HSVD, and forms a
+//! reduced model:
+//!
+//! - `A_r = W^H A V`
+//! - `B_r = W^H B`
+//! - `C_r = C V`
+//! - `D_r = D`
+//!
+//! with `V` and `W` built from the retained balanced directions.
+//!
+//! # Implementation Notes
+//!
+//! - The module is a workflow layer on top of Gramian solvers plus `hsvd`.
+//! - Dense and low-rank workflows share the same outward result contract.
+//! - Stability is a precondition, not an internal stabilization step.
 
 use super::hsvd::{HsvdError, hsvd_from_dense_gramians, hsvd_from_factors};
 use crate::control::lti::{

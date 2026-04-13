@@ -28,6 +28,32 @@
 //! is exactly symmetric/Hermitian, the row and column norms match at each
 //! iteration, so the left and right updates also match. In that case the
 //! general asymmetric algorithm naturally collapses to the symmetric one.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Units view.** Equilibration changes the units of equations and unknowns
+//!    so no row or column dominates purely because of scale.
+//! 2. **Preconditioning view.** It is a cheap first layer of conditioning
+//!    improvement that often makes later direct or iterative solves behave much
+//!    better without changing the true solution.
+//!
+//! # Glossary
+//!
+//! - **Row scale / column scale:** Positive diagonal scaling factors.
+//! - **Infinity norm balancing:** Matching row/column max magnitudes toward
+//!   one.
+//!
+//! # Mathematical Formulation
+//!
+//! The module iteratively builds diagonal scalings `D_r` and `D_c` so the
+//! scaled matrix `D_r A D_c` has row and column infinity norms near one.
+//!
+//! # Implementation Notes
+//!
+//! - Updates are simultaneous on rows and columns rather than alternating one
+//!   side to convergence before the other.
+//! - The same scales can be applied consistently to matrices, vectors, and
+//!   solution recovery.
 
 use faer::sparse::{
     SparseColMat, SparseColMatRef, SparseRowMat, SparseRowMatRef, SymbolicSparseColMatRef,

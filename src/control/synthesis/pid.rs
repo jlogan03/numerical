@@ -12,6 +12,37 @@
 //! a separate view of the same unsaturated controller, expressed as continuous
 //! error dynamics and discretized through the existing state-space conversion
 //! path when the caller asks for a sampled LTI model.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Operator view.** PID is the most practical low-order controller: react
+//!    to the current error, accumulated error, and error trend.
+//! 2. **State-machine view.** The implementation here is a sampled controller
+//!    with a small explicit runtime state, optional saturation logic, and an
+//!    optional filtered derivative path.
+//!
+//! # Glossary
+//!
+//! - **Anti-windup:** Strategy used to keep the integrator from accumulating
+//!   unusable error under actuator limits.
+//! - **Back-calculation:** Uses the difference between commanded and applied
+//!   control to unwind the integrator.
+//! - **PIDF:** PID with a first-order filtered derivative term.
+//!
+//! # Mathematical Formulation
+//!
+//! The runtime controller computes a sampled approximation of:
+//!
+//! - `u = K_p e + K_i integral(e) + K_d * filtered(de/dt)`
+//!
+//! with nonlinear wrappers for clamp or back-calculation anti-windup.
+//!
+//! # Implementation Notes
+//!
+//! - Linear export helpers are only valid for the linear `AntiWindup::None`
+//!   mode.
+//! - Back-calculation is modeled around an external applied-command signal,
+//!   which makes it more general than a built-in clamp-only correction.
 
 use crate::control::lti::state_space::{
     ContinuousStateSpace, DiscreteStateSpace, DiscretizationMethod, StateSpaceError,

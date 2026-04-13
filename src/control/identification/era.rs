@@ -1,3 +1,36 @@
+//! Eigensystem realization algorithm (ERA).
+//!
+//! # Two Intuitions
+//!
+//! 1. **Impulse-response view.** ERA turns the first few impulse-response
+//!    blocks of a system into a compact state-space model that reproduces those
+//!    blocks.
+//! 2. **Shifted-subspace view.** The same procedure can be seen as discovering
+//!    a low-rank shift-invariant subspace inside a pair of block-Hankel
+//!    matrices and reading the dynamics matrix `A` out of the shift.
+//!
+//! # Glossary
+//!
+//! - **Markov sequence:** Discrete-time impulse-response blocks `H_k`.
+//! - **Shifted Hankel pair:** Two Hankel matrices offset by one time step.
+//! - **Retained order:** Rank or model size kept after truncation.
+//!
+//! # Mathematical Formulation
+//!
+//! ERA builds a block-Hankel pair `(H_0, H_1)`, computes an SVD of `H_0`, and
+//! uses the retained singular subspace to form a realization whose `A` matrix
+//! is the one-step shift seen through that subspace.
+//!
+//! # Implementation Notes
+//!
+//! - The module accepts either a raw Markov sequence or an already assembled
+//!   shifted Hankel pair.
+//! - The direct term `D = H_0` must be supplied explicitly on the shifted-pair
+//!   entry point because the shifted pair alone does not contain it.
+//! - Returned internals mirror the actual algebra used to build the realized
+//!   model so later debugging or research workflows can inspect the retained
+//!   subspace data.
+
 use crate::control::lti::state_space::{DiscreteStateSpace, StateSpaceError};
 use crate::control::realization::{MarkovSequence, RealizationError, ShiftedBlockHankelPair};
 use crate::decomp::{DecompError, DenseDecompParams, dense_svd};

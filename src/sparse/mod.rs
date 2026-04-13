@@ -1,4 +1,47 @@
 //! Sparse linear algebra wrappers and preconditioning utilities.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Solver view.** This subsystem provides the direct and iterative sparse
+//!    linear algebra needed by the control and decomposition layers.
+//! 2. **Building-block view.** It also exposes the supporting pieces that make
+//!    those solvers composable: compensated reductions, sparse matvec traits,
+//!    block preconditioners, and Schur-complement operators.
+//!
+//! # Glossary
+//!
+//! - **CSC / CSR:** Sparse compressed-column / compressed-row storage.
+//! - **Preconditioner:** Approximate inverse used inside an iterative solver.
+//! - **Iterative refinement:** Residual-correction loop on top of a direct
+//!   factorization.
+//! - **Schur complement:** Reduced operator formed by eliminating one block of
+//!   a block system.
+//!
+//! # Mathematical Formulation
+//!
+//! The major solver forms are:
+//!
+//! - direct factorizations `P A Q = L U` or sparse Cholesky variants
+//! - iterative Krylov solve for `A x = b`
+//! - block preconditioner applications that approximate `A^-1`
+//!
+//! # Implementation Notes
+//!
+//! - The sparse surface is designed so direct factorizations can also act as
+//!   preconditioners.
+//! - Compensated reductions are kept small and reusable so high-level modules
+//!   can opt into improved residual checks.
+//! - Most wrappers are staged around `faer`'s symbolic/numeric split.
+//!
+//! # Feature Matrix
+//!
+//! | Feature | Direct | Iterative | Preconditioning | Complex support |
+//! | --- | --- | --- | --- | --- |
+//! | LU | yes | refinement only | yes | yes |
+//! | Cholesky | yes | no | yes | yes |
+//! | BiCGSTAB | no | yes | yes | yes |
+//! | Equilibration | n/a | assists | assists | yes |
+//! | Block/Schur operators | n/a | assists | yes | yes |
 
 /// BiCGSTAB iterative solver.
 pub mod bicgstab;

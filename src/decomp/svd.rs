@@ -4,6 +4,33 @@
 //! may use its partial matrix-free backend for dominant-component requests. The
 //! sparse / matrix-free path is always partial and always requests a fixed
 //! number of leading singular triplets.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Range/nullspace view.** SVD finds the most important input and output
+//!    directions of an operator and ranks them by gain.
+//! 2. **Truncation-policy view.** The wrappers here also define how dense and
+//!    sparse backends present their singular triplets to the rest of the crate:
+//!    ordered, truncated, and accompanied by explicit diagnostics.
+//!
+//! # Glossary
+//!
+//! - **Singular triplet:** One left vector, singular value, and right vector.
+//! - **Thin SVD:** Economy-size dense factorization.
+//! - **Partial SVD:** Dominant-component solve that returns only the largest
+//!   singular directions.
+//!
+//! # Mathematical Formulation
+//!
+//! The factorization is `A = U Sigma V^H`, with the returned singular values
+//! ordered by descending magnitude.
+//!
+//! # Implementation Notes
+//!
+//! - Dense wrappers may compute a full thin SVD and then truncate.
+//! - Sparse wrappers are always dominant-component Krylov solves.
+//! - Wrapper-owned diagnostics recompute residual and orthogonality checks
+//!   rather than trusting backend ordering alone.
 
 use super::{
     DecompError, DecompInfo, DenseDecompParams, PartialSvd, SparseDecompParams,

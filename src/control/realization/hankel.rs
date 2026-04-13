@@ -1,3 +1,31 @@
+//! Block-Hankel assembly utilities for realization algorithms.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Structured-matrix view.** The Hankel matrix is a rearrangement of the
+//!    Markov sequence that makes time shifts explicit in its anti-diagonals.
+//! 2. **Subspace view.** ERA and related methods use this structure because a
+//!    low-rank factorization of the Hankel pair exposes the state subspace.
+//!
+//! # Glossary
+//!
+//! - **Anti-diagonal rule:** Block `(i, j)` stores `H_{start + i + j}`.
+//! - **Shifted pair:** Two Hankel matrices whose top-left blocks differ by one
+//!   Markov index.
+//!
+//! # Mathematical Formulation
+//!
+//! If the top-left block is `H_s`, then the Hankel matrix stores
+//! `H_{s+i+j}` at block `(i, j)`. The shifted pair `(H_0, H_1)` is the basic
+//! data object used by ERA.
+//!
+//! # Implementation Notes
+//!
+//! - The matrix is assembled densely because that is the right practical input
+//!   to the current dense SVD-based realization path.
+//! - The typed wrapper keeps the block geometry alongside the raw matrix so
+//!   callers do not need to infer it later.
+
 use super::error::RealizationError;
 use super::markov::MarkovSequence;
 use faer::{Mat, MatRef};

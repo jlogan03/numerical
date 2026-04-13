@@ -6,6 +6,46 @@
 //! - [`lyapunov`] for continuous-time Lyapunov equations and Gramians
 //! - [`stein`] for discrete-time Stein equations and Gramians
 //! - [`riccati`] for continuous/discrete algebraic Riccati equations
+//!
+//! # Two Intuitions
+//!
+//! 1. **Equation-solver view.** These routines solve the matrix equations that
+//!    appear repeatedly under higher-level control workflows.
+//! 2. **Energy-and-optimality view.** The same equations define controllability
+//!    and observability energy (Lyapunov/Stein) and optimal control or
+//!    estimation tradeoffs (Riccati).
+//!
+//! # Glossary
+//!
+//! - **Lyapunov equation:** Continuous-time Gramian equation.
+//! - **Stein equation:** Discrete-time Gramian equation.
+//! - **CARE / DARE:** Continuous/discrete algebraic Riccati equations.
+//! - **ADI:** Alternating-direction implicit iteration for low-rank solves.
+//!
+//! # Mathematical Formulation
+//!
+//! Core equations in this module are:
+//!
+//! - Lyapunov: `A X + X A^H + Q = 0`
+//! - Stein: `X - A X A^H = Q`
+//! - CARE / DARE: algebraic Riccati equations for optimal regulator and
+//!   estimator design
+//!
+//! # Implementation Notes
+//!
+//! - Dense paths favor explicit, reference-style algorithms.
+//! - Sparse paths currently focus on low-rank Gramian workflows rather than
+//!   sparse Riccati solvers.
+//! - These routines are intentionally reusable and avoid controller- or
+//!   estimator-specific packaging.
+//!
+//! # Feature Matrix
+//!
+//! | Equation | Dense | Sparse / low-rank | Continuous | Discrete |
+//! | --- | --- | --- | --- | --- |
+//! | Lyapunov | yes | yes | yes | no |
+//! | Stein | yes | yes | no | yes |
+//! | Riccati | yes | no | yes | yes |
 
 pub mod lyapunov;
 pub mod riccati;

@@ -13,6 +13,53 @@
 //! The public API returns the Riccati solution together with the induced
 //! state-feedback gain and a post-solve stabilizing check on the recovered
 //! closed-loop matrix.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Optimality view.** Riccati equations encode the tradeoff between state
+//!    error and control effort that underlies optimal regulators and
+//!    estimators.
+//! 2. **Invariant-subspace view.** Numerically, the dense solvers here recover
+//!    the Riccati solution from a stable invariant subspace of an augmented
+//!    Hamiltonian or symplectic operator.
+//!
+//! # Glossary
+//!
+//! - **CARE / DARE:** Continuous/discrete algebraic Riccati equations.
+//! - **Hamiltonian matrix:** Continuous-time augmented matrix whose stable
+//!   invariant subspace encodes the CARE solution.
+//! - **Symplectic pencil:** Discrete-time generalized eigenproblem whose stable
+//!   invariant subspace encodes the DARE solution.
+//!
+//! # Mathematical Formulation
+//!
+//! For system matrices `A in C^(n x n)`, `B in C^(n x m)`, state weighting
+//! `Q = Q^H in C^(n x n)`, and control weighting `R = R^H in C^(m x m)`, the
+//! module solves the stabilizing Hermitian solution `X = X^H` of:
+//!
+//! - continuous-time CARE:
+//!   `A^H X + X A - X B R^-1 B^H X + Q = 0`
+//! - discrete-time DARE:
+//!   `A^H X A - X - A^H X B (R + B^H X B)^-1 B^H X A + Q = 0`
+//!
+//! It then recovers the corresponding state-feedback gain for the convention
+//! `u = -K x`:
+//!
+//! - CARE gain: `K = R^-1 B^H X`
+//! - DARE gain: `K = (R + B^H X B)^-1 B^H X A`
+//!
+//! A returned solution is considered stabilizing when the induced closed-loop
+//! matrix is stable in the appropriate domain:
+//!
+//! - continuous time: `A - B K` has eigenvalues in the open left half-plane
+//! - discrete time: `A - B K` has eigenvalues strictly inside the unit disk
+//!
+//! # Implementation Notes
+//!
+//! - CARE uses dense eigen decomposition of the Hamiltonian matrix.
+//! - DARE uses dense generalized eigen decomposition of the symplectic pencil.
+//! - Residuals are recomputed in the original Riccati equation rather than
+//!   inferred from backend diagnostics.
 
 use crate::decomp::{
     DecompError, DenseDecompParams, dense_eigen, dense_eigenvalues, dense_generalized_eigen,

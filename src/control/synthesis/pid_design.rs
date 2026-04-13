@@ -14,6 +14,40 @@
 //! - discrete-time step-response optimization from arbitrary identified or
 //!   modeled plants
 //! - a pragmatic `OKID -> ERA -> PID` bridge for tuning from sampled I/O data
+//!
+//! # Two Intuitions
+//!
+//! 1. **Process-model view.** PID tuning is easiest when the plant is reduced
+//!    to a small interpretable surrogate like FOPDT or SOPDT.
+//! 2. **Closed-loop-objective view.** The richer design paths in this module
+//!    tune gains by directly evaluating the modeled closed-loop behavior rather
+//!    than by relying only on hand-derived formulas.
+//!
+//! # Glossary
+//!
+//! - **SIMC:** Simple internal model control tuning rules.
+//! - **`lambda`:** Desired closed-loop time scale in the SIMC tuning rules.
+//! - **FOPDT / SOPDT:** Low-order process models with explicit delay.
+//! - **OKID/ERA path:** Identification-driven path from sampled I/O data to a
+//!   discrete model and then to a tuned PID controller.
+//!
+//! # Mathematical Formulation
+//!
+//! The module combines:
+//!
+//! - low-order process-model fitting from step data
+//! - SIMC-style analytical tuning rules
+//! - sampled frequency-domain and step-response objective functions
+//! - identification-driven tuning on an ERA-realized discrete model
+//!
+//! # Implementation Notes
+//!
+//! - FOPDT and SOPDT fitting use structured seeds followed by
+//!   Levenberg-Marquardt refinement.
+//! - The optimization-backed paths remain SISO and `f64`-oriented in this
+//!   first implementation.
+//! - Public FOPDT / SOPDT model types are shared with the LTI layer to avoid
+//!   parallel process-model type hierarchies.
 
 use super::pid::{AntiWindup, Pid, PidError};
 use crate::control::identification::{

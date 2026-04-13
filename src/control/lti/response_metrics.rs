@@ -3,6 +3,38 @@
 //! The first implementation is intentionally grid-based. Metrics are extracted
 //! from sampled step responses rather than exact symbolic solves, so the
 //! caller's sampling grid determines the final accuracy.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Control-summary view.** This module compresses a whole step-response
+//!    trace down to the small set of numbers engineers usually compare first.
+//! 2. **Threshold-crossing view.** The same metrics can be understood as a set
+//!    of geometric events on a sampled curve: when did it first cross 10%,
+//!    peak, and stay inside the settling band?
+//!
+//! # Glossary
+//!
+//! - **Rise time:** Time between two configured fractions of the final change.
+//! - **Settling time:** Last time after which the response stays in a tolerance
+//!   band.
+//! - **Overshoot:** Peak excursion above the final value, normalized by the
+//!   total step excursion.
+//!
+//! # Mathematical Formulation
+//!
+//! Given sampled step-response values `y[k]`, the module estimates:
+//!
+//! - rise time from lower/upper fraction crossings
+//! - settling time from the final sustained entrance into a relative band
+//! - overshoot and undershoot from direction-aware extrema
+//! - steady-state error from the final sampled value
+//!
+//! # Implementation Notes
+//!
+//! - Metrics are sampled-grid estimates, not symbolic properties of the exact
+//!   underlying system.
+//! - The implementation is intentionally SISO-focused because these metrics are
+//!   ambiguous without a channel-selection policy in MIMO problems.
 
 use super::{
     ContinuousSos, ContinuousStateSpace, ContinuousTransferFunction, ContinuousZpk, DiscreteSos,

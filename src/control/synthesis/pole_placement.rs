@@ -17,6 +17,35 @@
 //! The MIMO path is still intentionally first-pass: it is useful for dense
 //! real systems and real desired poles, but it is not yet a full general
 //! eigenstructure-assignment package.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Spectral-shaping view.** Pole placement directly asks for the desired
+//!    closed-loop or estimator eigenvalues instead of solving an optimization
+//!    problem.
+//! 2. **Controllability view.** In the SISO case the implementation reduces
+//!    that request to controllability algebra through Ackermann's formula; in
+//!    the first-pass MIMO case it extends the idea to a dense real assignment
+//!    workflow.
+//!
+//! # Glossary
+//!
+//! - **Ackermann formula:** Closed-form SISO state-feedback pole placement.
+//! - **Observer placement:** Pole placement on the dual pair `(A^T, C^T)`.
+//! - **Closed-loop matrix:** `A - B K` or `A - L C`.
+//!
+//! # Mathematical Formulation
+//!
+//! The controller side chooses `K` so that the eigenvalues of `A - B K` match
+//! a requested set. The observer side chooses `L` so that the eigenvalues of
+//! `A - L C` match a requested set.
+//!
+//! # Implementation Notes
+//!
+//! - SISO state-feedback placement is Ackermann-based.
+//! - Observer placement is implemented by duality.
+//! - The current MIMO path is dense real and still conservative: complex MIMO
+//!   targets are intentionally deferred.
 
 use crate::control::lti::{ContinuousStateSpace, DiscreteStateSpace};
 use crate::decomp::{

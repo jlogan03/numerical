@@ -1,3 +1,34 @@
+//! Stabilized bi-conjugate-gradient sparse solver.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Krylov view.** BiCGSTAB iteratively builds better approximations to the
+//!    solution of `A x = b` using only matrix-vector products and
+//!    preconditioner applications.
+//! 2. **Residual-polishing view.** The "STAB" part is the method's attempt to
+//!    smooth the sometimes erratic convergence of BiCG by minimizing the
+//!    residual over a short scalar correction step each iteration.
+//!
+//! # Glossary
+//!
+//! - **Preconditioner:** Approximate inverse applied inside each iteration.
+//! - **Residual:** Current defect `b - A x`.
+//! - **Soft restart:** Heuristic reset used here to recover from loss of
+//!   numerical progress.
+//!
+//! # Mathematical Formulation
+//!
+//! BiCGSTAB updates a Krylov iterate using coupled bi-orthogonal search
+//! directions plus a scalar stabilization step chosen from the current
+//! residual-polishing subproblem.
+//!
+//! # Implementation Notes
+//!
+//! - The implementation uses compensated sparse reductions for the sensitive
+//!   inner products and residual norms it owns.
+//! - Any `Precond` implementation can be dropped in, including lagged sparse LU
+//!   and Cholesky factorizations from this crate.
+
 use super::col::{col_from_slice, col_slice, col_slice_mut, copy_col, zero_col};
 use super::compensated::{CompensatedField, dotc, norm2, norm2_sq, sum2, sum3};
 use super::matvec::SparseMatVec;

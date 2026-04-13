@@ -4,6 +4,42 @@
 //!
 //! - [`hsvd`] for the reusable balancing core
 //! - [`balanced`] for dense and low-rank balanced truncation
+//!
+//! # Two Intuitions
+//!
+//! 1. **Compression view.** Reduction replaces a high-order model by a smaller
+//!    one that keeps the input-output behavior users care about.
+//! 2. **Energy view.** Balanced methods rank states by joint
+//!    controllability/observability energy and discard weak directions first.
+//!
+//! # Glossary
+//!
+//! - **HSVD:** Hankel singular value decomposition.
+//! - **Balanced truncation:** Projection-based model reduction built from HSVD.
+//! - **Projection matrices:** Left/right maps used to assemble the reduced
+//!   model.
+//!
+//! # Mathematical Formulation
+//!
+//! Balanced reduction works by finding coordinates where controllability and
+//! observability Gramians are simultaneously diagonal, then truncating the
+//! smallest Hankel singular directions.
+//!
+//! # Implementation Notes
+//!
+//! - HSVD is exposed as a reusable middle layer rather than being buried
+//!   inside balanced truncation.
+//! - Dense and low-rank workflows share the same truncation and diagnostic
+//!   policy.
+//! - Standard balanced truncation assumes asymptotic stability of the input
+//!   model.
+//!
+//! # Feature Matrix
+//!
+//! | Feature | Dense continuous | Dense discrete | Sparse / low-rank continuous | Sparse / low-rank discrete |
+//! | --- | --- | --- | --- | --- |
+//! | HSVD core | yes | yes | yes | yes |
+//! | Balanced truncation | yes | yes | yes | yes |
 
 pub mod balanced;
 pub mod hsvd;

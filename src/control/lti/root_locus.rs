@@ -6,6 +6,38 @@
 //! - it tracks branches by nearest-neighbor continuation between adjacent gain
 //!   samples
 //! - it does not attempt exact breakaway, asymptote, or branch-point solves
+//!
+//! # Two Intuitions
+//!
+//! 1. **Controller-gain view.** Root locus answers how the closed-loop poles
+//!    move as a scalar loop gain is increased.
+//! 2. **Parameterized-polynomial view.** The same object is a family of roots
+//!    of `D(s) + k N(s)` or `D(z) + k N(z)` sampled across `k`.
+//!
+//! # Glossary
+//!
+//! - **Branch:** One heuristically tracked pole trajectory across gains.
+//! - **Open-loop poles/zeros:** Roots of the plant/controller transfer map
+//!   before closing the loop.
+//! - **Breakaway:** Gain where branches meet or split; not solved exactly in
+//!   this first pass.
+//!
+//! # Mathematical Formulation
+//!
+//! For a SISO open-loop transfer `L = N / D`, unity negative-feedback
+//! closed-loop poles satisfy:
+//!
+//! - continuous/discrete alike: `D + k N = 0`
+//!
+//! The implementation samples those roots on a gain grid and then performs
+//! nearest-neighbor continuation to obtain branch-like trajectories.
+//!
+//! # Implementation Notes
+//!
+//! - Branch tracking is heuristic and should be interpreted as plotting help,
+//!   not as a proof of topological branch identity.
+//! - The helper intentionally stays SISO because scalar loop gain is the
+//!   classical root-locus setting.
 
 use super::util::{poly_add_aligned, poly_roots};
 use super::{

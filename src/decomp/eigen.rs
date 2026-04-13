@@ -10,6 +10,34 @@
 //!
 //! Dense full decompositions are supported for both cases. Sparse / matrix-free
 //! wrappers are partial dominant-component solvers.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Spectral-analysis view.** Eigendecomposition exposes the dominant modes
+//!    of a linear operator.
+//! 2. **Wrapper-policy view.** This module is also where the crate decides how
+//!    to order eigenpairs, how to truncate dense factorizations, and how to
+//!    report residual quality back to callers.
+//!
+//! # Glossary
+//!
+//! - **Self-adjoint:** Hermitian/symmetric matrix with orthogonal eigenvectors.
+//! - **Ritz pair:** Approximate eigenpair returned by a Krylov method.
+//! - **Generalized eigenpair:** Pair `(alpha, beta)` representing
+//!   `lambda = alpha / beta`.
+//!
+//! # Mathematical Formulation
+//!
+//! The dense wrappers solve `A v = lambda v`; the generalized wrapper solves
+//! `A v = lambda B v`; and the sparse wrappers return dominant Ritz pairs with
+//! explicit residual diagnostics.
+//!
+//! # Implementation Notes
+//!
+//! - Dense outputs are ordered by descending magnitude to match the rest of the
+//!   decomposition layer.
+//! - Sparse diagnostics are recomputed explicitly on the returned vectors.
+//! - Generalized eigen support currently returns right eigenvectors only.
 
 use super::{
     DecompError, DecompInfo, DenseDecompParams, PartialEigen, PartialGeneralizedEigen,

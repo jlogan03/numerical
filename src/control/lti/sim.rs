@@ -11,6 +11,40 @@
 //! Callers should convert `TransferFunction` or `Zpk` into one of those
 //! representations first instead of running high-order coefficient recurrences
 //! directly.
+//!
+//! # Two Intuitions
+//!
+//! 1. **DSP view.** This module is the runtime filtering surface for sampled
+//!    scalar signals, including both ordinary causal filtering and
+//!    forward-backward zero-phase filtering.
+//! 2. **Execution-kernel view.** It is also a deliberate restriction of the
+//!    public API to the two forms that are numerically credible for IIR
+//!    execution: explicit state-space recurrences and SOS cascades.
+//!
+//! # Glossary
+//!
+//! - **`filtfilt`:** Forward-backward filtering for zero-phase response.
+//! - **Odd/even reflection:** Common endpoint-padding conventions.
+//! - **DF2T:** Direct-form II transposed section recurrence.
+//!
+//! # Mathematical Formulation
+//!
+//! The module implements:
+//!
+//! - state-space recurrence `x[k+1] = A x[k] + B u[k]`, `y[k] = C x[k] + D u[k]`
+//! - sectionwise IIR recurrence for SOS cascades
+//! - forward-backward application `y = reverse(F(reverse(F(x))))`
+//!   with configurable endpoint padding
+//!
+//! # Implementation Notes
+//!
+//! - Padding is sampled logically instead of allocating a full padded copy of
+//!   the input by default.
+//! - Padding length is auto-shortened on short signals to avoid surprising
+//!   error paths.
+//! - `TransferFunction` and `Zpk` are intentionally excluded from direct
+//!   runtime simulation to avoid endorsing unstable high-order coefficient
+//!   recurrences.
 
 use super::{DiscreteSos, DiscreteStateSpace, LtiError};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum, sum2, sum3};

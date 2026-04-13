@@ -13,6 +13,64 @@
 //! top of the lower-level sparse solver layers. Dense conversion, dense
 //! full-spectrum analysis, and dense direct model manipulation remain the most
 //! complete paths.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Workflow view.** This module is the path a controls user walks in
+//!    practice: represent a plant, analyze it, identify or reduce it if
+//!    needed, design estimators and controllers, then simulate and evaluate
+//!    the closed loop.
+//! 2. **Dependency view.** This module is also a stack of reusable numerical
+//!    layers: matrix-equation solvers sit below reduction and synthesis;
+//!    realization and identification sit beside state-space modeling; and the
+//!    LTI layer provides the common representation surface above those kernels.
+//!
+//! # Glossary
+//!
+//! - **LTI:** Linear time-invariant.
+//! - **Gramian:** Matrix measuring controllability or observability energy.
+//! - **Riccati equation:** Matrix equation underlying LQR and Kalman design.
+//! - **ERA / OKID:** Data-driven realization and identification algorithms.
+//! - **HSVD / BT:** Hankel singular value decomposition and balanced
+//!   truncation.
+//! - **EKF / UKF:** Extended and unscented Kalman filters for nonlinear
+//!   estimation.
+//!
+//! # Mathematical Formulation
+//!
+//! The dominant model form throughout the subsystem is state space:
+//!
+//! - continuous: `x' = A x + B u`, `y = C x + D u`
+//! - discrete: `x[k+1] = A x[k] + B u[k]`, `y[k] = C x[k] + D u[k]`
+//!
+//! Higher-level algorithms are organized around that form:
+//!
+//! - estimation solves observer or Kalman problems for `A - L C`
+//! - synthesis solves controller problems for `A - B K`
+//! - reduction builds projection operators `V, W`
+//! - realization and identification recover `(A, B, C, D)` from response data
+//!
+//! # Implementation Notes
+//!
+//! - Higher-level workflows are dense-first, even though sparse solver support
+//!   exists underneath.
+//! - Continuous and discrete time are distinct in the type system.
+//! - The crate prefers explicit conversion and composition helpers over hidden
+//!   coercions between representations.
+//! - Public APIs generally return diagnostics together with the primary
+//!   numerical result instead of hiding convergence quality.
+//!
+//! # Feature Matrix
+//!
+//! | Subsystem | Main purpose | Dense | Sparse | Continuous | Discrete |
+//! | --- | --- | --- | --- | --- | --- |
+//! | `lti` | representation, analysis, filtering | yes | partial | yes | yes |
+//! | `matrix_equations` | Lyapunov / Stein / Riccati | yes | partial | yes | yes |
+//! | `reduction` | HSVD and balanced truncation | yes | partial | yes | yes |
+//! | `realization` | Markov and Hankel data structures | yes | n/a | no | yes |
+//! | `identification` | ERA and OKID | yes | no | no | yes |
+//! | `estimation` | LQE/Kalman/EKF/UKF | yes | no | partial | yes |
+//! | `synthesis` | LQR/LQG/PID/pole placement | yes | no | yes | yes |
 
 pub mod estimation;
 pub mod identification;

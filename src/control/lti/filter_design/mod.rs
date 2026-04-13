@@ -20,6 +20,50 @@
 //! enum. A bilinear-transformed Bessel filter is mathematically possible, but
 //! the current API omits it so users are not misled into expecting classical
 //! Bessel group-delay behavior from the resulting digital filter.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Prototype-transformation view.** Design starts from a normalized
+//!    lowpass prototype, then reshapes it into lowpass, highpass, bandpass, or
+//!    bandstop form and optionally maps it into the digital domain.
+//! 2. **Numerical-form view.** The same workflow is also about choosing the
+//!    right representation while the design evolves: roots first, sections
+//!    second, coefficients last.
+//!
+//! # Glossary
+//!
+//! - **Prototype:** Normalized analog lowpass filter used as a starting point.
+//! - **Prewarping:** Bilinear-transform frequency correction at one chosen
+//!   frequency.
+//! - **SOS:** Second-order sections, the preferred realized IIR form.
+//! - **Order selection:** Computing the smallest filter order that meets a
+//!   ripple/attenuation specification.
+//!
+//! # Mathematical Formulation
+//!
+//! The design flow is:
+//!
+//! 1. construct an analog lowpass prototype in `Zpk` form
+//! 2. apply an analog frequency transformation for the requested shape
+//! 3. for digital filters, apply the bilinear map `s = c * (1 - z^-1) / (1 + z^-1)`
+//! 4. convert to `Sos` or polynomial form only at the edge of the API
+//!
+//! # Implementation Notes
+//!
+//! - Root-based construction avoids unnecessary high-order polynomial
+//!   arithmetic during the numerically sensitive stages.
+//! - Digital Bessel is intentionally omitted from the type surface.
+//! - Order-selection helpers are spec-driven and produce the minimum order
+//!   consistent with the first-pass formulas in this module.
+//!
+//! # Feature Matrix
+//!
+//! | Family / shape | Analog | Digital | Lowpass | Highpass | Bandpass | Bandstop |
+//! | --- | --- | --- | --- | --- | --- | --- |
+//! | Butterworth | yes | yes | yes | yes | yes | yes |
+//! | Chebyshev I | yes | yes | yes | yes | yes | yes |
+//! | Bessel | yes | no | yes | yes | yes | yes |
+//! | Minimum-order selection | yes | yes | yes | yes | yes | yes |
 
 mod digital;
 mod error;

@@ -1,3 +1,33 @@
+//! Observer/Kalman filter identification (OKID).
+//!
+//! # Two Intuitions
+//!
+//! 1. **Regression view.** OKID is a structured linear regression that solves
+//!    for observer-Markov blocks from measured input/output data.
+//! 2. **Impulse-recovery view.** The same computation is a way to peel the
+//!    system's impulse-response sequence out of general forced-response data so
+//!    a realization method like ERA can use it next.
+//!
+//! # Glossary
+//!
+//! - **Observer-Markov block:** Regression coefficient block combining input
+//!   and output history.
+//! - **Markov block:** One discrete impulse-response block `H_k`.
+//! - **Regression horizon:** Number of observer-history lags used.
+//!
+//! # Mathematical Formulation
+//!
+//! OKID forms a lifted regression whose unknowns are observer-Markov blocks
+//! and then algebraically recovers the ordinary system Markov sequence from
+//! those fitted blocks.
+//!
+//! # Implementation Notes
+//!
+//! - The current implementation assumes a discrete-time LTI data-generating
+//!   model.
+//! - The solve uses a dense SVD-based pseudoinverse path so rank-deficiency is
+//!   detected explicitly instead of being hidden in a normal-equations solve.
+
 use crate::control::realization::MarkovSequence;
 use crate::decomp::{DecompError, DenseDecompParams, dense_svd};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};

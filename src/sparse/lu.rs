@@ -18,6 +18,34 @@
 //! When the factors correspond to the current matrix, that gives a refined
 //! direct solve. When the factors are lagged from a nearby matrix, the same
 //! mechanism acts like a correction iteration preconditioned by the stored LU.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Direct-solver view.** LU turns a sparse linear system into triangular
+//!    solves after one factorization.
+//! 2. **Reusable-operator view.** The same stored factors are useful even when
+//!    they are not exact for the current matrix: they become a practical lagged
+//!    preconditioner or a refinement engine.
+//!
+//! # Glossary
+//!
+//! - **Symbolic factorization:** Pattern-dependent setup phase.
+//! - **Numeric factorization:** Value-dependent phase for one matrix instance.
+//! - **Iterative refinement:** Residual-correction loop after the initial LU
+//!   solve.
+//!
+//! # Mathematical Formulation
+//!
+//! The direct solve uses sparse LU factors and triangular solves; the
+//! compensated path refines that solution by repeatedly solving correction
+//! equations against the stored LU factors.
+//!
+//! # Implementation Notes
+//!
+//! - The compensated refinement logic is wrapper-owned and therefore visible to
+//!   the crate's higher-level sparse workflows.
+//! - The type implements the preconditioner trait so the same factors can be
+//!   reused inside Krylov solvers.
 
 use super::col::{col_from_slice, col_slice, col_slice_mut, copy_col, zero_col};
 use super::compensated::{CompensatedField, norm2, sum2};

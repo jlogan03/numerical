@@ -26,6 +26,69 @@
 //! matrix-function actions and large-scale stability diagnostics, still belongs
 //! to later phases once the required Krylov and matrix-function machinery is in
 //! place.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Signal-flow view.** This is the part of the crate that answers
+//!    user-facing system questions: What are the poles? What does the step
+//!    response look like? What happens if I cascade two filters? How do I run
+//!    `filtfilt` on sampled data?
+//! 2. **Representation view.** This is also the interoperability layer between
+//!    several mathematically equivalent descriptions of the same SISO system:
+//!    state space, transfer function, zero-pole-gain, second-order sections,
+//!    and delay-aware process models.
+//!
+//! # Glossary
+//!
+//! - **DC gain:** Steady-state gain, evaluated at `s = 0` or `z = 1`.
+//! - **SOS:** Second-order sections, a numerically robust cascade form for IIR
+//!   filters.
+//! - **ZPK:** Zero-pole-gain representation.
+//! - **`S`, `T`, `KS`, `PS`:** Classical loop-sensitivity channels.
+//! - **Bode / Nyquist / Nichols:** Standard frequency-domain plotting data.
+//! - **FOPDT / SOPDT:** First-/second-order-plus-dead-time process models.
+//!
+//! # Mathematical Formulation
+//!
+//! The layer revolves around transfer maps:
+//!
+//! - continuous: `G(s) = C (s I - A)^-1 B + D`
+//! - discrete: `G(z) = C (z I - A)^-1 B + D`
+//!
+//! SISO alternate representations encode the same transfer map in different
+//! coordinates:
+//!
+//! - polynomial ratio form (`TransferFunction`)
+//! - zero/pole/root form (`Zpk`)
+//! - sectioned factorization (`Sos`)
+//! - explicit delay process models (`FopdtModel`, `SopdtModel`)
+//!
+//! # Implementation Notes
+//!
+//! - Dense state space is the most complete representation and often serves as
+//!   the bridge between alternate forms.
+//! - Digital runtime filtering is intentionally implemented only on
+//!   `DiscreteStateSpace`, `DiscreteSos`, and `Fir`, which are the numerically
+//!   credible execution forms.
+//! - Frequency-domain helper surfaces are generally sampled-grid based rather
+//!   than symbolic.
+//! - Continuous delay remains explicit in dedicated process-model types rather
+//!   than being folded into rational transfer functions.
+//!
+//! # Feature Matrix
+//!
+//! | Feature | Dense continuous | Dense discrete | Sparse continuous | Sparse discrete | TF/ZPK/SOS/FIR |
+//! | --- | --- | --- | --- | --- | --- |
+//! | State-space modeling | yes | yes | yes | yes | n/a |
+//! | Pole / stability analysis | yes | yes | partial | partial | yes (SISO) |
+//! | DC gain / transfer evaluation | yes | yes | yes | yes | yes |
+//! | Time-domain simulation | yes | yes | partial | yes | FIR yes, SOS yes, TF/ZPK via conversion |
+//! | Response metrics | yes | yes | no | no | yes (SISO) |
+//! | Loop analysis (`S`, `T`, margins, Nyquist, Nichols) | yes (SISO) | yes (SISO) | no | no | yes (SISO) |
+//! | Root locus | yes (SISO) | yes (SISO) | no | no | yes (SISO) |
+//! | IIR filter design | analog only | digital only | n/a | n/a | yes |
+//! | FIR / Savitzky-Golay | no | yes | n/a | n/a | FIR only |
+//! | Explicit delay-aware process models | yes | limited | no | no | process-model types |
 
 mod analysis;
 mod error;

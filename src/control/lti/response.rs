@@ -1,3 +1,41 @@
+//! Time-domain and frequency-response sampling for LTI models.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Experiment view.** This module asks "what would I measure if I probed
+//!    the model with an impulse, step, held input sequence, or sinusoid?"
+//! 2. **Operator-evaluation view.** It also samples the fundamental operators
+//!    behind those experiments: `exp(A t)` for continuous evolution,
+//!    repeated multiplication by `A` for discrete evolution, and the transfer
+//!    map on the imaginary axis or unit circle for frequency response.
+//!
+//! # Glossary
+//!
+//! - **Impulse response:** Output caused by a unit impulse input.
+//! - **Step response:** Output caused by a unit step input.
+//! - **ZOH simulation:** Continuous simulation under piecewise-constant held
+//!   inputs.
+//! - **Frequency response:** `G(jw)` or `G(e^{jw dt})`.
+//!
+//! # Mathematical Formulation
+//!
+//! Representative formulas used here are:
+//!
+//! - continuous impulse regular part: `C exp(A t) B`
+//! - continuous ZOH step/simulation: exact lifted state transition over each
+//!   sample interval
+//! - discrete simulation: repeated application of `x[k+1] = A x[k] + B u[k]`
+//! - frequency response: `C (s I - A)^-1 B + D` or `C (z I - A)^-1 B + D`
+//!
+//! # Implementation Notes
+//!
+//! - Continuous impulse responses return the direct-feedthrough impulse term
+//!   separately from the regular sampled part.
+//! - MIMO responses retain full output-by-input matrix blocks at each sampled
+//!   point.
+//! - Sparse support is targeted at transfer evaluation and discrete-time
+//!   simulation where the backend primitives are already available.
+
 use super::analysis::sparse_transfer_at_points;
 use super::error::LtiError;
 use super::state_space::convert::matrix_exponential;

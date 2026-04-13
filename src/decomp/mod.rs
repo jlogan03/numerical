@@ -20,6 +20,50 @@
 //! full decompositions, but its sparse / matrix-free eigendecomposition and SVD
 //! paths are restarted dominant-component solvers rather than full spectral
 //! factorizations.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Backend-normalization view.** This module hides the small but important
+//!    differences between several decomposition backends and returns a single
+//!    result contract to the rest of the crate.
+//! 2. **Diagnostic view.** It is also the place where the crate recomputes
+//!    residuals, orders components deterministically, and reports partial
+//!    convergence instead of treating every backend imperfection as a fatal
+//!    error.
+//!
+//! # Glossary
+//!
+//! - **Partial decomposition:** Only the dominant `k` components are computed.
+//! - **Ritz value/vector:** Approximate eigenpair returned by a Krylov method.
+//! - **Generalized eigenpair:** Pair `(alpha, beta)` representing
+//!   `lambda = alpha / beta`.
+//! - **BiLinOp / LinOp:** Matrix-free operator traits from `faer`.
+//!
+//! # Mathematical Formulation
+//!
+//! The module exposes:
+//!
+//! - eigendecomposition `A v = lambda v`
+//! - generalized eigendecomposition `A v = lambda B v`
+//! - singular-value decomposition `A = U Sigma V^H`
+//!
+//! with shared ordering and residual diagnostics over the returned dominant
+//! window.
+//!
+//! # Implementation Notes
+//!
+//! - Dense wrappers may compute a full backend factorization and then truncate.
+//! - Sparse wrappers are always dominant-component solvers.
+//! - Compensated arithmetic is used in wrapper-owned diagnostics, not as a
+//!   replacement for the backend kernels themselves.
+//!
+//! # Feature Matrix
+//!
+//! | Feature | Dense | Sparse / matrix-free | Self-adjoint | General |
+//! | --- | --- | --- | --- | --- |
+//! | Eigenvalues/eigenvectors | yes | yes | yes | yes |
+//! | Generalized eigen | yes | no | n/a | yes |
+//! | SVD | yes | yes | n/a | yes |
 
 pub mod eigen;
 pub mod operator;

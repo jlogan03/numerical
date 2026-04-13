@@ -11,6 +11,35 @@
 //! The design follows the standard steady-state separation-principle layout:
 //! compute a state-feedback gain `K`, compute an observer gain `L`, then wire
 //! them together into the dynamic controller that uses `u = r - K x_hat`.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Composition view.** LQG is not a new low-level solver here; it is the
+//!    act of wiring together the regulator and estimator that already exist.
+//! 2. **Architecture view.** It is the standard observer-based output-feedback
+//!    controller: estimate the state, then feed that estimate into the LQR
+//!    law.
+//!
+//! # Glossary
+//!
+//! - **Separation principle:** The regulator and estimator can be designed
+//!   independently under the standard linear-Gaussian assumptions.
+//! - **Dynamic controller realization:** State-space model of the compensator
+//!   itself.
+//!
+//! # Mathematical Formulation
+//!
+//! The packaged controller uses the regulator gain `K` and observer gain `L`
+//! to form a dynamic output-feedback controller whose internal state is the
+//! observer state `x_hat`.
+//!
+//! # Implementation Notes
+//!
+//! - This module reuses existing `LQR` / `LQE` layers instead of duplicating
+//!   their math.
+//! - The returned `controller` and `closed_loop` realizations are built with
+//!   the same observer/controller composition helper used elsewhere in the
+//!   state-space layer.
 
 use super::lqr::{LqrError, LqrSolve, dlqr_dense, lqr_dense};
 use crate::control::estimation::{EstimatorError, LqeSolve, dlqe_dense, lqe_dense};

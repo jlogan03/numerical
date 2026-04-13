@@ -4,6 +4,37 @@
 //! layer, there is no benefit in forcing runtime execution through state-space
 //! or polynomial-recurrence machinery when the taps themselves are already the
 //! numerically natural representation.
+//!
+//! # Two Intuitions
+//!
+//! 1. **Convolution view.** FIR filtering is just a sliding weighted average of
+//!    the recent input history.
+//! 2. **Polynomial-fit view.** Savitzky-Golay design interprets those weights
+//!    as the coefficients of a local least-squares polynomial fit evaluated at
+//!    the window center.
+//!
+//! # Glossary
+//!
+//! - **Tap:** One FIR coefficient.
+//! - **Group delay:** Constant sample delay of a linear-phase FIR.
+//! - **Savitzky-Golay filter:** FIR smoother or differentiator obtained from a
+//!   local polynomial least-squares fit.
+//!
+//! # Mathematical Formulation
+//!
+//! FIR output is
+//!
+//! - `y[k] = sum_i h[i] u[k-i]`
+//!
+//! and Savitzky-Golay taps are formed from the pseudoinverse of a local
+//! Vandermonde design matrix, optionally differentiated at the center sample.
+//!
+//! # Implementation Notes
+//!
+//! - FIR runtime execution stays native to the tap representation.
+//! - `filtfilt` shares the padding policy with the IIR simulation module.
+//! - Savitzky-Golay design uses an SVD-based pseudoinverse for numerical
+//!   robustness on small windows.
 
 use super::sim::{padded_sample, resolve_pad_len};
 use super::{
