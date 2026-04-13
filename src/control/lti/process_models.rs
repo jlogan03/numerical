@@ -41,6 +41,7 @@
 //!   models and hand-specified ones follow the same contract.
 
 use super::{BodeData, LtiError, NicholsData, NyquistData, util::unwrap_phase_deg};
+use crate::scalar::{mul_add, neg_mul_add, real_complex_mul_add};
 use faer::complex::Complex;
 use faer_traits::RealField;
 use num_traits::Float;
@@ -68,7 +69,7 @@ where
         // than approximating it through a rational surrogate.
         let delay_factor = (-s * self.delay).exp();
         Complex::new(self.gain, R::zero()) * delay_factor
-            / (Complex::new(self.time_constant, R::zero()) * s + Complex::new(R::one(), R::zero()))
+            / real_complex_mul_add(self.time_constant, s, Complex::new(R::one(), R::zero()))
     }
 
     /// Returns the steady-state gain.
@@ -90,8 +91,11 @@ where
             initial_output
         } else {
             let theta = time_since_step - self.delay;
-            initial_output
-                + self.gain * step_amplitude * (R::one() - (-(theta / self.time_constant)).exp())
+            mul_add(
+                self.gain * step_amplitude,
+                R::one() - (-(theta / self.time_constant)).exp(),
+                initial_output,
+            )
         }
     }
 
@@ -193,10 +197,8 @@ where
         // As in the FOPDT path, preserve the explicit transport delay exactly
         // in frequency-domain evaluation.
         let delay_factor = (-s * self.delay).exp();
-        let d1 =
-            Complex::new(self.time_constant_1, R::zero()) * s + Complex::new(R::one(), R::zero());
-        let d2 =
-            Complex::new(self.time_constant_2, R::zero()) * s + Complex::new(R::one(), R::zero());
+        let d1 = real_complex_mul_add(self.time_constant_1, s, Complex::new(R::one(), R::zero()));
+        let d2 = real_complex_mul_add(self.time_constant_2, s, Complex::new(R::one(), R::zero()));
         Complex::new(self.gain, R::zero()) * delay_factor / (d1 * d2)
     }
 
@@ -220,7 +222,7 @@ where
         }
         let theta = time_since_step - self.delay;
         let lag = second_order_lag_step(theta, self.time_constant_1, self.time_constant_2);
-        initial_output + self.gain * step_amplitude * lag
+        mul_add(self.gain * step_amplitude, lag, initial_output)
     }
 
     /// Samples the delayed step response on the supplied time grid.
@@ -341,7 +343,7 @@ where
     if (tau1 - tau2).abs() <= tol {
         let tau = (tau1 + tau2) / R::from(2.0).unwrap();
         let scaled = time / tau;
-        R::one() - (R::one() + scaled) * (-scaled).exp()
+        neg_mul_add(R::one() + scaled, (-scaled).exp(), R::one())
     } else {
         let e1 = (-(time / tau1)).exp();
         let e2 = (-(time / tau2)).exp();

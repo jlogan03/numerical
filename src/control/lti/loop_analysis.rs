@@ -53,6 +53,7 @@ use super::{
     DiscreteSos, DiscreteStateSpace, DiscreteTime, DiscreteTransferFunction, DiscreteZpk, LtiError,
     TransferFunction, util::unwrap_phase_deg,
 };
+use crate::scalar::mul_add;
 use faer::complex::Complex;
 use faer_traits::RealField;
 use faer_traits::math_utils::{eps, from_f64};
@@ -1141,7 +1142,7 @@ where
         return y0;
     }
     let alpha = (target_x - x0) / (x1 - x0);
-    y0 + alpha * (y1 - y0)
+    mul_add(alpha, y1 - y0, y0)
 }
 
 fn approx_eq<R>(lhs: R, rhs: R) -> bool

@@ -48,6 +48,7 @@ use crate::control::lti::state_space::{
     ContinuousStateSpace, DiscreteStateSpace, DiscretizationMethod, StateSpaceError,
 };
 use crate::control::lti::{ContinuousTransferFunction, DiscreteTransferFunction, LtiError};
+use crate::scalar::mul_add;
 use crate::sparse::compensated::CompensatedField;
 use core::fmt;
 use faer::Mat;
@@ -395,7 +396,7 @@ where
                 // Exact ZOH update of the first-order low-pass state
                 // `x_dot = filter * (e - x)`.
                 let alpha = (-(filter * dt)).exp();
-                alpha * derivative_state + (R::one() - alpha) * error
+                mul_add(alpha, derivative_state, (R::one() - alpha) * error)
             }
             None => derivative_state,
         }
@@ -422,7 +423,7 @@ where
             AntiWindup::Clamp { .. } => R::zero(),
             AntiWindup::BackCalculation { gain } => gain * (saturated - unsaturated),
         };
-        let candidate = integrator + dt * (self.ki * error + correction);
+        let candidate = mul_add(dt, self.ki * error + correction, integrator);
         let candidate = apply_integrator_limits(candidate, self.integrator_limits);
 
         match self.anti_windup {

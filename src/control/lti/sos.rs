@@ -5,6 +5,7 @@ use super::util::{
 };
 use super::zpk::Zpk;
 use super::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
+use crate::scalar::complex_horner_step_real;
 use faer::complex::Complex;
 use faer_traits::RealField;
 use num_traits::Float;
@@ -63,13 +64,13 @@ where
             .numerator
             .iter()
             .fold(Complex::new(R::zero(), R::zero()), |acc, &coef| {
-                acc * point + Complex::new(coef, R::zero())
+                complex_horner_step_real(acc, point, coef)
             });
         let den = self
             .denominator
             .iter()
             .fold(Complex::new(R::zero(), R::zero()), |acc, &coef| {
-                acc * point + Complex::new(coef, R::zero())
+                complex_horner_step_real(acc, point, coef)
             });
         num / den
     }

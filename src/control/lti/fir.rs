@@ -42,6 +42,7 @@ use super::{
     StatefulFilteredSignal,
 };
 use crate::decomp::{DenseDecompParams, dense_svd};
+use crate::scalar::real_complex_mul_add;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use faer::Mat;
 use faer::complex::Complex;
@@ -255,7 +256,7 @@ where
             for (k, &tap) in self.taps.iter().enumerate() {
                 let phase = -(omega * self.sample_time * R::from(k).unwrap());
                 let z_inv = Complex::new(phase.cos(), phase.sin());
-                acc += Complex::new(tap, R::zero()) * z_inv;
+                acc = real_complex_mul_add(tap, z_inv, acc);
             }
             values.push(acc);
         }

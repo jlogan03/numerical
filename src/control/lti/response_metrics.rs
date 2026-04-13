@@ -40,6 +40,7 @@ use super::{
     ContinuousSos, ContinuousStateSpace, ContinuousTransferFunction, ContinuousZpk, DiscreteSos,
     DiscreteStateSpace, DiscreteTransferFunction, DiscreteZpk, LtiError,
 };
+use crate::scalar::mul_add;
 use crate::sparse::compensated::CompensatedField;
 use faer_traits::RealField;
 use faer_traits::math_utils::from_f64;
@@ -448,7 +449,7 @@ where
         return t0;
     }
     let alpha = (target - y0) / (y1 - y0);
-    t0 + alpha * (t1 - t0)
+    mul_add(alpha, t1 - t0, t0)
 }
 
 fn approx_reached<R>(lhs: R, rhs: R) -> bool

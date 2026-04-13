@@ -1,6 +1,7 @@
 use super::error::LtiError;
 use super::{ContinuousTime, DiscreteTime};
 use crate::decomp::dense_eigenvalues;
+use crate::scalar::{complex_horner_step_real, mul_add};
 use faer::Mat;
 use faer::complex::Complex;
 use faer_traits::RealField;
@@ -110,7 +111,7 @@ pub(crate) fn poly_eval<R: Float + Copy + RealField>(
     coeffs
         .iter()
         .fold(Complex::new(R::zero(), R::zero()), |acc, &coef| {
-            acc * point + Complex::new(coef, R::zero())
+            complex_horner_step_real(acc, point, coef)
         })
 }
 
@@ -119,7 +120,7 @@ pub(crate) fn poly_mul<R: Float + Copy + RealField>(lhs: &[R], rhs: &[R]) -> Vec
     let mut out = vec![R::zero(); lhs.len() + rhs.len() - 1];
     for (i, &lhs_value) in lhs.iter().enumerate() {
         for (j, &rhs_value) in rhs.iter().enumerate() {
-            out[i + j] = out[i + j] + lhs_value * rhs_value;
+            out[i + j] = mul_add(lhs_value, rhs_value, out[i + j]);
         }
     }
     trim_leading_zeros(&out)
