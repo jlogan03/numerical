@@ -36,11 +36,19 @@ use faer_traits::math_utils::zero;
 #[derive(Clone, Copy, Debug)]
 pub enum SparseLltError {
     /// Sparse LLT is only defined here for square systems.
-    NonSquare { nrows: usize, ncols: usize },
+    NonSquare {
+        /// Actual row count.
+        nrows: usize,
+        /// Actual column count.
+        ncols: usize,
+    },
     /// A caller supplied an object with the wrong dimension.
     DimensionMismatch {
+        /// Identifies the object that failed validation.
         which: &'static str,
+        /// Required dimension.
         expected: usize,
+        /// Actual supplied dimension.
         actual: usize,
     },
     /// Numeric refactorization requires exactly the same CSC symbolic pattern.
@@ -77,11 +85,19 @@ impl From<LltError> for SparseLltError {
 #[derive(Clone, Copy, Debug)]
 pub enum SparseLdltError {
     /// Sparse LDLT is only defined here for square systems.
-    NonSquare { nrows: usize, ncols: usize },
+    NonSquare {
+        /// Actual row count.
+        nrows: usize,
+        /// Actual column count.
+        ncols: usize,
+    },
     /// A caller supplied an object with the wrong dimension.
     DimensionMismatch {
+        /// Identifies the object that failed validation.
         which: &'static str,
+        /// Required dimension.
         expected: usize,
+        /// Actual supplied dimension.
         actual: usize,
     },
     /// Numeric refactorization requires exactly the same CSC symbolic pattern.

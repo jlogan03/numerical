@@ -35,7 +35,10 @@ use num_traits::Float;
 #[derive(Debug)]
 pub enum PidDesignError {
     /// The sampled data is structurally invalid.
-    InvalidData { which: &'static str },
+    InvalidData {
+        /// Identifies the structural property that failed validation.
+        which: &'static str,
+    },
     /// The detected input step is too small to identify a process gain.
     InvalidStepAmplitude,
     /// The observed output change is too small to identify a process gain.
@@ -45,12 +48,21 @@ pub enum PidDesignError {
     /// The fitted process parameters are not physically meaningful.
     InvalidProcessFit,
     /// The requested tuning parameter is invalid.
-    InvalidTuningParameter { which: &'static str },
+    InvalidTuningParameter {
+        /// Identifies the invalid tuning parameter.
+        which: &'static str,
+    },
     /// The requested frequency-domain design target is invalid.
-    InvalidFrequencyTarget { which: &'static str },
+    InvalidFrequencyTarget {
+        /// Identifies the invalid crossover or margin target.
+        which: &'static str,
+    },
     /// A model-based or identification-based tuning solve did not converge to
     /// a usable controller.
-    OptimizationFailed { which: &'static str },
+    OptimizationFailed {
+        /// Identifies the optimization stage that failed.
+        which: &'static str,
+    },
     /// LTI analysis or conversion failed.
     Lti(LtiError),
     /// State-space conversion or validation failed.

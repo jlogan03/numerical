@@ -153,13 +153,23 @@ where
 #[derive(Clone, Copy, Debug)]
 pub enum LyapunovError {
     /// The state matrix must be square.
-    NonSquare { nrows: usize, ncols: usize },
+    NonSquare {
+        /// Actual row count.
+        nrows: usize,
+        /// Actual column count.
+        ncols: usize,
+    },
     /// A supplied matrix has incompatible dimensions.
     DimensionMismatch {
+        /// Identifies the matrix that failed validation.
         which: &'static str,
+        /// Required row count.
         expected_nrows: usize,
+        /// Required column count.
         expected_ncols: usize,
+        /// Actual row count.
         actual_nrows: usize,
+        /// Actual column count.
         actual_ncols: usize,
     },
     /// The dense solve produced a non-finite result or residual.
@@ -167,7 +177,10 @@ pub enum LyapunovError {
     /// Sparse LR-ADI requires at least one shift.
     NoShifts,
     /// A user-provided shift is not in the open left half-plane.
-    InvalidShift { index: usize },
+    InvalidShift {
+        /// Index of the offending shift in the supplied shift list.
+        index: usize,
+    },
     /// Sparse matrix creation failed.
     SparseBuild(CreationError),
     /// Sparse format conversion failed.

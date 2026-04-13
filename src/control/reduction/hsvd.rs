@@ -173,18 +173,33 @@ pub enum HsvdError<R> {
     /// The controllability and observability data do not have compatible
     /// dimensions.
     DimensionMismatch {
+        /// Row count in the controllability factor or Gramian.
         controllability_nrows: usize,
+        /// Row count in the observability factor or Gramian.
         observability_nrows: usize,
     },
     /// The requested retained order exceeds the available core dimension.
-    InvalidOrder { requested: usize, available: usize },
+    InvalidOrder {
+        /// Requested reduced order.
+        requested: usize,
+        /// Largest order that can be retained from the HSVD core.
+        available: usize,
+    },
     /// No numerically meaningful Hankel singular values remained after
     /// thresholding.
     EmptyRetainedSpectrum,
     /// A dense Gramian expected to be PSD had a clearly negative eigenvalue.
-    IndefiniteGramian { which: &'static str, eigenvalue: R },
+    IndefiniteGramian {
+        /// Identifies which Gramian was indefinite.
+        which: &'static str,
+        /// Negative eigenvalue that triggered the rejection.
+        eigenvalue: R,
+    },
     /// A computed projection or factor contained a non-finite entry.
-    NonFiniteResult { which: &'static str },
+    NonFiniteResult {
+        /// Identifies the derived quantity with the non-finite entry.
+        which: &'static str,
+    },
 }
 
 impl<R: fmt::Debug> fmt::Display for HsvdError<R> {

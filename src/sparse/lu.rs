@@ -90,11 +90,19 @@ where
 #[derive(Clone, Copy, Debug)]
 pub enum SparseLuError {
     /// Sparse LU is only defined here for square systems.
-    NonSquare { nrows: usize, ncols: usize },
+    NonSquare {
+        /// Actual row count.
+        nrows: usize,
+        /// Actual column count.
+        ncols: usize,
+    },
     /// A caller supplied an object with the wrong dimension.
     DimensionMismatch {
+        /// Identifies the object that failed validation.
         which: &'static str,
+        /// Required dimension.
         expected: usize,
+        /// Actual supplied dimension.
         actual: usize,
     },
     /// Numeric refactorization requires exactly the same CSC symbolic pattern.

@@ -55,21 +55,32 @@ where
 pub enum RiccatiError {
     /// A matrix that should be square was not square.
     NonSquare {
+        /// Identifies the matrix that should have been square.
         which: &'static str,
+        /// Actual row count.
         nrows: usize,
+        /// Actual column count.
         ncols: usize,
     },
     /// A supplied matrix had incompatible dimensions.
     DimensionMismatch {
+        /// Identifies the matrix that failed validation.
         which: &'static str,
+        /// Required row count.
         expected_nrows: usize,
+        /// Required column count.
         expected_ncols: usize,
+        /// Actual row count.
         actual_nrows: usize,
+        /// Actual column count.
         actual_ncols: usize,
     },
     /// A control-weight matrix or Schur complement was singular or numerically
     /// unusable in a required solve.
-    SingularControlWeight { which: &'static str },
+    SingularControlWeight {
+        /// Identifies the weight matrix or Schur complement that was singular.
+        which: &'static str,
+    },
     /// The invariant-subspace partition needed to recover `X` was singular or
     /// numerically unusable.
     SingularInvariantSubspace,
@@ -81,9 +92,15 @@ pub enum RiccatiError {
     /// state dimension.
     NoStabilizingSolution,
     /// A projected real-valued result still carried a materially complex part.
-    ComplexProjectionFailed { which: &'static str },
+    ComplexProjectionFailed {
+        /// Identifies the projected matrix that remained materially complex.
+        which: &'static str,
+    },
     /// A solve or residual check produced non-finite output.
-    NonFiniteResult { which: &'static str },
+    NonFiniteResult {
+        /// Identifies the solve or residual check that produced non-finite output.
+        which: &'static str,
+    },
 }
 
 impl fmt::Display for RiccatiError {

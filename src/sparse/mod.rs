@@ -1,11 +1,21 @@
+//! Sparse linear algebra wrappers and preconditioning utilities.
+
+/// BiCGSTAB iterative solver.
 pub mod bicgstab;
+/// Sparse Cholesky factorizations.
 pub mod cholesky;
 pub(crate) mod col;
+/// Compensated complex and real accumulation helpers.
 pub mod compensated;
+/// Two-sided sparse matrix equilibration.
 pub mod equilibration;
+/// Sparse LU factorization and iterative refinement helpers.
 pub mod lu;
+/// Sparse matrix-vector multiplication traits and wrappers.
 pub mod matvec;
+/// Preconditioner traits and concrete sparse preconditioners.
 pub mod precond;
+/// Schur-complement operators for block sparse systems.
 pub mod schur;
 
 pub use bicgstab::BiCGSTAB;

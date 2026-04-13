@@ -59,17 +59,32 @@ where
 #[derive(Debug)]
 pub enum PolePlacementError {
     /// The state matrix is not square.
-    NonSquareA { nrows: usize, ncols: usize },
+    NonSquareA {
+        /// Actual row count in `A`.
+        nrows: usize,
+        /// Actual column count in `A`.
+        ncols: usize,
+    },
     /// A supplied matrix had incompatible dimensions.
     DimensionMismatch {
+        /// Identifies the matrix that failed validation.
         which: &'static str,
+        /// Required row count.
         expected_nrows: usize,
+        /// Required column count.
         expected_ncols: usize,
+        /// Actual row count.
         actual_nrows: usize,
+        /// Actual column count.
         actual_ncols: usize,
     },
     /// The desired pole list length did not match the system order.
-    PoleCountMismatch { expected: usize, actual: usize },
+    PoleCountMismatch {
+        /// Number of poles required to match the system order.
+        expected: usize,
+        /// Number of poles supplied by the caller.
+        actual: usize,
+    },
     /// The desired pole list contained a non-finite entry.
     NonFiniteDesiredPoles,
     /// The requested poles do not define a real monic polynomial.
@@ -83,7 +98,10 @@ pub enum PolePlacementError {
     /// A decomposition helper failed.
     Decomp(DecompError),
     /// A solve or intermediate matrix polynomial produced non-finite output.
-    NonFiniteResult { which: &'static str },
+    NonFiniteResult {
+        /// Identifies the solve or polynomial evaluation that failed.
+        which: &'static str,
+    },
 }
 
 impl fmt::Display for PolePlacementError {

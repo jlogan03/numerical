@@ -156,16 +156,24 @@ pub enum EstimatorError {
     Riccati(RiccatiError),
     /// A supplied matrix had incompatible dimensions.
     DimensionMismatch {
+        /// Identifies the matrix or vector that failed the shape check.
         which: &'static str,
+        /// Required row count.
         expected_nrows: usize,
+        /// Required column count.
         expected_ncols: usize,
+        /// Actual row count supplied by the caller.
         actual_nrows: usize,
+        /// Actual column count supplied by the caller.
         actual_ncols: usize,
     },
     /// The innovation covariance was singular or numerically unusable.
     SingularInnovationCovariance,
     /// A solve or update produced non-finite output.
-    NonFiniteResult { which: &'static str },
+    NonFiniteResult {
+        /// Identifies the computation that produced the non-finite value.
+        which: &'static str,
+    },
 }
 
 impl fmt::Display for EstimatorError {

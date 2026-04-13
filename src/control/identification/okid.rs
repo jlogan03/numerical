@@ -47,10 +47,15 @@ pub struct OkidResult<T> {
 pub enum OkidError {
     /// Input and output data did not have compatible matrix dimensions.
     DimensionMismatch {
+        /// Identifies the incompatible matrix.
         which: &'static str,
+        /// Required row count.
         expected_nrows: usize,
+        /// Required column count.
         expected_ncols: usize,
+        /// Actual row count supplied by the caller.
         actual_nrows: usize,
+        /// Actual column count supplied by the caller.
         actual_ncols: usize,
     },
     /// The requested Markov horizon was zero.
@@ -59,7 +64,9 @@ pub enum OkidError {
     InvalidObserverOrder,
     /// There were not enough time samples for the requested observer order.
     NotEnoughSamples {
+        /// Number of available time samples.
         samples: usize,
+        /// Requested observer-Markov regression depth.
         observer_order: usize,
     },
     /// Dense SVD failed while solving the regression.
@@ -67,7 +74,10 @@ pub enum OkidError {
     /// The regression matrix was numerically rank-deficient.
     RankDeficientRegression,
     /// A recovered quantity contained a non-finite entry.
-    NonFiniteResult { which: &'static str },
+    NonFiniteResult {
+        /// Identifies the recovered quantity with the non-finite entry.
+        which: &'static str,
+    },
 }
 
 impl fmt::Display for OkidError {

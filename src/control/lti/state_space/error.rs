@@ -11,13 +11,23 @@ use core::fmt;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum StateSpaceError {
     /// The state matrix `A` must be square.
-    NonSquareA { nrows: usize, ncols: usize },
+    NonSquareA {
+        /// Actual row count in `A`.
+        nrows: usize,
+        /// Actual column count in `A`.
+        ncols: usize,
+    },
     /// One of the `A/B/C/D` blocks had incompatible dimensions.
     DimensionMismatch {
+        /// Identifies the block that failed validation.
         which: &'static str,
+        /// Required row count.
         expected_nrows: usize,
+        /// Required column count.
         expected_ncols: usize,
+        /// Actual row count.
         actual_nrows: usize,
+        /// Actual column count.
         actual_ncols: usize,
     },
     /// A discrete-time sample interval must be positive and finite.
@@ -32,9 +42,15 @@ pub enum StateSpaceError {
     InvalidPrewarpFrequency,
     /// A conversion required solving against a singular or numerically
     /// unsuitable matrix.
-    SingularConversion { which: &'static str },
+    SingularConversion {
+        /// Identifies the matrix solve that failed.
+        which: &'static str,
+    },
     /// A dense matrix function or solve produced non-finite output.
-    NonFiniteResult { which: &'static str },
+    NonFiniteResult {
+        /// Identifies the conversion step that produced non-finite output.
+        which: &'static str,
+    },
     /// The requested conversion is recognized but not implemented in this
     /// first state-space pass.
     UnsupportedConversion(&'static str),

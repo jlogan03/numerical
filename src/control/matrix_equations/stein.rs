@@ -54,13 +54,23 @@ where
 #[derive(Debug)]
 pub enum SteinError {
     /// The state matrix must be square.
-    NonSquare { nrows: usize, ncols: usize },
+    NonSquare {
+        /// Actual row count.
+        nrows: usize,
+        /// Actual column count.
+        ncols: usize,
+    },
     /// A supplied matrix has incompatible dimensions.
     DimensionMismatch {
+        /// Identifies the matrix that failed validation.
         which: &'static str,
+        /// Required row count.
         expected_nrows: usize,
+        /// Required column count.
         expected_ncols: usize,
+        /// Actual row count.
         actual_nrows: usize,
+        /// Actual column count.
         actual_ncols: usize,
     },
     /// The dense solve produced a non-finite result or residual.
@@ -72,7 +82,10 @@ pub enum SteinError {
     /// For the sparse discrete solver, these shifts belong to the transformed
     /// continuous-time Lyapunov problem after the Cayley map, not directly to
     /// the original discrete-time spectrum.
-    InvalidShift { index: usize },
+    InvalidShift {
+        /// Index of the offending shift in the supplied shift list.
+        index: usize,
+    },
     /// The Cayley transform requires `(A + I)` to be nonsingular.
     ///
     /// If `A` has an eigenvalue at or very near `-1`, the transform becomes

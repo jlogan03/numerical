@@ -11,7 +11,10 @@ pub enum FilterDesignError {
     /// The supplied stopband attenuation parameter is invalid.
     InvalidAttenuation,
     /// One cutoff frequency is invalid.
-    InvalidCutoff { which: &'static str },
+    InvalidCutoff {
+        /// Identifies the cutoff or band edge that failed validation.
+        which: &'static str,
+    },
     /// Band edges are invalid.
     InvalidBandEdges,
     /// Passband and stopband shapes are not compatible for order selection.

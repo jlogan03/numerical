@@ -209,18 +209,28 @@ impl<R: fmt::Debug> fmt::Debug for SigmaPointStrategy<R> {
 pub enum NonlinearEstimatorError {
     /// A supplied matrix or vector had incompatible dimensions.
     DimensionMismatch {
+        /// Identifies the matrix or vector that failed the shape check.
         which: &'static str,
+        /// Required row count.
         expected_nrows: usize,
+        /// Required column count.
         expected_ncols: usize,
+        /// Actual row count supplied by the caller.
         actual_nrows: usize,
+        /// Actual column count supplied by the caller.
         actual_ncols: usize,
     },
     /// A model evaluation returned the wrong structural shape.
     InvalidModelOutput {
+        /// Identifies the model output being validated.
         which: &'static str,
+        /// Required row count.
         expected_nrows: usize,
+        /// Required column count.
         expected_ncols: usize,
+        /// Actual row count returned by the model.
         actual_nrows: usize,
+        /// Actual column count returned by the model.
         actual_ncols: usize,
     },
     /// The innovation covariance was singular or numerically unusable.
@@ -230,13 +240,25 @@ pub enum NonlinearEstimatorError {
     SingularPredictedCovariance,
     /// The covariance matrix was not positive definite enough for sigma-point
     /// generation.
-    NonPositiveDefiniteCovariance { which: &'static str },
+    NonPositiveDefiniteCovariance {
+        /// Identifies the covariance matrix that failed the factorization.
+        which: &'static str,
+    },
     /// Standard unscented-transform parameters were invalid.
-    InvalidUnscentedParams { which: &'static str },
+    InvalidUnscentedParams {
+        /// Identifies the invalid scalar or parameter combination.
+        which: &'static str,
+    },
     /// A custom sigma-point set was malformed.
-    InvalidSigmaPointSet { which: &'static str },
+    InvalidSigmaPointSet {
+        /// Identifies the violated sigma-point-set constraint.
+        which: &'static str,
+    },
     /// A model evaluation or numerical solve produced non-finite output.
-    NonFiniteResult { which: &'static str },
+    NonFiniteResult {
+        /// Identifies the computation that produced the non-finite value.
+        which: &'static str,
+    },
 }
 
 impl fmt::Display for NonlinearEstimatorError {

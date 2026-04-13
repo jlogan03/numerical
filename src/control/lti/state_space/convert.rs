@@ -28,7 +28,10 @@ pub enum DiscretizationMethod<R> {
     /// The optional prewarp frequency lets the bilinear mapping match one
     /// chosen continuous-time frequency exactly. This is the common frequency-
     /// shaping conversion used in digital filter and controller design.
-    Bilinear { prewarp_frequency: Option<R> },
+    Bilinear {
+        /// Optional angular frequency to preserve exactly under the bilinear map.
+        prewarp_frequency: Option<R>,
+    },
 }
 
 /// Dense discrete-to-continuous conversion method.
@@ -43,7 +46,10 @@ pub enum ContinuousizationMethod<R> {
     ///
     /// This is the inverse of the bilinear map under the same optional
     /// prewarping choice.
-    Bilinear { prewarp_frequency: Option<R> },
+    Bilinear {
+        /// Optional angular frequency that was used to prewarp the bilinear map.
+        prewarp_frequency: Option<R>,
+    },
 }
 
 pub(super) fn discretize<T>(

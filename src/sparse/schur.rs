@@ -29,10 +29,15 @@ use super::Precond;
 pub enum SchurComplementError {
     /// A supplied child operator has dimensions incompatible with the Schur layout.
     DimensionMismatch {
+        /// Identifies the child operator that failed validation.
         which: &'static str,
+        /// Required row count.
         expected_nrows: usize,
+        /// Required column count.
         expected_ncols: usize,
+        /// Actual row count.
         actual_nrows: usize,
+        /// Actual column count.
         actual_ncols: usize,
     },
 }

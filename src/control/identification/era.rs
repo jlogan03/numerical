@@ -130,19 +130,31 @@ pub enum EraError {
     /// Final state-space construction failed.
     StateSpace(StateSpaceError),
     /// The requested retained order exceeds the available spectrum size.
-    InvalidOrder { requested: usize, available: usize },
+    InvalidOrder {
+        /// Requested reduced order.
+        requested: usize,
+        /// Largest order that can be retained from the assembled data.
+        available: usize,
+    },
     /// The direct term `D` did not match the block output/input dimensions.
     DirectFeedthroughDimensionMismatch {
+        /// Required row count implied by the Markov and Hankel data.
         expected_nrows: usize,
+        /// Required column count implied by the Markov and Hankel data.
         expected_ncols: usize,
+        /// Actual row count in the supplied `D` block.
         actual_nrows: usize,
+        /// Actual column count in the supplied `D` block.
         actual_ncols: usize,
     },
     /// No numerically meaningful Hankel singular values remained after
     /// thresholding.
     EmptyRetainedSpectrum,
     /// A derived factor or realized matrix contained a non-finite entry.
-    NonFiniteResult { which: &'static str },
+    NonFiniteResult {
+        /// Identifies the derived quantity that contained the non-finite entry.
+        which: &'static str,
+    },
 }
 
 impl fmt::Display for EraError {

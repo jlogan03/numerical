@@ -44,11 +44,22 @@ pub struct DiagonalPrecond<T: ComplexField + Copy> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DiagonalPrecondError {
     /// Diagonal preconditioning only makes sense for square systems.
-    NonSquare { nrows: usize, ncols: usize },
+    NonSquare {
+        /// Actual row count.
+        nrows: usize,
+        /// Actual column count.
+        ncols: usize,
+    },
     /// The matrix has no stored entry on the diagonal at `index`.
-    MissingDiagonal { index: usize },
+    MissingDiagonal {
+        /// Index of the missing diagonal entry.
+        index: usize,
+    },
     /// The diagonal entry at `index` is zero, so it cannot be inverted.
-    ZeroDiagonal { index: usize },
+    ZeroDiagonal {
+        /// Index of the zero diagonal entry.
+        index: usize,
+    },
 }
 
 impl<T: ComplexField + Copy> DiagonalPrecond<T> {

@@ -75,11 +75,20 @@ impl<R: Float> Default for EquilibrationParams<R> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum EquilibrationError {
     /// The caller supplied parameters that do not define a meaningful iteration.
-    InvalidParams { reason: &'static str },
+    InvalidParams {
+        /// Short explanation of the invalid parameter choice.
+        reason: &'static str,
+    },
     /// The matrix has a structurally or numerically zero row.
-    ZeroRow { index: usize },
+    ZeroRow {
+        /// Index of the zero row.
+        index: usize,
+    },
     /// The matrix has a structurally or numerically zero column.
-    ZeroColumn { index: usize },
+    ZeroColumn {
+        /// Index of the zero column.
+        index: usize,
+    },
 }
 
 /// Two-sided row and column equilibration factors.

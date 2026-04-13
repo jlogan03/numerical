@@ -324,12 +324,20 @@ where
 pub enum DecompError {
     /// A supplied input had the wrong dimension.
     DimensionMismatch {
+        /// Identifies the incompatible input object.
         which: &'static str,
+        /// Required dimension.
         expected: usize,
+        /// Actual supplied dimension.
         actual: usize,
     },
     /// The requested sparse target count is not valid for the operator.
-    InvalidTarget { requested: usize, max: usize },
+    InvalidTarget {
+        /// Requested number of target eigenpairs or singular triplets.
+        requested: usize,
+        /// Largest admissible target count for the operator.
+        max: usize,
+    },
     /// The caller supplied an all-zero start vector.
     ZeroStartVector,
     /// The dense SVD backend failed.

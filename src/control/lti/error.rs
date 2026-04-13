@@ -20,26 +20,48 @@ pub enum LtiError {
     /// intervals do not match closely enough.
     MismatchedSampleTime,
     /// A response grid contained an invalid point.
-    InvalidSamplePoint { which: &'static str },
+    InvalidSamplePoint {
+        /// Identifies the grid entry or sample location that failed validation.
+        which: &'static str,
+    },
     /// A sampling grid had inconsistent structure, such as mismatched lengths
     /// or non-monotone time points.
-    InvalidSampleGrid { which: &'static str },
+    InvalidSampleGrid {
+        /// Identifies the grid structure that failed validation.
+        which: &'static str,
+    },
     /// An analysis or simulation input had incompatible dimensions.
     DimensionMismatch {
+        /// Identifies the matrix or vector that failed the shape check.
         which: &'static str,
+        /// Required row count.
         expected_nrows: usize,
+        /// Required column count.
         expected_ncols: usize,
+        /// Actual row count supplied by the caller.
         actual_nrows: usize,
+        /// Actual column count supplied by the caller.
         actual_ncols: usize,
     },
     /// A polynomial representation was missing required coefficients.
-    EmptyPolynomial { which: &'static str },
+    EmptyPolynomial {
+        /// Identifies the polynomial that was empty.
+        which: &'static str,
+    },
     /// An FIR representation must contain at least one tap.
     EmptyFir,
     /// The leading coefficient of a polynomial must be nonzero.
-    ZeroLeadingCoefficient { which: &'static str },
+    ZeroLeadingCoefficient {
+        /// Identifies the polynomial whose leading coefficient was zero.
+        which: &'static str,
+    },
     /// A conversion expected a single-input single-output state-space system.
-    NonSisoStateSpace { ninputs: usize, noutputs: usize },
+    NonSisoStateSpace {
+        /// Number of system inputs.
+        ninputs: usize,
+        /// Number of system outputs.
+        noutputs: usize,
+    },
     /// A state-space realization exists only for proper transfer functions.
     ///
     /// In this module, ordinary `A/B/C/D` state space can represent:
@@ -49,19 +71,27 @@ pub enum LtiError {
     ///
     /// but not strictly improper transfer functions.
     ImproperTransferFunction {
+        /// Degree of the numerator polynomial.
         numerator_degree: usize,
+        /// Degree of the denominator polynomial.
         denominator_degree: usize,
     },
     /// A conversion from complex roots back to real coefficients requires the
     /// root set to be closed under complex conjugation.
-    NotConjugateClosed { which: &'static str },
+    NotConjugateClosed {
+        /// Identifies the root set that violated conjugate closure.
+        which: &'static str,
+    },
     /// Transfer-function inversion is undefined for the identically zero map.
     ZeroTransferInverse,
     /// Transfer-function division is undefined when the divisor is the
     /// identically zero map.
     ZeroTransferDivisor,
     /// A response or conversion formula produced non-finite values.
-    NonFiniteResult { which: &'static str },
+    NonFiniteResult {
+        /// Identifies the computation that produced non-finite values.
+        which: &'static str,
+    },
     /// A second-order-section cascade must contain at least one section.
     EmptySos,
     /// A supplied filter-runtime state object has the wrong structural length.
@@ -69,12 +99,18 @@ pub enum LtiError {
     /// This is used by the stateful SOS simulation path, where callers can
     /// retain and reuse per-section delay state across multiple chunks.
     InvalidFilterStateLength {
+        /// Identifies the runtime state object being validated.
         which: &'static str,
+        /// Required number of stored delay elements.
         expected: usize,
+        /// Actual number of stored delay elements.
         actual: usize,
     },
     /// A Savitzky-Golay design specification is invalid.
-    InvalidSavGolSpec { which: &'static str },
+    InvalidSavGolSpec {
+        /// Identifies the invalid Savitzky-Golay parameter.
+        which: &'static str,
+    },
     /// A decomposition used by an LTI helper failed.
     Decomp(DecompError),
     /// A dense state-space helper used underneath an LTI analysis routine

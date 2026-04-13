@@ -6,5 +6,7 @@ pub mod control;
 #[cfg(feature = "std")]
 pub mod decomp;
 #[cfg(feature = "std")]
+/// Sparse direct solvers, iterative solvers, and preconditioners.
 pub mod sparse;
+/// Accurate floating-point summation utilities.
 pub mod sum;

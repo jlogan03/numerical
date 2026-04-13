@@ -56,6 +56,7 @@ pub trait CompensatedField: ComplexField + Copy
 where
     Self::Real: Float + Copy,
 {
+    /// Rebuilds a scalar from separately accumulated real and imaginary parts.
     fn from_real_imag(real: Self::Real, imag: Self::Real) -> Self;
 }
 

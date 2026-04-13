@@ -33,9 +33,17 @@ pub enum AntiWindup<R> {
     /// No anti-windup. The controller remains a purely linear PIDF core.
     None,
     /// Internal actuator clamping with explicit limits.
-    Clamp { low: R, high: R },
+    Clamp {
+        /// Lower actuator limit.
+        low: R,
+        /// Upper actuator limit.
+        high: R,
+    },
     /// Back-calculation using an externally supplied applied-command signal.
-    BackCalculation { gain: R },
+    BackCalculation {
+        /// Gain that feeds the applied-command tracking error into the integrator.
+        gain: R,
+    },
 }
 
 /// Runtime state for a sampled PID / PIDF controller.

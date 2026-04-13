@@ -9,13 +9,29 @@ use num_traits::Float;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum FilterShape<R> {
     /// Lowpass filter with one cutoff.
-    Lowpass { cutoff: R },
+    Lowpass {
+        /// Cutoff angular frequency.
+        cutoff: R,
+    },
     /// Highpass filter with one cutoff.
-    Highpass { cutoff: R },
+    Highpass {
+        /// Cutoff angular frequency.
+        cutoff: R,
+    },
     /// Bandpass filter with lower and upper band edges.
-    Bandpass { low_cutoff: R, high_cutoff: R },
+    Bandpass {
+        /// Lower cutoff angular frequency.
+        low_cutoff: R,
+        /// Upper cutoff angular frequency.
+        high_cutoff: R,
+    },
     /// Bandstop / notch filter with lower and upper stopband edges.
-    Bandstop { low_cutoff: R, high_cutoff: R },
+    Bandstop {
+        /// Lower cutoff angular frequency.
+        low_cutoff: R,
+        /// Upper cutoff angular frequency.
+        high_cutoff: R,
+    },
 }
 
 /// Analog filter families supported in the first pass.
@@ -24,7 +40,10 @@ pub enum AnalogFilterFamily<R> {
     /// Maximally flat magnitude in the passband.
     Butterworth,
     /// Equiripple passband with ripple specified in dB.
-    Chebyshev1 { ripple_db: R },
+    Chebyshev1 {
+        /// Peak passband ripple in decibels.
+        ripple_db: R,
+    },
     /// Bessel / Thomson analog prototype.
     ///
     /// This is intentionally analog only in the current design layer.
@@ -37,7 +56,10 @@ pub enum DigitalFilterFamily<R> {
     /// Maximally flat magnitude in the passband.
     Butterworth,
     /// Equiripple passband with ripple specified in dB.
-    Chebyshev1 { ripple_db: R },
+    Chebyshev1 {
+        /// Peak passband ripple in decibels.
+        ripple_db: R,
+    },
 }
 
 /// Specification for analog filter design.
