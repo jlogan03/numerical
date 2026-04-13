@@ -6,10 +6,11 @@
 
 use faer::Par;
 use faer::dyn_stack::{MemStack, StackReq};
-use faer::linalg::temp_mat_scratch;
+use faer::linalg::{temp_mat_scratch, temp_mat_zeroed};
+use faer::mat::AsMatMut;
 use faer::matrix_free::LinOp;
 use faer::prelude::{Reborrow, ReborrowMut};
-use faer::{Mat, MatMut, MatRef};
+use faer::{MatMut, MatRef};
 use faer_traits::ComplexField;
 
 use super::Precond;
@@ -310,14 +311,14 @@ where
         }
 
         let rhs_ncols = rhs.ncols();
-        let mut tmp = Mat::<T>::zeros(self.split.n0, rhs_ncols);
+        let (mut tmp, stack) = temp_mat_zeroed::<T, _, _>(self.split.n0, rhs_ncols, stack);
         {
             let (_, rhs1) = rhs.rb_mut().split_at_row_mut(self.split.n0);
-            self.b01.apply(tmp.as_mut(), rhs1.rb(), par, stack);
+            self.b01.apply(tmp.as_mat_mut(), rhs1.rb(), par, stack);
         }
         {
             let (mut rhs0, _) = rhs.rb_mut().split_at_row_mut(self.split.n0);
-            subtract_in_place(rhs0.rb_mut(), tmp.as_ref());
+            subtract_in_place(rhs0.rb_mut(), tmp.as_mat_mut().as_ref());
             self.p0.apply_in_place(rhs0, par, stack);
         }
     }
@@ -331,14 +332,14 @@ where
         }
 
         let rhs_ncols = rhs.ncols();
-        let mut tmp = Mat::<T>::zeros(self.split.n0, rhs_ncols);
+        let (mut tmp, stack) = temp_mat_zeroed::<T, _, _>(self.split.n0, rhs_ncols, stack);
         {
             let (_, rhs1) = rhs.rb_mut().split_at_row_mut(self.split.n0);
-            self.b01.conj_apply(tmp.as_mut(), rhs1.rb(), par, stack);
+            self.b01.conj_apply(tmp.as_mat_mut(), rhs1.rb(), par, stack);
         }
         {
             let (mut rhs0, _) = rhs.rb_mut().split_at_row_mut(self.split.n0);
-            subtract_in_place(rhs0.rb_mut(), tmp.as_ref());
+            subtract_in_place(rhs0.rb_mut(), tmp.as_mat_mut().as_ref());
             self.p0.conj_apply_in_place(rhs0, par, stack);
         }
     }

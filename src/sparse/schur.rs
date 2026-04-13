@@ -17,9 +17,11 @@
 
 use faer::Par;
 use faer::dyn_stack::{MemStack, StackReq};
+use faer::linalg::{temp_mat_scratch, temp_mat_zeroed};
+use faer::mat::AsMatMut;
 use faer::matrix_free::LinOp;
 use faer::prelude::ReborrowMut;
-use faer::{Mat, MatMut, MatRef};
+use faer::{MatMut, MatRef};
 use faer_traits::ComplexField;
 
 use super::Precond;
@@ -115,7 +117,9 @@ where
     D: LinOp<T>,
 {
     fn apply_scratch(&self, rhs_ncols: usize, par: Par) -> StackReq {
-        StackReq::any_of(&[
+        StackReq::all_of(&[
+            temp_mat_scratch::<T>(self.n_a, rhs_ncols),
+            temp_mat_scratch::<T>(self.n_s, rhs_ncols),
             self.b.apply_scratch(rhs_ncols, par),
             self.ainv.apply_in_place_scratch(rhs_ncols, par),
             self.c.apply_scratch(rhs_ncols, par),
@@ -136,17 +140,16 @@ where
         assert_eq!(out.nrows(), self.nrows());
         assert_eq!(out.ncols(), rhs.ncols());
 
-        // This implementation uses dense temporaries for clarity:
-        // `tmp_b = B x`, `tmp_c = C (A^{-1} tmp_b)`, then `out = D x - tmp_c`.
         let rhs_ncols = rhs.ncols();
-        let mut tmp_b = Mat::<T>::zeros(self.n_a, rhs_ncols);
-        self.b.apply(tmp_b.as_mut(), rhs, par, stack);
-        self.ainv.apply_in_place(tmp_b.as_mut(), par, stack);
+        let (mut tmp_b, stack) = temp_mat_zeroed::<T, _, _>(self.n_a, rhs_ncols, stack);
+        self.b.apply(tmp_b.as_mat_mut(), rhs, par, stack);
+        self.ainv.apply_in_place(tmp_b.as_mat_mut(), par, stack);
 
-        let mut tmp_c = Mat::<T>::zeros(self.n_s, rhs_ncols);
-        self.c.apply(tmp_c.as_mut(), tmp_b.as_ref(), par, stack);
+        let (mut tmp_c, stack) = temp_mat_zeroed::<T, _, _>(self.n_s, rhs_ncols, stack);
+        self.c
+            .apply(tmp_c.as_mat_mut(), tmp_b.as_mat_mut().as_ref(), par, stack);
         self.d.apply(out.rb_mut(), rhs, par, stack);
-        subtract_in_place(out, tmp_c.as_ref());
+        subtract_in_place(out, tmp_c.as_mat_mut().as_ref());
     }
 
     fn conj_apply(
@@ -161,15 +164,16 @@ where
         assert_eq!(out.ncols(), rhs.ncols());
 
         let rhs_ncols = rhs.ncols();
-        let mut tmp_b = Mat::<T>::zeros(self.n_a, rhs_ncols);
-        self.b.conj_apply(tmp_b.as_mut(), rhs, par, stack);
-        self.ainv.conj_apply_in_place(tmp_b.as_mut(), par, stack);
+        let (mut tmp_b, stack) = temp_mat_zeroed::<T, _, _>(self.n_a, rhs_ncols, stack);
+        self.b.conj_apply(tmp_b.as_mat_mut(), rhs, par, stack);
+        self.ainv
+            .conj_apply_in_place(tmp_b.as_mat_mut(), par, stack);
 
-        let mut tmp_c = Mat::<T>::zeros(self.n_s, rhs_ncols);
+        let (mut tmp_c, stack) = temp_mat_zeroed::<T, _, _>(self.n_s, rhs_ncols, stack);
         self.c
-            .conj_apply(tmp_c.as_mut(), tmp_b.as_ref(), par, stack);
+            .conj_apply(tmp_c.as_mat_mut(), tmp_b.as_mat_mut().as_ref(), par, stack);
         self.d.conj_apply(out.rb_mut(), rhs, par, stack);
-        subtract_in_place(out, tmp_c.as_ref());
+        subtract_in_place(out, tmp_c.as_mat_mut().as_ref());
     }
 }
 

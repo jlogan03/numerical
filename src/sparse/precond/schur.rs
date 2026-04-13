@@ -9,9 +9,11 @@
 
 use faer::Par;
 use faer::dyn_stack::{MemStack, StackReq};
+use faer::linalg::{temp_mat_scratch, temp_mat_zeroed};
+use faer::mat::AsMatMut;
 use faer::matrix_free::LinOp;
 use faer::prelude::{Reborrow, ReborrowMut};
-use faer::{Mat, MatMut, MatRef};
+use faer::{MatMut, MatRef};
 use faer_traits::ComplexField;
 
 use super::{BlockPrecondError, BlockSplit2, Precond};
@@ -97,7 +99,9 @@ where
     C: LinOp<T>,
 {
     fn apply_scratch(&self, rhs_ncols: usize, par: Par) -> StackReq {
-        StackReq::any_of(&[
+        StackReq::all_of(&[
+            temp_mat_scratch::<T>(self.split.n1, rhs_ncols),
+            temp_mat_scratch::<T>(self.split.n0, rhs_ncols),
             self.ainv.apply_in_place_scratch(rhs_ncols, par),
             self.sinv.apply_in_place_scratch(rhs_ncols, par),
             self.b.apply_scratch(rhs_ncols, par),
@@ -158,20 +162,20 @@ where
             let (mut rhs0, mut rhs1) = rhs.rb_mut().split_at_row_mut(self.split.n0);
             self.ainv.apply_in_place(rhs0.rb_mut(), par, stack);
 
-            let mut tmp_c = Mat::<T>::zeros(self.split.n1, rhs_ncols);
-            self.c.apply(tmp_c.as_mut(), rhs0.rb(), par, stack);
-            subtract_in_place(rhs1.rb_mut(), tmp_c.as_ref());
+            let (mut tmp_c, stack) = temp_mat_zeroed::<T, _, _>(self.split.n1, rhs_ncols, stack);
+            self.c.apply(tmp_c.as_mat_mut(), rhs0.rb(), par, stack);
+            subtract_in_place(rhs1.rb_mut(), tmp_c.as_mat_mut().as_ref());
             self.sinv.apply_in_place(rhs1.rb_mut(), par, stack);
         }
 
         {
             let (_, rhs1) = rhs.rb_mut().split_at_row_mut(self.split.n0);
-            let mut tmp_b = Mat::<T>::zeros(self.split.n0, rhs_ncols);
-            self.b.apply(tmp_b.as_mut(), rhs1.rb(), par, stack);
-            self.ainv.apply_in_place(tmp_b.as_mut(), par, stack);
+            let (mut tmp_b, stack) = temp_mat_zeroed::<T, _, _>(self.split.n0, rhs_ncols, stack);
+            self.b.apply(tmp_b.as_mat_mut(), rhs1.rb(), par, stack);
+            self.ainv.apply_in_place(tmp_b.as_mat_mut(), par, stack);
 
             let (mut rhs0, _) = rhs.rb_mut().split_at_row_mut(self.split.n0);
-            subtract_in_place(rhs0.rb_mut(), tmp_b.as_ref());
+            subtract_in_place(rhs0.rb_mut(), tmp_b.as_mat_mut().as_ref());
         }
     }
 
@@ -183,20 +187,21 @@ where
             let (mut rhs0, mut rhs1) = rhs.rb_mut().split_at_row_mut(self.split.n0);
             self.ainv.conj_apply_in_place(rhs0.rb_mut(), par, stack);
 
-            let mut tmp_c = Mat::<T>::zeros(self.split.n1, rhs_ncols);
-            self.c.conj_apply(tmp_c.as_mut(), rhs0.rb(), par, stack);
-            subtract_in_place(rhs1.rb_mut(), tmp_c.as_ref());
+            let (mut tmp_c, stack) = temp_mat_zeroed::<T, _, _>(self.split.n1, rhs_ncols, stack);
+            self.c.conj_apply(tmp_c.as_mat_mut(), rhs0.rb(), par, stack);
+            subtract_in_place(rhs1.rb_mut(), tmp_c.as_mat_mut().as_ref());
             self.sinv.conj_apply_in_place(rhs1.rb_mut(), par, stack);
         }
 
         {
             let (_, rhs1) = rhs.rb_mut().split_at_row_mut(self.split.n0);
-            let mut tmp_b = Mat::<T>::zeros(self.split.n0, rhs_ncols);
-            self.b.conj_apply(tmp_b.as_mut(), rhs1.rb(), par, stack);
-            self.ainv.conj_apply_in_place(tmp_b.as_mut(), par, stack);
+            let (mut tmp_b, stack) = temp_mat_zeroed::<T, _, _>(self.split.n0, rhs_ncols, stack);
+            self.b.conj_apply(tmp_b.as_mat_mut(), rhs1.rb(), par, stack);
+            self.ainv
+                .conj_apply_in_place(tmp_b.as_mat_mut(), par, stack);
 
             let (mut rhs0, _) = rhs.rb_mut().split_at_row_mut(self.split.n0);
-            subtract_in_place(rhs0.rb_mut(), tmp_b.as_ref());
+            subtract_in_place(rhs0.rb_mut(), tmp_b.as_mat_mut().as_ref());
         }
     }
 }
