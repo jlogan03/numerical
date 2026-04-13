@@ -53,10 +53,11 @@
 //!   Joseph-form and simpler updates stay aligned across estimator families.
 
 use super::CovarianceUpdate;
+use crate::decomp::{DenseDecompParams, dense_self_adjoint_eigen};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use core::fmt;
 use faer::prelude::Solve;
-use faer::{Mat, MatRef, Side};
+use faer::{Mat, MatRef};
 use faer_traits::ext::ComplexFieldExt;
 use faer_traits::{ComplexField, RealField};
 use num_traits::{Float, NumCast, One, Zero};
@@ -103,7 +104,17 @@ where
     /// Predicted covariance before measurement incorporation.
     pub covariance: Mat<R>,
     /// Predicted output associated with the predicted state.
+    ///
+    /// For the UKF path this is the unscented predicted measurement mean
+    /// reconstructed from the propagated sigma cloud, not merely `h(x^-)`.
     pub output: Mat<R>,
+    /// Propagated sigma cloud cached by the UKF prediction stage.
+    ///
+    /// The UKF update must reuse the same propagated state points that were
+    /// used to form `x^-` and `P^-`. Re-sampling from `(x^-, P^-)` would apply
+    /// an extra Gaussianization step and no longer match the standard UKF
+    /// equations.
+    ukf_sigma: Option<SigmaPointSet<R>>,
 }
 
 /// Measurement update result of a discrete nonlinear Kalman filter.
@@ -434,6 +445,7 @@ where
             state,
             covariance,
             output,
+            ukf_sigma: None,
         })
     }
 
@@ -703,8 +715,13 @@ where
         );
         let mut covariance = covariance;
         hermitian_project_in_place(&mut covariance);
-        let output = self.model.output(state.as_ref(), input);
-        validate_model_output("output", output.as_ref(), self.model.noutputs(), 1)?;
+        let output_points = propagate_sigma_points(
+            propagated.as_ref(),
+            |point| self.model.output(point, input),
+            self.model.noutputs(),
+            "output",
+        )?;
+        let output = weighted_mean(output_points.as_ref(), &sigma.mean_weights);
 
         validate_finite("prediction.state", state.as_ref())?;
         validate_finite("prediction.covariance", covariance.as_ref())?;
@@ -714,6 +731,11 @@ where
             state,
             covariance,
             output,
+            ukf_sigma: Some(SigmaPointSet {
+                points: propagated,
+                mean_weights: sigma.mean_weights,
+                cov_weights: sigma.cov_weights,
+            }),
         })
     }
 
@@ -733,22 +755,22 @@ where
         validate_column_vector("input", input, self.model.ninputs())?;
         validate_column_vector("measurement", measurement, self.model.noutputs())?;
 
-        let sigma = self.sigma_strategy.sigma_points(
-            prediction.state.as_ref(),
-            prediction.covariance.as_ref(),
-            input,
-            UkfStage::Update,
-        )?;
-        validate_sigma_point_set(&sigma, self.model.nstates())?;
+        let sigma =
+            prediction
+                .ukf_sigma
+                .as_ref()
+                .ok_or(NonlinearEstimatorError::InvalidSigmaPointSet {
+                    which: "prediction.ukf_sigma",
+                })?;
+        validate_sigma_point_set(sigma, self.model.nstates())?;
 
-        let state_points = sigma.points;
         let output_points = propagate_sigma_points(
-            state_points.as_ref(),
+            sigma.points.as_ref(),
             |point| self.model.output(point, input),
             self.model.noutputs(),
             "output",
         )?;
-        let predicted_output = weighted_mean(output_points.as_ref(), &sigma.mean_weights);
+        let predicted_output = clone_mat(prediction.output.as_ref());
         let innovation = dense_sub(measurement, predicted_output.as_ref());
         let innovation_covariance = dense_add(
             weighted_covariance(
@@ -762,7 +784,7 @@ where
         let mut innovation_covariance = innovation_covariance;
         hermitian_project_in_place(&mut innovation_covariance);
         let cross = weighted_cross_covariance(
-            state_points.as_ref(),
+            sigma.points.as_ref(),
             prediction.state.as_ref(),
             output_points.as_ref(),
             predicted_output.as_ref(),
@@ -1055,8 +1077,10 @@ where
 
 /// Builds the standard scaled sigma-point set from a mean/covariance pair.
 ///
-/// The covariance square root comes from a dense Cholesky factorization. The
-/// implementation rejects non-PSD inputs rather than injecting silent
+/// The covariance spread comes from a dense Hermitian square root. This accepts
+/// positive semidefinite covariances such as exact known-state initializations
+/// by producing repeated sigma points in the zero-variance directions, while
+/// still rejecting genuinely indefinite inputs rather than injecting silent
 /// jitter.
 fn standard_sigma_points<R>(
     mean: MatRef<'_, R>,
@@ -1080,12 +1104,28 @@ where
         });
     }
 
-    let chol = covariance.llt(Side::Lower).map_err(|_| {
-        NonlinearEstimatorError::NonPositiveDefiniteCovariance {
+    let mut covariance = clone_mat(covariance);
+    hermitian_project_in_place(&mut covariance);
+    let eig = dense_self_adjoint_eigen(covariance.as_ref(), &DenseDecompParams::<R>::new())
+        .map_err(|_| NonlinearEstimatorError::NonPositiveDefiniteCovariance {
             which: "sigma_points.covariance",
+        })?;
+    let mut max_abs_eigenvalue = R::zero();
+    for idx in 0..eig.values.nrows() {
+        max_abs_eigenvalue = max_abs_eigenvalue.max(eig.values[idx].abs());
+    }
+    let tol = R::epsilon().sqrt() * R::one().max(max_abs_eigenvalue);
+    let mut sqrt_eigenvalues = Vec::with_capacity(eig.values.nrows());
+    for idx in 0..eig.values.nrows() {
+        let value = eig.values[idx];
+        if value < -tol {
+            return Err(NonlinearEstimatorError::NonPositiveDefiniteCovariance {
+                which: "sigma_points.covariance",
+            });
         }
-    })?;
-    let l = chol.L();
+        sqrt_eigenvalues.push(value.max(R::zero()).sqrt());
+    }
+
     let gamma = scaling.sqrt();
     let nstates = mean.nrows();
     let npoints = 2 * nstates + 1;
@@ -1093,9 +1133,11 @@ where
         if col == 0 {
             mean[(row, 0)]
         } else if col <= nstates {
-            mean[(row, 0)] + l[(row, col - 1)].mul_real(gamma)
+            let idx = col - 1;
+            mean[(row, 0)] + eig.vectors[(row, idx)] * sqrt_eigenvalues[idx] * gamma
         } else {
-            mean[(row, 0)] - l[(row, col - nstates - 1)].mul_real(gamma)
+            let idx = col - nstates - 1;
+            mean[(row, 0)] - eig.vectors[(row, idx)] * sqrt_eigenvalues[idx] * gamma
         }
     });
 
@@ -1843,6 +1885,61 @@ mod tests {
     }
 
     #[test]
+    fn ukf_predict_returns_unscented_measurement_mean_for_nonlinear_output() {
+        let q = Mat::from_fn(1, 1, |_, _| 0.0);
+        let r = Mat::from_fn(1, 1, |_, _| 0.2);
+        let x_hat = Mat::from_fn(1, 1, |_, _| 1.0);
+        let p = Mat::from_fn(1, 1, |_, _| 0.25);
+        let ukf = UnscentedKalmanFilter::new_standard(
+            QuadraticModel,
+            q,
+            r,
+            x_hat,
+            p,
+            UnscentedParams {
+                alpha: 1.0,
+                beta: 2.0,
+                kappa: 0.0,
+            },
+        )
+        .unwrap();
+        let u = Mat::from_fn(1, 1, |_, _| 0.0);
+
+        let prediction = ukf.predict(u.as_ref()).unwrap();
+        assert_close(prediction.state[(0, 0)], 1.25, 1.0e-12);
+        assert_close(prediction.output[(0, 0)], 2.5625, 1.0e-12);
+    }
+
+    #[test]
+    fn ukf_update_reuses_propagated_sigma_points() {
+        let q = Mat::from_fn(1, 1, |_, _| 0.0);
+        let r = Mat::from_fn(1, 1, |_, _| 0.2);
+        let x_hat = Mat::from_fn(1, 1, |_, _| 1.0);
+        let p = Mat::from_fn(1, 1, |_, _| 0.25);
+        let ukf = UnscentedKalmanFilter::new_standard(
+            QuadraticModel,
+            q,
+            r,
+            x_hat,
+            p,
+            UnscentedParams {
+                alpha: 1.0,
+                beta: 2.0,
+                kappa: 0.0,
+            },
+        )
+        .unwrap();
+        let u = Mat::from_fn(1, 1, |_, _| 0.0);
+        let y = Mat::from_fn(1, 1, |_, _| 2.4);
+
+        let prediction = ukf.predict(u.as_ref()).unwrap();
+        let update = ukf.update(&prediction, u.as_ref(), y.as_ref()).unwrap();
+
+        assert_close(prediction.output[(0, 0)], 2.5625, 1.0e-12);
+        assert_close(update.predicted_output[(0, 0)], 2.5625, 1.0e-12);
+    }
+
+    #[test]
     fn ukf_custom_sigma_points_are_used() {
         let predict_calls = Rc::new(Cell::new(0));
         let update_calls = Rc::new(Cell::new(0));
@@ -1861,7 +1958,7 @@ mod tests {
         let y = Mat::from_fn(1, 1, |_, _| 1.0);
         let update = ukf.step(u.as_ref(), y.as_ref()).unwrap();
         assert_eq!(predict_calls.get(), 1);
-        assert_eq!(update_calls.get(), 1);
+        assert_eq!(update_calls.get(), 0);
         assert_close(update.predicted_output[(0, 0)], 1.0625, 1.0e-12);
     }
 
@@ -1885,14 +1982,46 @@ mod tests {
     }
 
     #[test]
-    fn nonlinear_filters_track_linear_kalman_on_linear_model() {
+    fn ukf_accepts_semidefinite_covariance() {
+        let q = Mat::from_fn(1, 1, |_, _| 0.1);
+        let r = Mat::from_fn(1, 1, |_, _| 0.2);
+        let x_hat = Mat::from_fn(1, 1, |_, _| 1.0);
+        let p = Mat::from_fn(1, 1, |_, _| 0.0);
+        let ukf = UnscentedKalmanFilter::new_standard(
+            NonlinearOutputModel,
+            q,
+            r,
+            x_hat,
+            p,
+            UnscentedParams {
+                alpha: 1.0,
+                beta: 2.0,
+                kappa: 0.0,
+            },
+        )
+        .unwrap();
+        let u = Mat::from_fn(1, 1, |_, _| 0.0);
+
+        let prediction = ukf.predict(u.as_ref()).unwrap();
+        assert_close(prediction.state[(0, 0)], 1.0, 1.0e-12);
+        assert_close(prediction.covariance[(0, 0)], 0.1, 1.0e-12);
+        assert_close(prediction.output[(0, 0)], 1.0, 1.0e-12);
+    }
+
+    #[test]
+    fn nonlinear_filters_track_linear_kalman_on_linear_model_without_process_noise() {
         let model = LinearScalarModel {
             a: 1.1,
             b: 0.4,
             c: 0.8,
             d: 0.1,
         };
-        let q = Mat::from_fn(1, 1, |_, _| 0.2);
+        // This non-augmented additive-noise UKF injects `Q` by covariance
+        // addition after state prediction but reuses the propagated sigma
+        // cloud during the measurement step. The linear-model equivalence
+        // check therefore uses `Q = 0`, where the UKF and the ordinary Kalman
+        // filter coincide exactly.
+        let q = Mat::from_fn(1, 1, |_, _| 0.0);
         let r = Mat::from_fn(1, 1, |_, _| 0.3);
         let x_hat = Mat::from_fn(1, 1, |_, _| 0.5);
         let p = Mat::from_fn(1, 1, |_, _| 1.1);
