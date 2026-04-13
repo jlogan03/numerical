@@ -74,6 +74,13 @@ pub(crate) fn normalize_ratio<R: Float + Copy + RealField>(
     numerator: &[R],
     denominator: &[R],
 ) -> Result<(Vec<R>, Vec<R>), LtiError> {
+    if numerator.iter().any(|value| !value.is_finite())
+        || denominator.iter().any(|value| !value.is_finite())
+    {
+        return Err(LtiError::NonFiniteResult {
+            which: "normalize_ratio",
+        });
+    }
     let numerator = trim_leading_zeros(numerator);
     let denominator = trim_leading_zeros(denominator);
     if numerator.is_empty() {
@@ -88,11 +95,6 @@ pub(crate) fn normalize_ratio<R: Float + Copy + RealField>(
     if leading == R::zero() {
         return Err(LtiError::ZeroLeadingCoefficient {
             which: "denominator",
-        });
-    }
-    if numerator[0].is_nan() || leading.is_nan() {
-        return Err(LtiError::NonFiniteResult {
-            which: "normalize_ratio",
         });
     }
     let scale = leading.recip();

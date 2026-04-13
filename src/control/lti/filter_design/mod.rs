@@ -251,6 +251,20 @@ mod tests {
     }
 
     #[test]
+    fn analog_bessel_lowpass_uses_minus_three_db_cutoff_normalization() {
+        let spec = AnalogFilterSpec::new(
+            4,
+            AnalogFilterFamily::Bessel,
+            FilterShape::Lowpass { cutoff: 1.0 },
+        )
+        .unwrap();
+        let tf = design_analog_filter_tf(&spec).unwrap();
+        let cutoff_gain = tf.evaluate(Complex::new(0.0, 1.0)).norm();
+        let expected = 1.0f64 / 2.0f64.sqrt();
+        assert!((cutoff_gain - expected).abs() <= 1.0e-6);
+    }
+
+    #[test]
     fn digital_butterworth_lowpass_is_stable_and_lowpass_like() {
         let spec = DigitalFilterSpec::new(
             4,

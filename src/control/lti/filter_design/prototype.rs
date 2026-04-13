@@ -86,10 +86,18 @@ fn bessel_prototype<R>(order: usize) -> Result<ContinuousZpk<R>, FilterDesignErr
 where
     R: Float + Copy + RealField,
 {
-    // Reverse Bessel polynomials are tabulated in coefficient form. The roots
-    // of that polynomial are the normalized Bessel poles.
+    // Reverse Bessel polynomials are tabulated in coefficient form. Their
+    // roots are the classical delay-normalized Bessel poles, so they must be
+    // rescaled before the rest of the design layer can treat them as ordinary
+    // cutoff-normalized lowpass prototypes.
     let denominator = reverse_bessel_denominator::<R>(order);
-    let poles = poly_roots(&denominator)?;
+    let delay_normalized_poles = poly_roots(&denominator)?;
+    let delay_normalized_gain = gain_for_dc_target::<R>(&[], &delay_normalized_poles, R::one())?;
+    let cutoff_scale = bessel_cutoff_normalization(delay_normalized_gain, &delay_normalized_poles)?;
+    let poles = delay_normalized_poles
+        .iter()
+        .map(|&pole| pole / cutoff_scale)
+        .collect::<Vec<_>>();
     let gain = gain_for_dc_target::<R>(&[], &poles, R::one())?;
     ContinuousZpk::new(Vec::new(), poles, gain, ContinuousTime).map_err(Into::into)
 }
@@ -109,6 +117,63 @@ where
 
 fn factorial_f64(n: usize) -> f64 {
     (1..=n).fold(1.0, |acc, value| acc * value as f64)
+}
+
+fn bessel_cutoff_normalization<R>(gain: R, poles: &[Complex<R>]) -> Result<R, FilterDesignError>
+where
+    R: Float + Copy + RealField,
+{
+    let target = R::one() / R::from(2.0).unwrap().sqrt();
+    let mut lower = R::zero();
+    let mut upper = R::one();
+
+    while zpk_magnitude_at(gain, poles, upper)? > target {
+        upper = upper + upper;
+        if !upper.is_finite() {
+            return Err(FilterDesignError::Lti(LtiError::NonFiniteResult {
+                which: "bessel_cutoff_normalization",
+            }));
+        }
+    }
+
+    for _ in 0..80 {
+        let mid = (lower + upper) / R::from(2.0).unwrap();
+        if zpk_magnitude_at(gain, poles, mid)? > target {
+            lower = mid;
+        } else {
+            upper = mid;
+        }
+    }
+
+    let scale = (lower + upper) / R::from(2.0).unwrap();
+    if !scale.is_finite() || scale <= R::zero() {
+        Err(FilterDesignError::Lti(LtiError::NonFiniteResult {
+            which: "bessel_cutoff_normalization",
+        }))
+    } else {
+        Ok(scale)
+    }
+}
+
+fn zpk_magnitude_at<R>(gain: R, poles: &[Complex<R>], omega: R) -> Result<R, FilterDesignError>
+where
+    R: Float + Copy + RealField,
+{
+    let s = Complex::new(R::zero(), omega);
+    let denominator = poles
+        .iter()
+        .fold(Complex::new(R::one(), R::zero()), |acc, &pole| {
+            acc * (s - pole)
+        });
+    let value = Complex::new(gain, R::zero()) / denominator;
+    let magnitude = value.norm();
+    if magnitude.is_finite() {
+        Ok(magnitude)
+    } else {
+        Err(FilterDesignError::Lti(LtiError::NonFiniteResult {
+            which: "bessel_cutoff_normalization",
+        }))
+    }
 }
 
 fn gain_for_dc_target<R>(

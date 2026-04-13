@@ -728,6 +728,29 @@ mod tests {
     }
 
     #[test]
+    fn constructor_rejects_nonfinite_coefficients_anywhere_in_ratio() {
+        let trailing_nan =
+            ContinuousTransferFunction::continuous(vec![1.0, f64::NAN], vec![1.0, 1.0])
+                .unwrap_err();
+        let trailing_inf =
+            ContinuousTransferFunction::continuous(vec![1.0], vec![1.0, f64::INFINITY])
+                .unwrap_err();
+
+        assert!(matches!(
+            trailing_nan,
+            LtiError::NonFiniteResult {
+                which: "normalize_ratio"
+            }
+        ));
+        assert!(matches!(
+            trailing_inf,
+            LtiError::NonFiniteResult {
+                which: "normalize_ratio"
+            }
+        ));
+    }
+
+    #[test]
     fn zpk_round_trip_preserves_coefficients() {
         let tf = ContinuousTransferFunction::continuous(vec![1.0, 3.0, 2.0], vec![1.0, 5.0, 6.0])
             .unwrap();
