@@ -5,7 +5,7 @@ use numerical::control::lti::{
 };
 use plotly::{
     Layout, Plot, Scatter,
-    common::{Mode, Title},
+    common::{Line, Mode, Title},
     layout::{Axis, AxisType},
 };
 
@@ -235,6 +235,7 @@ fn build_line_plot(
 ) -> Plot {
     let trace = Scatter::new(x.to_vec(), y.to_vec())
         .mode(Mode::Lines)
+        .line(Line::new().color("#000000"))
         .name(title);
 
     let mut x_axis = Axis::new().title(Title::with_text(x_label));

@@ -123,7 +123,7 @@ pub fn SynthesisPage() -> impl IntoView {
                     </section>
                 </aside>
 
-                <div class="plots-grid compact">
+                <div class="plots-grid wide">
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>

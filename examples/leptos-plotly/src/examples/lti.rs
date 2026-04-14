@@ -3,7 +3,7 @@ use leptos::prelude::*;
 use numerical::control::lti::FopdtModel;
 use plotly::{
     Layout, Plot, Scatter,
-    common::{Mode, Title},
+    common::{Line, Mode, Title},
     layout::{Axis, AxisType},
 };
 
@@ -194,6 +194,7 @@ fn build_step_plot(model: &FopdtModel<f64>) -> Plot {
         .unwrap_or_else(|_| vec![0.0; sample_times.len()]);
     let trace = Scatter::new(sample_times, values)
         .mode(Mode::Lines)
+        .line(Line::new().color("#000000"))
         .name("step");
 
     let layout = Layout::new()
@@ -217,6 +218,7 @@ fn build_bode_plot(model: &FopdtModel<f64>, kind: BodeKind) -> Plot {
 
     let trace = Scatter::new(angular_frequencies, values)
         .mode(Mode::Lines)
+        .line(Line::new().color("#000000"))
         .name(title);
 
     let layout = Layout::new()
