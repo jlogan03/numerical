@@ -190,13 +190,24 @@ mod tests {
     use super::{
         AnalogFilterFamily, AnalogFilterSpec, DigitalFilterFamily, DigitalFilterSpec, FilterShape,
         design_analog_filter_sos, design_analog_filter_tf, design_analog_filter_zpk,
-        design_digital_filter_tf, design_digital_filter_zpk,
+        design_digital_filter_sos, design_digital_filter_tf, design_digital_filter_zpk,
     };
     use faer::complex::Complex;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
         let err = (lhs - rhs).abs();
         assert!(err <= tol, "lhs={lhs}, rhs={rhs}, err={err}, tol={tol}");
+    }
+
+    fn assert_monotone_nonincreasing(values: &[f64], tol: f64) {
+        for pair in values.windows(2) {
+            assert!(
+                pair[1] <= pair[0] + tol,
+                "sequence is not monotone nonincreasing: {} then {}",
+                pair[0],
+                pair[1]
+            );
+        }
     }
 
     #[test]
@@ -298,5 +309,29 @@ mod tests {
         let phase = center_omega / 100.0;
         let center = tf.evaluate(Complex::new(phase.cos(), phase.sin())).norm();
         assert!(center > dc);
+    }
+
+    #[test]
+    fn digital_butterworth_lowpass_bode_magnitude_and_phase_decrease_monotonically() {
+        let spec = DigitalFilterSpec::new(
+            4,
+            DigitalFilterFamily::Butterworth,
+            FilterShape::Lowpass { cutoff: 8.0 },
+            20.0,
+        )
+        .unwrap();
+        let filter = design_digital_filter_sos(&spec).unwrap();
+        assert_close(filter.sample_time(), 1.0 / spec.sample_rate, 1.0e-12);
+        let nyquist = spec.sample_rate * core::f64::consts::PI;
+        let frequencies = (0..260)
+            .map(|i| {
+                let t = (i as f64) / 259.0;
+                10.0_f64.powf(-1.0 + t * (0.98 * nyquist).log10())
+            })
+            .collect::<Vec<_>>();
+        let bode = filter.bode_data(&frequencies).unwrap();
+
+        assert_monotone_nonincreasing(&bode.magnitude_db, 1.0e-9);
+        assert_monotone_nonincreasing(&bode.phase_deg, 1.0e-9);
     }
 }

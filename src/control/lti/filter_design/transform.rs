@@ -71,7 +71,17 @@ where
         });
     let gain = real_scalar(Complex::new(analog.gain(), R::zero()) * numerator / denominator)?;
 
-    DiscreteZpk::new(zeros, poles, gain, DiscreteTime::new(sample_rate)).map_err(Into::into)
+    // The digital design surface is specified in terms of sampling rate,
+    // while the general discrete-time LTI representations store sample
+    // interval metadata. Convert here so downstream evaluation paths use
+    // `z = exp(j * omega * dt)` with the physically correct `dt = 1 / fs`.
+    DiscreteZpk::new(
+        zeros,
+        poles,
+        gain,
+        DiscreteTime::new(R::one() / sample_rate),
+    )
+    .map_err(Into::into)
 }
 
 fn lowpass_zpk<R>(
