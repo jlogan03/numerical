@@ -104,8 +104,19 @@ pub fn NonlinearEstimationPage() -> impl IntoView {
                                 id="nonlinear-plant-kind"
                                 prop:value=move || plant_kind.get().as_key().to_string()
                                 on:change=move |ev| {
-                                    set_plant_kind
-                                        .set(TrackingPlantKind::from_key(&event_target_value(&ev)));
+                                    let next_kind =
+                                        TrackingPlantKind::from_key(&event_target_value(&ev));
+                                    set_plant_kind.set(next_kind);
+                                    match next_kind {
+                                        TrackingPlantKind::Linear | TrackingPlantKind::SlantRange => {
+                                            set_sensor_height.set(8.0);
+                                            set_linear_reference.set(4.0);
+                                        }
+                                        TrackingPlantKind::Quintic => {
+                                            set_sensor_height.set(2.0);
+                                            set_linear_reference.set(4.0);
+                                        }
+                                    }
                                 }
                             >
                                 <option value="linear">"Linear position sensor"</option>
@@ -257,7 +268,7 @@ pub fn NonlinearEstimationPage() -> impl IntoView {
                             <div>
                                 <h2>"Position estimate"</h2>
                                 <p>
-                                    "Truth, an inverted measurement proxy for display, and the three competing filters."
+                                    "Truth and the three competing filters on the same tracking run."
                                 </p>
                             </div>
                         </div>
@@ -351,7 +362,7 @@ impl TrackingPlantKind {
                 "The measurement is `y_k = sqrt(position_k^2 + h^2) + n_k`, where `h` is the sensor-height offset above the track. This is a moderate nonlinearity: the linear KF can lag if its fixed reference is poor, while the EKF and UKF usually track closely. The measurement error again includes Gaussian-like jitter plus a smaller colored bias."
             }
             Self::Quintic => {
-                "The measurement is `y_k = x_k + 0.35 x_k^5 / s^4 + n_k`, where `s` is the displayed scale parameter. This preserves the sign of position but injects stronger higher-order curvature than the slant-range model, which is where the UKF should separate most clearly from the EKF. The additive sensor noise keeps the raw measurement visibly noisy on top of that distortion."
+                "The measurement is `y_k = x_k + 0.35 x_k^5 / s^4 + n_k`, where `s` is the displayed scale parameter. This preserves the sign of position but injects stronger higher-order curvature than the slant-range model, which is where the UKF should separate most clearly from the EKF. The additive sensor noise keeps the raw measurement visibly noisy on top of that distortion. The quintic preset intentionally uses a low scale so the UKF advantage is visible."
             }
         }
     }
@@ -365,7 +376,7 @@ impl TrackingPlantKind {
                 "Increase sensor height or move the fixed linearization point away from the target path to make the slant-range sensor more nonlinear from the linear KF's point of view. The EKF should recover most of that gap, while the UKF will usually stay close on this moderate nonlinearity."
             }
             Self::Quintic => {
-                "This sensor exaggerates higher-order curvature. Move the fixed linearization point away from the truth path or unlock the assumption sliders to add mismatch. This is the case where the UKF should outperform the EKF most visibly."
+                "This sensor exaggerates higher-order curvature. The built-in quintic preset drops the scale to `2.0`, which makes the sigma-point treatment visibly better than EKF linearization on the same run. The page compares only the filter trajectories and errors, rather than trying to coerce the nonlinear sensor output into a pseudo-position trace. Move the fixed linearization point away from the truth path or unlock the assumption sliders to add even more mismatch."
             }
         }
     }
@@ -429,11 +440,9 @@ impl DiscreteExtendedKalmanModel<f64> for RangeTrackingModel {
 struct NonlinearEstimationDemo {
     times: Vec<f64>,
     truth_position: Vec<f64>,
-    measured_proxy_position: Vec<f64>,
     linear_position: Vec<f64>,
     ekf_position: Vec<f64>,
     ukf_position: Vec<f64>,
-    measurement_abs_error: Vec<f64>,
     linear_abs_error: Vec<f64>,
     ekf_abs_error: Vec<f64>,
     ukf_abs_error: Vec<f64>,
@@ -470,13 +479,6 @@ fn build_nonlinear_estimation_plot(
                 false,
                 vec![
                     LineSeries::lines("truth", demo.times.clone(), demo.truth_position),
-                    LineSeries::lines(
-                        "measurement proxy",
-                        demo.times.clone(),
-                        demo.measured_proxy_position,
-                    )
-                    .with_dash(DashType::Dot)
-                    .with_line_width(1.0),
                     LineSeries::lines("linearized KF", demo.times.clone(), demo.linear_position)
                         .with_dash(DashType::Dash),
                     LineSeries::lines("EKF", demo.times.clone(), demo.ekf_position)
@@ -491,13 +493,6 @@ fn build_nonlinear_estimation_plot(
                 "|estimate - truth|",
                 false,
                 vec![
-                    LineSeries::lines(
-                        "measurement proxy",
-                        demo.times.clone(),
-                        demo.measurement_abs_error,
-                    )
-                    .with_dash(DashType::Dot)
-                    .with_line_width(1.0),
                     LineSeries::lines("linearized KF", demo.times.clone(), demo.linear_abs_error)
                         .with_dash(DashType::Dash),
                     LineSeries::lines("EKF", demo.times.clone(), demo.ekf_abs_error)
@@ -646,7 +641,6 @@ fn run_nonlinear_estimation_demo(
     let mut truth = [6.0_f64, -0.25_f64];
     let mut times = Vec::with_capacity(n_steps);
     let mut truth_position = Vec::with_capacity(n_steps);
-    let mut measured_proxy_position = Vec::with_capacity(n_steps);
     let mut linear_position = Vec::with_capacity(n_steps);
     let mut ekf_position = Vec::with_capacity(n_steps);
     let mut ukf_position = Vec::with_capacity(n_steps);
@@ -675,11 +669,6 @@ fn run_nonlinear_estimation_demo(
 
         times.push(t);
         truth_position.push(truth[0]);
-        measured_proxy_position.push(measurement_proxy_position(
-            plant_kind,
-            measurement,
-            sensor_height,
-        ));
         linear_position.push(linear_update.state[(0, 0)]);
         ekf_position.push(ekf_update.state[(0, 0)]);
         ukf_position.push(ukf_update.state[(0, 0)]);
@@ -694,7 +683,6 @@ fn run_nonlinear_estimation_demo(
     let linear_abs_error = absolute_error(&linear_position, &truth_position);
     let ekf_abs_error = absolute_error(&ekf_position, &truth_position);
     let ukf_abs_error = absolute_error(&ukf_position, &truth_position);
-    let measurement_abs_error = absolute_error(&measured_proxy_position, &truth_position);
     let linear_rmse = rmse(&linear_position, &truth_position);
     let ekf_rmse = rmse(&ekf_position, &truth_position);
     let ukf_rmse = rmse(&ukf_position, &truth_position);
@@ -710,11 +698,9 @@ fn run_nonlinear_estimation_demo(
     Ok(NonlinearEstimationDemo {
         times,
         truth_position,
-        measured_proxy_position,
         linear_position,
         ekf_position,
         ukf_position,
-        measurement_abs_error,
         linear_abs_error,
         ekf_abs_error,
         ukf_abs_error,
@@ -752,32 +738,6 @@ fn measurement_slope(plant_kind: TrackingPlantKind, position: f64, sensor_height
     }
 }
 
-fn measurement_proxy_position(
-    plant_kind: TrackingPlantKind,
-    measurement: f64,
-    sensor_height: f64,
-) -> f64 {
-    match plant_kind {
-        TrackingPlantKind::Linear => measurement,
-        TrackingPlantKind::SlantRange => (measurement * measurement
-            - sensor_height * sensor_height)
-            .max(0.0)
-            .sqrt(),
-        TrackingPlantKind::Quintic => invert_quintic_measurement(measurement, sensor_height),
-    }
-}
-
-fn invert_quintic_measurement(measurement: f64, sensor_height: f64) -> f64 {
-    let scale = sensor_height.max(1.0);
-    let mut estimate = measurement;
-    for _ in 0..10 {
-        let value = estimate + 0.35 * estimate.powi(5) / scale.powi(4) - measurement;
-        let slope = 1.0 + 1.75 * estimate.powi(4) / scale.powi(4);
-        estimate -= value / slope.max(1.0e-8);
-    }
-    estimate
-}
-
 fn absolute_error(estimate: &[f64], truth: &[f64]) -> Vec<f64> {
     estimate
         .iter()
@@ -803,4 +763,30 @@ fn tracking_command(step: usize) -> f64 {
     let k = step as f64;
     0.10 * (0.09 * k).sin() + if step >= 30 { 0.10 } else { 0.0 }
         - if step >= 72 { 0.14 } else { 0.0 }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{TrackingPlantKind, run_nonlinear_estimation_demo};
+
+    #[test]
+    fn quintic_preset_gives_ukf_visible_advantage() {
+        let demo = run_nonlinear_estimation_demo(
+            TrackingPlantKind::Quintic,
+            2.0,
+            4.0,
+            0.18,
+            0.35,
+            0.18,
+            0.35,
+        )
+        .expect("demo should run");
+
+        assert!(
+            demo.ukf_rmse < 0.75 * demo.ekf_rmse,
+            "expected UKF to beat EKF materially for the quintic preset, got ekf={} ukf={}",
+            demo.ekf_rmse,
+            demo.ukf_rmse
+        );
+    }
 }
