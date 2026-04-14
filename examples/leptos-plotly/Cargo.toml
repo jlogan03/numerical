@@ -1,0 +1,13 @@
+[package]
+name = "numerical-leptos-plotly-examples"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+console_error_panic_hook = "0.1.7"
+gloo-net = "0.6.0"
+leptos = { version = "0.8.17", features = ["csr"] }
+plotly = "0.14.1"
+serde = { version = "1.0.228", features = ["derive"] }
+wasm-bindgen-futures = "0.4.55"
