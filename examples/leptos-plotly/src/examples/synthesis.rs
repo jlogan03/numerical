@@ -249,10 +249,7 @@ fn run_synthesis_demo(
     let closed_sim = closed_system
         .simulate(&x0, zero_inputs.as_ref())
         .map_err(|err| err.to_string())?;
-    let poles = closed_system
-        .pole_zero_data()
-        .map_err(|err| err.to_string())?
-        .poles;
+    let poles = closed_system.poles().map_err(|err| err.to_string())?;
     let spectral_radius = poles.iter().map(|pole| pole.norm()).fold(0.0_f64, f64::max);
 
     let times = (0..zero_inputs.ncols())
