@@ -44,6 +44,7 @@ Then open the local URL reported by `trunk`.
 ## Current demos
 
 - `LTI Analysis / Process Models`: delayed FOPDT step and Bode exploration
+- `LTI Analysis / Plot Gallery`: Bode, Nyquist, Nichols, pole-zero, and root-locus inspection from one loop transfer
 - `Filter Design / Butterworth Lowpass`: interactive digital SOS design and Bode inspection
 - `Estimation / Kalman Workbench`: recursive versus steady-state discrete Kalman filtering
 - `Identification / OKID + ERA`: sampled I/O identification and realized-model comparison

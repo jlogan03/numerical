@@ -5,6 +5,8 @@ pub enum ExampleId {
     Home,
     /// Continuous-time process-model exploration.
     LtiProcessModels,
+    /// Gallery of LTI plotting-data surfaces.
+    LtiPlotGallery,
     /// Digital IIR filter design exploration.
     FilterDesign,
     /// Linear estimator comparison.
@@ -71,12 +73,20 @@ pub const EXAMPLE_GROUPS: &[ExampleGroup] = &[
     ExampleGroup {
         title: "LTI Analysis",
         summary: "Interactive sampling and plotting for process models, time responses, and frequency views.",
-        entries: &[ExampleEntry {
-            id: ExampleId::LtiProcessModels,
-            title: "Process Models",
-            summary: "Explore delayed first-order process models with step and Bode views driven by `numerical`.",
-            status: ExampleStatus::Ready,
-        }],
+        entries: &[
+            ExampleEntry {
+                id: ExampleId::LtiProcessModels,
+                title: "Process Models",
+                summary: "Explore delayed first-order process models with step and Bode views driven by `numerical`.",
+                status: ExampleStatus::Ready,
+            },
+            ExampleEntry {
+                id: ExampleId::LtiPlotGallery,
+                title: "Plot Gallery",
+                summary: "Inspect Bode, Nyquist, Nichols, pole-zero, and root-locus data from one loop transfer.",
+                status: ExampleStatus::Ready,
+            },
+        ],
     },
     ExampleGroup {
         title: "Filter Design",
@@ -142,6 +152,7 @@ impl ExampleId {
                 status: ExampleStatus::Ready,
             },
             Self::LtiProcessModels => EXAMPLE_GROUPS[0].entries[0],
+            Self::LtiPlotGallery => EXAMPLE_GROUPS[0].entries[1],
             Self::FilterDesign => EXAMPLE_GROUPS[1].entries[0],
             Self::Estimation => EXAMPLE_GROUPS[2].entries[0],
             Self::Identification => EXAMPLE_GROUPS[3].entries[0],

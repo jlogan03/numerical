@@ -161,11 +161,9 @@ fn build_estimation_plot(
                 false,
                 vec![
                     LineSeries::lines("truth", demo.times.clone(), demo.truth_position),
-                    LineSeries::lines_markers(
-                        "measurement",
-                        demo.times.clone(),
-                        demo.measured_position,
-                    ),
+                    LineSeries::lines("measurement", demo.times.clone(), demo.measured_position)
+                        .with_line_width(1.0)
+                        .with_opacity(1.0),
                     LineSeries::lines("kalman", demo.times.clone(), demo.kalman_position),
                     LineSeries::lines("steady-state", demo.times, demo.steady_position),
                 ],

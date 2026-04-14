@@ -4,6 +4,7 @@ use faer::Mat;
 use leptos::prelude::*;
 use numerical::control::lti::DiscreteStateSpace;
 use plotly::Plot;
+use plotly::common::DashType;
 
 /// Interactive controller-synthesis page using a discrete LQR design on a
 /// lightly unstable second-order plant.
@@ -177,8 +178,10 @@ fn build_synthesis_plot(
                 "position",
                 false,
                 vec![
-                    LineSeries::lines("open loop", demo.times.clone(), demo.open_loop_position),
-                    LineSeries::lines("closed loop", demo.times, demo.closed_loop_position),
+                    LineSeries::lines("open loop", demo.times.clone(), demo.open_loop_position)
+                        .with_dash(DashType::Dash),
+                    LineSeries::lines("closed loop", demo.times, demo.closed_loop_position)
+                        .with_dash(DashType::Solid),
                 ],
             ),
             SynthesisPlot::Control => build_line_plot(
