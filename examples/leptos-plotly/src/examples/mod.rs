@@ -5,6 +5,7 @@ mod identification;
 mod lti;
 mod lti_gallery;
 mod nonlinear_estimation;
+mod pid_design;
 mod reduction;
 mod synthesis;
 
@@ -15,5 +16,6 @@ pub use identification::IdentificationPage;
 pub use lti::LtiProcessModelsPage;
 pub use lti_gallery::LtiPlotGalleryPage;
 pub use nonlinear_estimation::NonlinearEstimationPage;
+pub use pid_design::PidDesignPage;
 pub use reduction::ReductionPage;
 pub use synthesis::SynthesisPage;

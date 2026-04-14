@@ -17,6 +17,8 @@ pub enum ExampleId {
     Identification,
     /// Balanced-truncation comparison.
     Reduction,
+    /// PID tuning across low-order process models and a general linear plant.
+    PidDesign,
     /// DLQR controller-design comparison.
     Synthesis,
 }
@@ -141,12 +143,20 @@ pub const EXAMPLE_GROUPS: &[ExampleGroup] = &[
     ExampleGroup {
         title: "Synthesis",
         summary: "Controller-design examples spanning PID, LQR, LQG, and pole placement.",
-        entries: &[ExampleEntry {
-            id: ExampleId::Synthesis,
-            title: "Discrete LQR",
-            summary: "Tune quadratic weights and compare open-loop and closed-loop trajectories of a sampled unstable plant.",
-            status: ExampleStatus::Ready,
-        }],
+        entries: &[
+            ExampleEntry {
+                id: ExampleId::PidDesign,
+                title: "PID Design",
+                summary: "Switch between FOPDT, SOPDT, and a general linear plant and compare tuned closed-loop responses.",
+                status: ExampleStatus::Ready,
+            },
+            ExampleEntry {
+                id: ExampleId::Synthesis,
+                title: "Discrete LQR",
+                summary: "Tune quadratic weights and compare open-loop and closed-loop trajectories of a sampled unstable plant.",
+                status: ExampleStatus::Ready,
+            },
+        ],
     },
 ];
 
@@ -168,7 +178,8 @@ impl ExampleId {
             Self::NonlinearEstimation => EXAMPLE_GROUPS[2].entries[1],
             Self::Identification => EXAMPLE_GROUPS[3].entries[0],
             Self::Reduction => EXAMPLE_GROUPS[4].entries[0],
-            Self::Synthesis => EXAMPLE_GROUPS[5].entries[0],
+            Self::PidDesign => EXAMPLE_GROUPS[5].entries[0],
+            Self::Synthesis => EXAMPLE_GROUPS[5].entries[1],
         }
     }
 }
