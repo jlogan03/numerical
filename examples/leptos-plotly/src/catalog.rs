@@ -11,6 +11,8 @@ pub enum ExampleId {
     FilterDesign,
     /// Linear estimator comparison.
     Estimation,
+    /// Nonlinear estimator comparison on a shared tracking problem.
+    NonlinearEstimation,
     /// OKID plus ERA identification flow.
     Identification,
     /// Balanced-truncation comparison.
@@ -101,12 +103,20 @@ pub const EXAMPLE_GROUPS: &[ExampleGroup] = &[
     ExampleGroup {
         title: "Estimation",
         summary: "Kalman, EKF, and UKF examples that can show covariance evolution, residuals, and convergence.",
-        entries: &[ExampleEntry {
-            id: ExampleId::Estimation,
-            title: "Kalman Workbench",
-            summary: "Compare recursive and steady-state discrete Kalman filters on the same noisy constant-velocity signal.",
-            status: ExampleStatus::Ready,
-        }],
+        entries: &[
+            ExampleEntry {
+                id: ExampleId::Estimation,
+                title: "Kalman Workbench",
+                summary: "Compare recursive and steady-state discrete Kalman filters on the same noisy constant-velocity signal.",
+                status: ExampleStatus::Ready,
+            },
+            ExampleEntry {
+                id: ExampleId::NonlinearEstimation,
+                title: "Nonlinear Tracking",
+                summary: "Compare a fixed-linearization KF, an EKF, and a UKF on the same nonlinear range-tracking problem.",
+                status: ExampleStatus::Ready,
+            },
+        ],
     },
     ExampleGroup {
         title: "Identification",
@@ -155,6 +165,7 @@ impl ExampleId {
             Self::LtiPlotGallery => EXAMPLE_GROUPS[0].entries[1],
             Self::FilterDesign => EXAMPLE_GROUPS[1].entries[0],
             Self::Estimation => EXAMPLE_GROUPS[2].entries[0],
+            Self::NonlinearEstimation => EXAMPLE_GROUPS[2].entries[1],
             Self::Identification => EXAMPLE_GROUPS[3].entries[0],
             Self::Reduction => EXAMPLE_GROUPS[4].entries[0],
             Self::Synthesis => EXAMPLE_GROUPS[5].entries[0],

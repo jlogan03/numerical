@@ -1,7 +1,7 @@
 use crate::catalog::{EXAMPLE_GROUPS, ExampleEntry, ExampleId};
 use crate::examples::{
     EstimationPage, FilterDesignPage, HomePage, IdentificationPage, LtiPlotGalleryPage,
-    LtiProcessModelsPage, ReductionPage, SynthesisPage,
+    LtiProcessModelsPage, NonlinearEstimationPage, ReductionPage, SynthesisPage,
 };
 use leptos::prelude::*;
 
@@ -17,6 +17,7 @@ pub fn App() -> impl IntoView {
         ExampleId::LtiPlotGallery => view! { <LtiPlotGalleryPage /> }.into_any(),
         ExampleId::FilterDesign => view! { <FilterDesignPage /> }.into_any(),
         ExampleId::Estimation => view! { <EstimationPage /> }.into_any(),
+        ExampleId::NonlinearEstimation => view! { <NonlinearEstimationPage /> }.into_any(),
         ExampleId::Identification => view! { <IdentificationPage /> }.into_any(),
         ExampleId::Reduction => view! { <ReductionPage /> }.into_any(),
         ExampleId::Synthesis => view! { <SynthesisPage /> }.into_any(),

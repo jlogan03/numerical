@@ -4,6 +4,7 @@ mod home;
 mod identification;
 mod lti;
 mod lti_gallery;
+mod nonlinear_estimation;
 mod reduction;
 mod synthesis;
 
@@ -13,5 +14,6 @@ pub use home::HomePage;
 pub use identification::IdentificationPage;
 pub use lti::LtiProcessModelsPage;
 pub use lti_gallery::LtiPlotGalleryPage;
+pub use nonlinear_estimation::NonlinearEstimationPage;
 pub use reduction::ReductionPage;
 pub use synthesis::SynthesisPage;

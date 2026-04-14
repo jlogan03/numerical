@@ -47,6 +47,7 @@ Then open the local URL reported by `trunk`.
 - `LTI Analysis / Plot Gallery`: Bode, Nyquist, Nichols, pole-zero, and root-locus inspection from one loop transfer
 - `Filter Design / Butterworth Lowpass`: interactive digital SOS design and Bode inspection
 - `Estimation / Kalman Workbench`: recursive versus steady-state discrete Kalman filtering
+- `Estimation / Nonlinear Tracking`: fixed-linearization KF versus EKF versus UKF on the same nonlinear range-tracking problem
 - `Identification / OKID + ERA`: sampled I/O identification and realized-model comparison
 - `Reduction / Balanced Truncation`: HSV spectrum plus full/reduced step-response comparison
 - `Synthesis / Discrete LQR`: open-loop versus closed-loop sampled regulation
