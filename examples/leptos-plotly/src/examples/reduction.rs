@@ -9,16 +9,21 @@ use plotly::Plot;
 /// Interactive balanced-truncation page comparing full and reduced models.
 #[component]
 pub fn ReductionPage() -> impl IntoView {
+    let (plant_order, set_plant_order) = signal(6_usize);
     let (retained_order, set_retained_order) = signal(3_usize);
 
     use_plotly_chart("reduction-step-plot", move || {
-        build_reduction_plot(retained_order.get(), ReductionPlot::StepResponse)
+        build_reduction_plot(
+            plant_order.get(),
+            retained_order.get(),
+            ReductionPlot::StepResponse,
+        )
     });
     use_plotly_chart("reduction-hsv-plot", move || {
-        build_reduction_plot(retained_order.get(), ReductionPlot::Hsv)
+        build_reduction_plot(plant_order.get(), retained_order.get(), ReductionPlot::Hsv)
     });
 
-    let summary = move || reduction_summary(retained_order.get());
+    let summary = move || reduction_summary(plant_order.get(), retained_order.get());
 
     view! {
         <div class="page">
@@ -26,19 +31,42 @@ pub fn ReductionPage() -> impl IntoView {
                 <p class="eyebrow">"Reduction"</p>
                 <h1>"Balanced Truncation Explorer"</h1>
                 <p>
-                    "A stable six-state continuous model is reduced with dense balanced truncation. The first plot"
+                    "A configurable stable continuous model is reduced with dense balanced truncation. The first plot"
                     " overlays the full and reduced step responses, and the second shows the Hankel singular value"
-                    " spectrum being truncated."
+                    " spectrum being truncated as the planted order and retained order change."
                 </p>
             </header>
 
             <div class="control-layout">
                 <aside class="control-card">
                     <section>
-                        <h2>"Retained order"</h2>
+                        <h2>"Model order"</h2>
                         <p class="section-copy">
-                            "Balanced truncation ranks states by joint controllability and observability energy. Moving"
-                            " this slider changes how many of those balanced directions are retained."
+                            "Plant order controls how many dynamic modes are present in the planted continuous-time"
+                            " system. Retained order controls how many balanced directions survive truncation."
+                        </p>
+
+                        <div class="control-row">
+                            <label for="reduction-plant-order">"Plant states"</label>
+                            <output>{move || plant_order.get().to_string()}</output>
+                            <input
+                                id="reduction-plant-order"
+                                type="range"
+                                min="3"
+                                max="8"
+                                step="1"
+                                prop:value=move || plant_order.get().to_string()
+                                on:input=move |ev| {
+                                    if let Ok(value) = event_target_value(&ev).parse::<usize>() {
+                                        set_plant_order.set(value.clamp(3, 8));
+                                    }
+                                }
+                            />
+                        </div>
+
+                        <p class="section-copy">
+                            "Balanced truncation ranks states by joint controllability and observability energy."
+                            " Moving the retained-order slider changes how many of those balanced directions are kept."
                         </p>
 
                         <div class="control-row">
@@ -48,12 +76,12 @@ pub fn ReductionPage() -> impl IntoView {
                                 id="reduction-order"
                                 type="range"
                                 min="1"
-                                max="6"
+                                max="8"
                                 step="1"
                                 prop:value=move || retained_order.get().to_string()
                                 on:input=move |ev| {
                                     if let Ok(value) = event_target_value(&ev).parse::<usize>() {
-                                        set_retained_order.set(value.clamp(1, 6));
+                                        set_retained_order.set(value.clamp(1, 8));
                                     }
                                 }
                             />
@@ -75,7 +103,7 @@ pub fn ReductionPage() -> impl IntoView {
                     </section>
                 </aside>
 
-                <div class="plots-grid compact">
+                <div class="plots-grid wide">
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
@@ -113,13 +141,16 @@ struct ReductionDemo {
     reduced_step: Vec<f64>,
     hsv_indices: Vec<f64>,
     hsv_values: Vec<f64>,
+    plant_order: usize,
+    requested_order: usize,
     retained_order: usize,
     error_bound: Option<f64>,
+    rms_step_error: f64,
     final_output_error: f64,
 }
 
-fn build_reduction_plot(retained_order: usize, which: ReductionPlot) -> Plot {
-    match run_reduction_demo(retained_order) {
+fn build_reduction_plot(plant_order: usize, retained_order: usize, which: ReductionPlot) -> Plot {
+    match run_reduction_demo(plant_order, retained_order) {
         Ok(demo) => match which {
             ReductionPlot::StepResponse => build_line_plot(
                 "Balanced truncation step response",
@@ -147,62 +178,54 @@ fn build_reduction_plot(retained_order: usize, which: ReductionPlot) -> Plot {
     }
 }
 
-fn reduction_summary(retained_order: usize) -> String {
-    match run_reduction_demo(retained_order) {
+fn reduction_summary(plant_order: usize, retained_order: usize) -> String {
+    match run_reduction_demo(plant_order, retained_order) {
         Ok(demo) => match demo.error_bound {
             Some(bound) => format!(
-                "Retained order {} with balanced-truncation tail bound {:.4}. Final sampled step-response error is {:.4}.",
-                demo.retained_order, bound, demo.final_output_error,
+                "Plant order {} with retained order {}{} has balanced-truncation tail bound {:.4}. Sampled step-response RMS error is {:.4}; final sampled error is {:.4}.",
+                demo.plant_order,
+                demo.retained_order,
+                if demo.requested_order == demo.retained_order {
+                    String::new()
+                } else {
+                    format!(
+                        " (requested {}, capped at plant order)",
+                        demo.requested_order
+                    )
+                },
+                bound,
+                demo.rms_step_error,
+                demo.final_output_error,
             ),
             None => format!(
-                "Retained order {}. Final sampled step-response error is {:.4}.",
-                demo.retained_order, demo.final_output_error,
+                "Plant order {} with retained order {}{} has sampled step-response RMS error {:.4}; final sampled error is {:.4}.",
+                demo.plant_order,
+                demo.retained_order,
+                if demo.requested_order == demo.retained_order {
+                    String::new()
+                } else {
+                    format!(
+                        " (requested {}, capped at plant order)",
+                        demo.requested_order
+                    )
+                },
+                demo.rms_step_error,
+                demo.final_output_error,
             ),
         },
         Err(err) => format!("Reduction failed: {err}"),
     }
 }
 
-fn run_reduction_demo(retained_order: usize) -> Result<ReductionDemo, String> {
-    let system = ContinuousStateSpace::new(
-        Mat::from_fn(6, 6, |row, col| match (row, col) {
-            (0, 0) => -0.45,
-            (0, 1) => 0.14,
-            (1, 1) => -0.62,
-            (1, 2) => 0.12,
-            (2, 2) => -0.82,
-            (2, 3) => 0.11,
-            (3, 3) => -1.05,
-            (3, 4) => 0.09,
-            (4, 4) => -1.32,
-            (4, 5) => 0.08,
-            (5, 5) => -1.70,
-            _ => 0.0,
-        }),
-        Mat::from_fn(6, 1, |row, _| match row {
-            0 => 1.0,
-            1 => 0.92,
-            2 => 0.84,
-            3 => 0.75,
-            4 => 0.67,
-            _ => 0.58,
-        }),
-        Mat::from_fn(1, 6, |_, col| match col {
-            0 => 1.0,
-            1 => 0.92,
-            2 => 0.83,
-            3 => 0.72,
-            4 => 0.61,
-            _ => 0.52,
-        }),
-        Mat::zeros(1, 1),
-    )
-    .map_err(|err| err.to_string())?;
+fn run_reduction_demo(plant_order: usize, retained_order: usize) -> Result<ReductionDemo, String> {
+    let effective_plant_order = plant_order.clamp(3, 8);
+    let effective_retained_order = retained_order.clamp(1, effective_plant_order);
+    let system = planted_reduction_system(effective_plant_order)?;
 
     let result = system
-        .balanced_truncation(&BalancedParams::new().with_order(retained_order))
+        .balanced_truncation(&BalancedParams::new().with_order(effective_retained_order))
         .map_err(|err| err.to_string())?;
-    let sample_times = linspace(0.0, 18.0, 220);
+    let sample_times = linspace(0.0, 28.0, 260);
     let full_step_response = system
         .step_response(&sample_times)
         .map_err(|err| err.to_string())?;
@@ -224,6 +247,16 @@ fn run_reduction_demo(retained_order: usize) -> Result<ReductionDemo, String> {
     let final_output_error = (full_step.last().copied().unwrap_or(0.0_f64)
         - reduced_step.last().copied().unwrap_or(0.0_f64))
     .abs();
+    let rms_step_error = (full_step
+        .iter()
+        .zip(&reduced_step)
+        .map(|(full, reduced)| {
+            let err = full - reduced;
+            err * err
+        })
+        .sum::<f64>()
+        / (full_step.len() as f64))
+        .sqrt();
 
     let hsv_values = (0..result.hankel_singular_values.nrows())
         .map(|idx| result.hankel_singular_values[idx])
@@ -238,8 +271,114 @@ fn run_reduction_demo(retained_order: usize) -> Result<ReductionDemo, String> {
         reduced_step,
         hsv_indices,
         hsv_values,
+        plant_order: effective_plant_order,
+        requested_order: retained_order,
         retained_order: result.reduced_order,
         error_bound: result.error_bound,
+        rms_step_error,
         final_output_error,
     })
+}
+
+fn planted_reduction_system(order: usize) -> Result<ContinuousStateSpace<f64>, String> {
+    let effective_order = order.clamp(3, 8);
+    let pole_rates = [0.16, 0.22, 0.30, 0.39, 0.50, 0.64, 0.81, 1.01];
+
+    ContinuousStateSpace::new(
+        Mat::from_fn(effective_order, effective_order, |row, col| {
+            if row == col {
+                -pole_rates[row]
+            } else if row < col {
+                let distance = (col - row) as f64;
+                let phase = ((row + 1) * 17 + (col + 1) * 13) as f64;
+                0.12 * phase.sin() / distance.sqrt()
+            } else {
+                0.0
+            }
+        }),
+        Mat::from_fn(effective_order, 3, |row, input| {
+            let phase = (row + 1) as f64;
+            let base = pole_rates[row].powf(0.85);
+            let taper = 0.82 + 0.34 * (row as f64) / ((effective_order - 1) as f64);
+            match input {
+                0 => {
+                    let amplitude = 1.0 + 0.18 * (1.73 * phase).sin() + 0.10 * (0.91 * phase).cos();
+                    let sign = if row % 2 == 0 { 1.0 } else { -1.0 };
+                    sign * base * taper * amplitude
+                }
+                1 => {
+                    let amplitude =
+                        0.85 + 0.16 * (1.11 * phase).cos() - 0.09 * (0.57 * phase).sin();
+                    let sign = if row % 3 == 0 { -1.0 } else { 1.0 };
+                    sign * base * taper * amplitude
+                }
+                _ => {
+                    let amplitude =
+                        0.92 + 0.14 * (0.67 * phase).sin() + 0.11 * (1.29 * phase).cos();
+                    let sign = if row % 4 <= 1 { 1.0 } else { -1.0 };
+                    sign * base * taper * amplitude
+                }
+            }
+        }),
+        Mat::from_fn(3, effective_order, |output, col| {
+            let phase = (col + 1) as f64;
+            let base = pole_rates[col].powf(0.85);
+            let taper = 0.84 + 0.30 * (col as f64) / ((effective_order - 1) as f64);
+            match output {
+                0 => {
+                    let amplitude = 1.0 + 0.16 * (0.63 * phase).cos() - 0.12 * (1.37 * phase).sin();
+                    let sign = if col % 3 == 1 { -1.0 } else { 1.0 };
+                    sign * base * taper * amplitude
+                }
+                1 => {
+                    let amplitude =
+                        0.90 + 0.14 * (0.88 * phase).sin() + 0.08 * (1.41 * phase).cos();
+                    let sign = if col % 2 == 0 { -1.0 } else { 1.0 };
+                    sign * base * taper * amplitude
+                }
+                _ => {
+                    let amplitude =
+                        0.96 + 0.12 * (0.52 * phase).cos() - 0.10 * (1.17 * phase).sin();
+                    let sign = if col % 4 <= 1 { 1.0 } else { -1.0 };
+                    sign * base * taper * amplitude
+                }
+            }
+        }),
+        Mat::zeros(3, 3),
+    )
+    .map_err(|err| err.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{planted_reduction_system, run_reduction_demo};
+    use numerical::control::reduction::BalancedParams;
+
+    #[test]
+    fn planted_reduction_system_has_richer_hsv_spectrum() {
+        let system = planted_reduction_system(8).expect("plant should build");
+        let result = system
+            .balanced_truncation(&BalancedParams::new())
+            .expect("balanced truncation should succeed");
+        let sigma0 = result.hankel_singular_values[0];
+        let significant = (0..result.hankel_singular_values.nrows())
+            .filter(|&idx| result.hankel_singular_values[idx] >= 0.04 * sigma0)
+            .count();
+        let order_two = run_reduction_demo(8, 2).expect("order-two reduction should run");
+        let order_five = run_reduction_demo(8, 5).expect("order-five reduction should run");
+
+        assert!(
+            significant >= 5,
+            "expected at least five nontrivial Hankel singular values, got {significant} from {:?}",
+            (0..result.hankel_singular_values.nrows())
+                .map(|idx| result.hankel_singular_values[idx])
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            order_five.rms_step_error < 0.7 * order_two.rms_step_error,
+            "expected retained order 5 to reduce step RMS error materially: order 2 = {}, order 5 = {}",
+            order_two.rms_step_error,
+            order_five.rms_step_error,
+        );
+    }
 }

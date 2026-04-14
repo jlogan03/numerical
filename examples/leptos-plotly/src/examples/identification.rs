@@ -2,7 +2,7 @@ use crate::plot_helpers::{LineSeries, build_line_plot};
 use crate::plotly_support::use_plotly_chart;
 use faer::Mat;
 use leptos::prelude::*;
-use numerical::control::identification::{EraParams, OkidParams, era_from_markov, okid};
+use numerical::control::identification::{EraError, EraParams, OkidParams, era_from_markov, okid};
 use numerical::control::lti::DiscreteStateSpace;
 use plotly::Plot;
 
@@ -10,12 +10,14 @@ use plotly::Plot;
 /// simulated sampled input/output data.
 #[component]
 pub fn IdentificationPage() -> impl IntoView {
+    let (plant_order, set_plant_order) = signal(3_usize);
     let (noise_level, set_noise_level) = signal(0.03_f64);
     let (observer_order, set_observer_order) = signal(6_usize);
     let (retained_order, set_retained_order) = signal(2_usize);
 
     use_plotly_chart("identification-markov-plot", move || {
         build_identification_plot(
+            plant_order.get(),
             noise_level.get(),
             observer_order.get(),
             retained_order.get(),
@@ -24,15 +26,26 @@ pub fn IdentificationPage() -> impl IntoView {
     });
     use_plotly_chart("identification-step-plot", move || {
         build_identification_plot(
+            plant_order.get(),
             noise_level.get(),
             observer_order.get(),
             retained_order.get(),
             IdentificationPlot::StepResponse,
         )
     });
+    use_plotly_chart("identification-error-plot", move || {
+        build_identification_plot(
+            plant_order.get(),
+            noise_level.get(),
+            observer_order.get(),
+            retained_order.get(),
+            IdentificationPlot::StepError,
+        )
+    });
 
     let summary = move || {
         identification_summary(
+            plant_order.get(),
             noise_level.get(),
             observer_order.get(),
             retained_order.get(),
@@ -56,9 +69,27 @@ pub fn IdentificationPage() -> impl IntoView {
                     <section>
                         <h2>"Identification controls"</h2>
                         <p class="section-copy">
-                            "Observer order controls the lifted OKID regression horizon. Retained order controls the"
-                            " final ERA realization size."
+                            "Plant order controls the planted discrete-time system size. Observer order controls the"
+                            " lifted OKID regression horizon. Retained order controls the final ERA realization size."
                         </p>
+
+                        <div class="control-row">
+                            <label for="id-plant-order">"Plant order"</label>
+                            <output>{move || plant_order.get().to_string()}</output>
+                            <input
+                                id="id-plant-order"
+                                type="range"
+                                min="2"
+                                max="8"
+                                step="1"
+                                prop:value=move || plant_order.get().to_string()
+                                on:input=move |ev| {
+                                    if let Ok(value) = event_target_value(&ev).parse::<usize>() {
+                                        set_plant_order.set(value.clamp(2, 8));
+                                    }
+                                }
+                            />
+                        </div>
 
                         <div class="control-row">
                             <label for="id-noise-level">"Output noise"</label>
@@ -103,7 +134,7 @@ pub fn IdentificationPage() -> impl IntoView {
                                 id="id-retained-order"
                                 type="range"
                                 min="1"
-                                max="4"
+                                max="5"
                                 step="1"
                                 prop:value=move || retained_order.get().to_string()
                                 on:input=move |ev| {
@@ -130,7 +161,7 @@ pub fn IdentificationPage() -> impl IntoView {
                     </section>
                 </aside>
 
-                <div class="plots-grid compact">
+                <div class="plots-grid wide">
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
@@ -150,6 +181,16 @@ pub fn IdentificationPage() -> impl IntoView {
                         </div>
                         <div id="identification-step-plot" class="plot-surface"></div>
                     </article>
+
+                    <article class="plot-card">
+                        <div class="plot-header">
+                            <div>
+                                <h2>"Plant vs. model error"</h2>
+                                <p>"Signed step-response mismatch between the planted system and the ERA realization."</p>
+                            </div>
+                        </div>
+                        <div id="identification-error-plot" class="plot-surface"></div>
+                    </article>
                 </div>
             </div>
         </div>
@@ -160,6 +201,7 @@ pub fn IdentificationPage() -> impl IntoView {
 enum IdentificationPlot {
     Markov,
     StepResponse,
+    StepError,
 }
 
 struct IdentificationDemo {
@@ -169,17 +211,21 @@ struct IdentificationDemo {
     steps: Vec<f64>,
     planted_step: Vec<f64>,
     identified_step: Vec<f64>,
+    step_error: Vec<f64>,
+    plant_order: usize,
+    requested_order: usize,
     retained_order: usize,
     rms_step_error: f64,
 }
 
 fn build_identification_plot(
+    plant_order: usize,
     noise_level: f64,
     observer_order: usize,
     retained_order: usize,
     which: IdentificationPlot,
 ) -> Plot {
-    match run_identification_demo(noise_level, observer_order, retained_order) {
+    match run_identification_demo(plant_order, noise_level, observer_order, retained_order) {
         Ok(demo) => match which {
             IdentificationPlot::Markov => build_line_plot(
                 "Markov-parameter recovery",
@@ -201,50 +247,58 @@ fn build_identification_plot(
                     LineSeries::lines("identified", demo.steps, demo.identified_step),
                 ],
             ),
+            IdentificationPlot::StepError => build_line_plot(
+                "Step-response error",
+                "step index",
+                "identified - planted",
+                false,
+                vec![LineSeries::lines("error", demo.steps, demo.step_error)],
+            ),
         },
         Err(message) => build_line_plot(&message, "", "", false, Vec::new()),
     }
 }
 
 fn identification_summary(
+    plant_order: usize,
     noise_level: f64,
     observer_order: usize,
     retained_order: usize,
 ) -> String {
-    match run_identification_demo(noise_level, observer_order, retained_order) {
-        Ok(demo) => format!(
-            "ERA retained order {} with step-response RMS error {:.4}. Larger observer horizons usually improve the recovered Markov sequence until noise starts to dominate the regression.",
-            demo.retained_order, demo.rms_step_error,
-        ),
+    match run_identification_demo(plant_order, noise_level, observer_order, retained_order) {
+        Ok(demo) => {
+            let order_note = if demo.requested_order == demo.retained_order {
+                format!("ERA retained order {}", demo.retained_order)
+            } else {
+                format!(
+                    "ERA retained order {} (requested {}, capped by available Hankel spectrum)",
+                    demo.retained_order, demo.requested_order
+                )
+            };
+            format!(
+                "Planted order {} with {} produced step-response RMS error {:.4}. Larger observer horizons usually improve the recovered Markov sequence until noise starts to dominate the regression.",
+                demo.plant_order, order_note, demo.rms_step_error,
+            )
+        }
         Err(err) => format!("Identification failed: {err}"),
     }
 }
 
 fn run_identification_demo(
+    plant_order: usize,
     noise_level: f64,
     observer_order: usize,
     retained_order: usize,
 ) -> Result<IdentificationDemo, String> {
     let dt = 0.2;
-    let system = DiscreteStateSpace::new(
-        Mat::from_fn(2, 2, |row, col| match (row, col) {
-            (0, 0) => 0.86,
-            (0, 1) => 0.18,
-            (1, 0) => -0.08,
-            (1, 1) => 0.82,
-            _ => 0.0,
-        }),
-        Mat::from_fn(2, 1, |row, _| if row == 0 { 0.12 } else { 0.35 }),
-        Mat::from_fn(1, 2, |_, col| if col == 0 { 1.0 } else { 0.28 }),
-        Mat::zeros(1, 1),
-        dt,
-    )
-    .map_err(|err| err.to_string())?;
+    let effective_plant_order = plant_order.clamp(2, 8);
+    let system = planted_identification_system(effective_plant_order, dt)?;
 
     let n_samples = 140;
     let inputs = Mat::from_fn(1, n_samples, |_, col| excitation_signal(col));
+    let x0 = vec![0.0; effective_plant_order];
     let sim = system
-        .simulate(&[0.0, 0.0], inputs.as_ref())
+        .simulate(&x0, inputs.as_ref())
         .map_err(|err| err.to_string())?;
     let noisy_outputs = Mat::from_fn(1, n_samples, |_, col| {
         sim.outputs[(0, col)] + noise_level * measurement_noise_signal(col)
@@ -256,13 +310,19 @@ fn run_identification_demo(
         &OkidParams::new(24, observer_order),
     )
     .map_err(|err| err.to_string())?;
-    let era = era_from_markov(
-        &okid_result.markov,
-        6,
-        6,
-        &EraParams::new(system.sample_time()).with_order(retained_order),
-    )
-    .map_err(|err| err.to_string())?;
+    let requested_order = retained_order.max(1);
+    let era_params = EraParams::new(system.sample_time()).with_order(requested_order);
+    let era = match era_from_markov(&okid_result.markov, 6, 6, &era_params) {
+        Ok(result) => result,
+        Err(EraError::InvalidOrder { available, .. }) => era_from_markov(
+            &okid_result.markov,
+            6,
+            6,
+            &EraParams::new(system.sample_time()).with_order(available.max(1)),
+        )
+        .map_err(|err| err.to_string())?,
+        Err(err) => return Err(err.to_string()),
+    };
 
     let lags = (0..12).map(|idx| idx as f64).collect::<Vec<_>>();
     let planted_markov = (0..12)
@@ -285,6 +345,11 @@ fn run_identification_demo(
         .iter()
         .map(|block| block[(0, 0)])
         .collect::<Vec<_>>();
+    let step_error = identified_step
+        .iter()
+        .zip(&planted_step)
+        .map(|(identified, planted)| identified - planted)
+        .collect::<Vec<_>>();
     let rms_step_error = (planted_step
         .iter()
         .zip(&identified_step)
@@ -303,9 +368,49 @@ fn run_identification_demo(
         steps,
         planted_step,
         identified_step,
+        step_error,
+        plant_order: effective_plant_order,
+        requested_order,
         retained_order: era.retained_order,
         rms_step_error,
     })
+}
+
+fn planted_identification_system(
+    plant_order: usize,
+    dt: f64,
+) -> Result<DiscreteStateSpace<f64>, String> {
+    let order = plant_order.clamp(2, 8);
+    let real_modes = [0.87, 0.72, -0.58, 0.49, -0.34, 0.28];
+    let b_weights = [0.18, 0.10, 0.24, -0.21, 0.16, -0.13, 0.11, -0.09];
+    let c_weights = [1.0, -0.62, 0.88, 0.56, -0.47, 0.39, -0.31, 0.25];
+
+    DiscreteStateSpace::new(
+        Mat::from_fn(order, order, |row, col| {
+            if row == 0 && col == 0 {
+                0.92
+            } else if row == 0 && col == 1 {
+                0.24
+            } else if row == 1 && col == 0 {
+                -0.24
+            } else if row == 1 && col == 1 {
+                0.92
+            } else if row >= 2 && row == col {
+                real_modes[row - 2]
+            } else if col >= 2 && row < col {
+                let distance = (col - row) as f64;
+                let sign = if (row + col) % 2 == 0 { 1.0 } else { -1.0 };
+                sign * (0.18 - 0.025 * distance).max(0.03)
+            } else {
+                0.0
+            }
+        }),
+        Mat::from_fn(order, 1, |row, _| b_weights[row]),
+        Mat::from_fn(1, order, |_, col| c_weights[col]),
+        Mat::zeros(1, 1),
+        dt,
+    )
+    .map_err(|err| err.to_string())
 }
 
 fn excitation_signal(step: usize) -> f64 {
