@@ -107,6 +107,12 @@ where
     ///
     /// For the UKF path this is the unscented predicted measurement mean
     /// reconstructed from the propagated sigma cloud, not merely `h(x^-)`.
+    ///
+    /// For the split EKF path this is the prediction-time measurement
+    /// evaluation. [`ExtendedKalmanFilter::update`] may recompute the
+    /// measurement-side prediction from its own input argument so callers can
+    /// use a different measurement context than the transition-side input used
+    /// during [`ExtendedKalmanFilter::predict`].
     pub output: Mat<R>,
     /// Measurement-side sigma cloud cached by the UKF prediction stage.
     ///
@@ -419,6 +425,12 @@ where
     }
 
     /// Computes the EKF prediction stage without mutating the filter state.
+    ///
+    /// In the split API, this method evaluates the transition and also stores
+    /// the prediction-time measurement value `h(x^-, u_predict)`. The later
+    /// [`update`](Self::update) call may use a different measurement-side input
+    /// and will then recompute `h(x^-, u_update)` and `H(x^-, u_update)` from
+    /// that update input so the innovation and Jacobian stay consistent.
     pub fn predict(
         &self,
         input: MatRef<'_, R>,
@@ -451,6 +463,13 @@ where
     }
 
     /// Applies one EKF measurement update to an externally supplied prediction.
+    ///
+    /// Unlike the monolithic [`step`](Self::step) path, the split EKF API lets
+    /// callers provide a measurement-side input that differs from the
+    /// transition-side input used during [`predict`](Self::predict). To support
+    /// input-dependent sensors or late-arriving measurement context, this
+    /// method recomputes the predicted measurement and output Jacobian from the
+    /// supplied `input` instead of reusing the prediction-time output blindly.
     pub fn update(
         &self,
         prediction: &NonlinearKalmanPrediction<R>,
@@ -466,7 +485,14 @@ where
         validate_column_vector("input", input, self.model.ninputs())?;
         validate_column_vector("measurement", measurement, self.model.noutputs())?;
 
-        let predicted_output = clone_mat(prediction.output.as_ref());
+        let predicted_output = self.model.output(prediction.state.as_ref(), input);
+        validate_model_output(
+            "predicted_output",
+            predicted_output.as_ref(),
+            self.model.noutputs(),
+            1,
+        )?;
+        validate_finite("predicted_output", predicted_output.as_ref())?;
         let innovation = dense_sub(measurement, predicted_output.as_ref());
         let h = self.model.output_jacobian(prediction.state.as_ref(), input);
         validate_rect(
@@ -532,6 +558,12 @@ where
     }
 
     /// Runs one full EKF predict/update cycle and stores the posterior state.
+    ///
+    /// This monolithic entry point uses the same input for both the transition
+    /// and measurement sides of the EKF. Callers that need a different
+    /// measurement-side input or sensor context should use the split
+    /// [`predict`](Self::predict) and [`update`](Self::update) methods, which
+    /// intentionally reevaluate the measurement model during `update`.
     pub fn step(
         &mut self,
         input: MatRef<'_, R>,
@@ -1828,6 +1860,90 @@ mod tests {
         assert_close(
             upd_simple.covariance[(0, 0)],
             upd_joseph.covariance[(0, 0)],
+            1.0e-12,
+        );
+    }
+
+    struct InputScaledMeasurementModel;
+
+    impl DiscreteNonlinearModel<f64> for InputScaledMeasurementModel {
+        fn nstates(&self) -> usize {
+            1
+        }
+
+        fn ninputs(&self) -> usize {
+            1
+        }
+
+        fn noutputs(&self) -> usize {
+            1
+        }
+
+        fn transition(&self, x: faer::MatRef<'_, f64>, _u: faer::MatRef<'_, f64>) -> Mat<f64> {
+            Mat::from_fn(1, 1, |_, _| x[(0, 0)])
+        }
+
+        fn output(&self, x: faer::MatRef<'_, f64>, u: faer::MatRef<'_, f64>) -> Mat<f64> {
+            Mat::from_fn(1, 1, |_, _| u[(0, 0)] * x[(0, 0)])
+        }
+    }
+
+    impl DiscreteExtendedKalmanModel<f64> for InputScaledMeasurementModel {
+        fn transition_jacobian(
+            &self,
+            _x: faer::MatRef<'_, f64>,
+            _u: faer::MatRef<'_, f64>,
+        ) -> Mat<f64> {
+            Mat::from_fn(1, 1, |_, _| 1.0)
+        }
+
+        fn output_jacobian(&self, _x: faer::MatRef<'_, f64>, u: faer::MatRef<'_, f64>) -> Mat<f64> {
+            Mat::from_fn(1, 1, |_, _| u[(0, 0)])
+        }
+    }
+
+    #[test]
+    fn ekf_split_update_recomputes_measurement_model_from_update_input() {
+        let q = Mat::from_fn(1, 1, |_, _| 0.0);
+        let r = Mat::from_fn(1, 1, |_, _| 0.25);
+        let x_hat = Mat::from_fn(1, 1, |_, _| 2.0);
+        let p = Mat::from_fn(1, 1, |_, _| 0.5);
+        let ekf_split = ExtendedKalmanFilter::new(
+            InputScaledMeasurementModel,
+            q.clone(),
+            r.clone(),
+            x_hat.clone(),
+            p.clone(),
+        )
+        .unwrap();
+        let mut ekf_step =
+            ExtendedKalmanFilter::new(InputScaledMeasurementModel, q, r, x_hat, p).unwrap();
+
+        let predict_input = Mat::from_fn(1, 1, |_, _| 0.0);
+        let update_input = Mat::from_fn(1, 1, |_, _| 1.0);
+        let measurement = Mat::from_fn(1, 1, |_, _| 1.5);
+
+        let prediction = ekf_split.predict(predict_input.as_ref()).unwrap();
+        let split_update = ekf_split
+            .update(&prediction, update_input.as_ref(), measurement.as_ref())
+            .unwrap();
+        let step_update = ekf_step
+            .step(update_input.as_ref(), measurement.as_ref())
+            .unwrap();
+
+        assert_close(
+            split_update.predicted_output[(0, 0)],
+            step_update.predicted_output[(0, 0)],
+            1.0e-12,
+        );
+        assert_close(
+            split_update.state[(0, 0)],
+            step_update.state[(0, 0)],
+            1.0e-12,
+        );
+        assert_close(
+            split_update.covariance[(0, 0)],
+            step_update.covariance[(0, 0)],
             1.0e-12,
         );
     }
