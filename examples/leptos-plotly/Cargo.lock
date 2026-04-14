@@ -1769,6 +1769,7 @@ name = "numerical-leptos-plotly-examples"
 version = "0.1.0"
 dependencies = [
  "console_error_panic_hook",
+ "faer",
  "leptos",
  "numerical",
  "plotly",

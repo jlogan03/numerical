@@ -3,6 +3,7 @@
 mod app;
 mod catalog;
 mod examples;
+mod plot_helpers;
 mod plotly_support;
 
 #[cfg(target_arch = "wasm32")]

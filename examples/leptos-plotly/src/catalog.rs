@@ -7,23 +7,21 @@ pub enum ExampleId {
     LtiProcessModels,
     /// Digital IIR filter design exploration.
     FilterDesign,
-    /// Estimation placeholder.
+    /// Linear estimator comparison.
     Estimation,
-    /// Identification placeholder.
+    /// OKID plus ERA identification flow.
     Identification,
-    /// Model-reduction placeholder.
+    /// Balanced-truncation comparison.
     Reduction,
-    /// Controller-synthesis placeholder.
+    /// DLQR controller-design comparison.
     Synthesis,
 }
 
-/// Whether an example page is already implemented or is only scaffolded.
+/// Availability status for an example page.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ExampleStatus {
     /// Backed by a working interactive example page.
     Ready,
-    /// Present in the app shell but still a placeholder.
-    Scaffolded,
 }
 
 impl ExampleStatus {
@@ -32,7 +30,6 @@ impl ExampleStatus {
     pub const fn label(self) -> &'static str {
         match self {
             Self::Ready => "ready",
-            Self::Scaffolded => "scaffolded",
         }
     }
 
@@ -41,7 +38,6 @@ impl ExampleStatus {
     pub const fn class_name(self) -> &'static str {
         match self {
             Self::Ready => "ready",
-            Self::Scaffolded => "scaffolded",
         }
     }
 }
@@ -97,9 +93,9 @@ pub const EXAMPLE_GROUPS: &[ExampleGroup] = &[
         summary: "Kalman, EKF, and UKF examples that can show covariance evolution, residuals, and convergence.",
         entries: &[ExampleEntry {
             id: ExampleId::Estimation,
-            title: "Estimator Workbench",
-            summary: "Placeholder for linear and nonlinear estimator examples with split-step and monolithic flows.",
-            status: ExampleStatus::Scaffolded,
+            title: "Kalman Workbench",
+            summary: "Compare recursive and steady-state discrete Kalman filters on the same noisy constant-velocity signal.",
+            status: ExampleStatus::Ready,
         }],
     },
     ExampleGroup {
@@ -107,9 +103,9 @@ pub const EXAMPLE_GROUPS: &[ExampleGroup] = &[
         summary: "Data-driven realization and Markov-parameter recovery examples for ERA and OKID workflows.",
         entries: &[ExampleEntry {
             id: ExampleId::Identification,
-            title: "ERA / OKID",
-            summary: "Placeholder for identification examples that start from sampled IO data and recover models.",
-            status: ExampleStatus::Scaffolded,
+            title: "OKID + ERA",
+            summary: "Recover Markov parameters from sampled I/O data and realize a reduced discrete model with ERA.",
+            status: ExampleStatus::Ready,
         }],
     },
     ExampleGroup {
@@ -118,8 +114,8 @@ pub const EXAMPLE_GROUPS: &[ExampleGroup] = &[
         entries: &[ExampleEntry {
             id: ExampleId::Reduction,
             title: "Balanced Truncation",
-            summary: "Placeholder for reduction examples comparing full and reduced-order responses.",
-            status: ExampleStatus::Scaffolded,
+            summary: "Tune retained order and compare full versus reduced step responses alongside the HSV spectrum.",
+            status: ExampleStatus::Ready,
         }],
     },
     ExampleGroup {
@@ -127,9 +123,9 @@ pub const EXAMPLE_GROUPS: &[ExampleGroup] = &[
         summary: "Controller-design examples spanning PID, LQR, LQG, and pole placement.",
         entries: &[ExampleEntry {
             id: ExampleId::Synthesis,
-            title: "Controller Design",
-            summary: "Placeholder for closed-loop design examples with gain tuning and response comparison.",
-            status: ExampleStatus::Scaffolded,
+            title: "Discrete LQR",
+            summary: "Tune quadratic weights and compare open-loop and closed-loop trajectories of a sampled unstable plant.",
+            status: ExampleStatus::Ready,
         }],
     },
 ];

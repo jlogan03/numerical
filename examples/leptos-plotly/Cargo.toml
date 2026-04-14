@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 console_error_panic_hook = "0.1.7"
+faer = { version = "^0.24.0", default-features = false, features = ["std"] }
 leptos = { version = "0.8.17", default-features = false, features = ["csr"] }
 numerical = { path = "../.." }
 plotly = "0.14.1"

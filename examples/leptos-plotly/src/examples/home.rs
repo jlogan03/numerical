@@ -10,9 +10,9 @@ pub fn HomePage(set_selected: WriteSignal<ExampleId>) -> impl IntoView {
                 <p class="eyebrow">"Interactive Example Browser"</p>
                 <h1>"numerical + Leptos + Plotly"</h1>
                 <p>
-                    "This app is a browser-hosted workbench for interactive examples. The shell is already split by major "
-                    "feature area, and the implemented pages show the intended pattern: keep controls in Leptos signals, "
-                    "build figures in Rust, and call directly into `numerical` for the data behind each plot."
+                    "This app is a browser-hosted workbench for interactive examples across the major control and"
+                    " numerics feature areas. Each page keeps controls in Leptos signals, builds figures in Rust,"
+                    " and calls directly into `numerical` for the plotted data."
                 </p>
             </header>
 

@@ -1,9 +1,15 @@
+mod estimation;
 mod filter_design;
 mod home;
+mod identification;
 mod lti;
-mod placeholder;
+mod reduction;
+mod synthesis;
 
+pub use estimation::EstimationPage;
 pub use filter_design::FilterDesignPage;
 pub use home::HomePage;
+pub use identification::IdentificationPage;
 pub use lti::LtiProcessModelsPage;
-pub use placeholder::PlaceholderPage;
+pub use reduction::ReductionPage;
+pub use synthesis::SynthesisPage;
