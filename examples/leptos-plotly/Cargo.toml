@@ -6,8 +6,7 @@ publish = false
 
 [dependencies]
 console_error_panic_hook = "0.1.7"
-gloo-net = "0.6.0"
-leptos = { version = "0.8.17", features = ["csr"] }
+leptos = { version = "0.8.17", default-features = false, features = ["csr"] }
+numerical = { path = "../.." }
 plotly = "0.14.1"
-serde = { version = "1.0.228", features = ["derive"] }
 wasm-bindgen-futures = "0.4.55"

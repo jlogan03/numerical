@@ -1,12 +1,13 @@
 use crate::plotly_support::use_plotly_chart;
-use gloo_net::http::Request;
 use leptos::prelude::*;
+use numerical::control::lti::{
+    DigitalFilterFamily, DigitalFilterSpec, FilterShape, design_digital_filter_sos,
+};
 use plotly::{
     Layout, Plot, Scatter,
     common::{Mode, Title},
     layout::{Axis, AxisType},
 };
-use serde::{Deserialize, Serialize};
 
 /// Interactive digital lowpass filter-design page.
 #[component]
@@ -14,27 +15,25 @@ pub fn FilterDesignPage() -> impl IntoView {
     let (order, set_order) = signal(4_usize);
     let (cutoff, set_cutoff) = signal(8.0_f64);
     let (sample_rate, set_sample_rate) = signal(20.0_f64);
-    let response = LocalResource::new(move || {
-        let order = order.get();
-        let cutoff = cutoff.get();
-        let sample_rate = sample_rate.get();
-        async move { fetch_butterworth_response(order, cutoff, sample_rate).await }
-    });
 
-    let mag_response = response.clone();
     use_plotly_chart("butterworth-mag-plot", move || {
-        build_filter_plot(mag_response.get(), PlotKind::Magnitude)
+        build_filter_plot(
+            order.get(),
+            cutoff.get(),
+            sample_rate.get(),
+            PlotKind::Magnitude,
+        )
     });
-    let phase_response = response.clone();
     use_plotly_chart("butterworth-phase-plot", move || {
-        build_filter_plot(phase_response.get(), PlotKind::Phase)
+        build_filter_plot(
+            order.get(),
+            cutoff.get(),
+            sample_rate.get(),
+            PlotKind::Phase,
+        )
     });
 
-    let design_status = move || match response.get() {
-        Some(Ok(data)) => data.summary,
-        Some(Err(message)) => format!("Design failed: {message}"),
-        None => "Loading design...".into(),
-    };
+    let design_status = move || filter_summary(order.get(), cutoff.get(), sample_rate.get());
 
     view! {
         <div class="page">
@@ -42,8 +41,8 @@ pub fn FilterDesignPage() -> impl IntoView {
                 <p class="eyebrow">"Filter Design"</p>
                 <h1>"Digital Butterworth Explorer"</h1>
                 <p>
-                    "This page calls the host-side design endpoint, keeps the designed filter in SOS form on the Rust"
-                    " side, and renders the sampled Bode data with Plotly in the browser."
+                    "This page runs the actual digital IIR design path directly in the browser, keeps the designed"
+                    " filter in SOS form, and renders the sampled Bode data with Plotly."
                 </p>
             </header>
 
@@ -52,8 +51,8 @@ pub fn FilterDesignPage() -> impl IntoView {
                     <section>
                         <h2>"Design controls"</h2>
                         <p class="section-copy">
-                            "Frequencies are physical angular frequencies. The Rust API handles prewarping and bilinear"
-                            " mapping internally."
+                            "Frequencies are physical angular frequencies. The digital design layer handles prewarping"
+                            " and bilinear mapping internally."
                         </p>
 
                         <div class="control-row">
@@ -149,39 +148,80 @@ enum PlotKind {
     Phase,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
-struct ButterworthResponse {
-    bode_frequencies: Vec<f64>,
-    bode_magnitude_db: Vec<f64>,
-    bode_phase_deg: Vec<f64>,
-    summary: String,
+fn build_filter_plot(order: usize, cutoff: f64, sample_rate: f64, kind: PlotKind) -> Plot {
+    match make_filter_bode(order, cutoff, sample_rate, kind) {
+        Ok((frequencies, values, axis_label, title)) => build_line_plot(
+            &frequencies,
+            &values,
+            title,
+            "angular frequency",
+            axis_label,
+            true,
+        ),
+        Err(message) => {
+            let empty: Vec<f64> = Vec::new();
+            build_line_plot(&empty, &empty, &message, "angular frequency", "", false)
+        }
+    }
 }
 
-fn build_filter_plot(
-    response: Option<Result<ButterworthResponse, String>>,
+fn make_filter_bode(
+    order: usize,
+    cutoff: f64,
+    sample_rate: f64,
     kind: PlotKind,
-) -> Plot {
-    match response {
-        Some(Ok(data)) => {
-            let (title, axis_label, values) = match kind {
-                PlotKind::Magnitude => (
-                    "Butterworth magnitude",
-                    "magnitude (dB)",
-                    data.bode_magnitude_db,
-                ),
-                PlotKind::Phase => ("Butterworth phase", "phase (deg)", data.bode_phase_deg),
-            };
-            build_line_plot(
-                &data.bode_frequencies,
-                &values,
-                title,
-                "angular frequency",
-                axis_label,
-                true,
-            )
-        }
-        Some(Err(message)) => empty_plot("Butterworth design", &message),
-        None => empty_plot("Butterworth design", "Loading design..."),
+) -> Result<(Vec<f64>, Vec<f64>, &'static str, &'static str), String> {
+    let spec = DigitalFilterSpec::new(
+        order,
+        DigitalFilterFamily::Butterworth,
+        FilterShape::Lowpass { cutoff },
+        sample_rate,
+    )
+    .map_err(|err| err.to_string())?;
+    let filter = design_digital_filter_sos(&spec).map_err(|err| err.to_string())?;
+
+    let frequencies = logspace(
+        -1.0,
+        (sample_rate * core::f64::consts::PI * 0.98).log10(),
+        260,
+    );
+    let bode = filter
+        .bode_data(&frequencies)
+        .map_err(|err| err.to_string())?;
+
+    match kind {
+        PlotKind::Magnitude => Ok((
+            bode.angular_frequencies.clone(),
+            bode.magnitude_db,
+            "magnitude (dB)",
+            "Butterworth magnitude",
+        )),
+        PlotKind::Phase => Ok((
+            bode.angular_frequencies,
+            bode.phase_deg,
+            "phase (deg)",
+            "Butterworth phase",
+        )),
+    }
+}
+
+fn filter_summary(order: usize, cutoff: f64, sample_rate: f64) -> String {
+    match DigitalFilterSpec::new(
+        order,
+        DigitalFilterFamily::Butterworth,
+        FilterShape::Lowpass { cutoff },
+        sample_rate,
+    ) {
+        Ok(spec) => match design_digital_filter_sos(&spec) {
+            Ok(filter) => format!(
+                "Designed {} second-order sections with Nyquist {:.2} rad/s and DC gain {:.3}.",
+                filter.sections().len(),
+                sample_rate * core::f64::consts::PI,
+                filter.dc_gain().map(|value| value.re).unwrap_or(0.0),
+            ),
+            Err(err) => format!("Design failed: {err}"),
+        },
+        Err(err) => format!("Invalid spec: {err}"),
     }
 }
 
@@ -213,37 +253,12 @@ fn build_line_plot(
     plot
 }
 
-fn empty_plot(title: &str, reason: &str) -> Plot {
-    let layout = Layout::new()
-        .title(Title::with_text(title))
-        .x_axis(Axis::new().title(Title::with_text(reason)));
-    let mut plot = Plot::new();
-    plot.set_layout(layout);
-    plot
-}
-
-async fn fetch_butterworth_response(
-    order: usize,
-    cutoff: f64,
-    sample_rate: f64,
-) -> Result<ButterworthResponse, String> {
-    let url = format!(
-        "{}/api/filter-design/butterworth?order={order}&cutoff={cutoff}&sample_rate={sample_rate}",
-        api_base()
-    );
-    let response = Request::get(&url)
-        .send()
-        .await
-        .map_err(|err| err.to_string())?;
-    if !response.ok() {
-        return Err(response
-            .text()
-            .await
-            .unwrap_or_else(|_| "request failed".into()));
+fn logspace(log10_start: f64, log10_stop: f64, n: usize) -> Vec<f64> {
+    if n <= 1 {
+        return vec![10.0_f64.powf(log10_start)];
     }
-    response.json().await.map_err(|err| err.to_string())
-}
-
-fn api_base() -> &'static str {
-    option_env!("NUMERICAL_API_BASE").unwrap_or("http://127.0.0.1:3000")
+    let step = (log10_stop - log10_start) / ((n - 1) as f64);
+    (0..n)
+        .map(|index| 10.0_f64.powf(log10_start + (index as f64) * step))
+        .collect()
 }
