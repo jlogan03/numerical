@@ -225,6 +225,52 @@ pub struct ProcessFitResult<M, R> {
     pub objective: R,
 }
 
+/// Solver options for the nonlinear least-squares process-model fitters.
+///
+/// The fitting path uses Levenberg-Marquardt under the hood. This options
+/// struct exposes only the two knobs that matter most in practice for the
+/// crate's small FOPDT/SOPDT problems:
+///
+/// - relative termination tolerance
+/// - evaluation patience
+///
+/// Leaving a field as `None` preserves the solver crate's built-in default.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProcessModelFitOptions {
+    /// Optional LM tolerance applied through `with_tol(...)`.
+    ///
+    /// Smaller values drive a more rigorous fit but can cost more iterations.
+    pub tolerance: Option<f64>,
+    /// Optional LM patience factor applied through `with_patience(...)`.
+    ///
+    /// The solver interprets this as a multiplier on the parameter count when
+    /// bounding function evaluations.
+    pub patience: Option<usize>,
+}
+
+impl ProcessModelFitOptions {
+    /// Returns a looser configuration suitable for interactive demos.
+    ///
+    /// This intentionally trades some fit quality for quicker response on
+    /// repeated slider updates.
+    #[must_use]
+    pub const fn fast_demo() -> Self {
+        Self {
+            tolerance: Some(1.0e-3),
+            patience: Some(6),
+        }
+    }
+}
+
+impl Default for ProcessModelFitOptions {
+    fn default() -> Self {
+        Self {
+            tolerance: None,
+            patience: None,
+        }
+    }
+}
+
 /// PID controller family produced by a tuning rule.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PidControllerKind {
@@ -581,10 +627,19 @@ pub struct OkidEraPidDesign<R: faer_traits::ComplexField> {
 pub fn fit_fopdt_from_step_response(
     data: &StepResponseData<f64>,
 ) -> Result<ProcessFitResult<FopdtModel<f64>, f64>, PidDesignError> {
+    fit_fopdt_from_step_response_with_options(data, ProcessModelFitOptions::default())
+}
+
+/// Fits an `FOPDT` model to sampled step-response data with explicit solver
+/// options.
+pub fn fit_fopdt_from_step_response_with_options(
+    data: &StepResponseData<f64>,
+    options: ProcessModelFitOptions,
+) -> Result<ProcessFitResult<FopdtModel<f64>, f64>, PidDesignError> {
     let prepared = PreparedStepResponse::from_data(data)?;
     let initial = initial_fopdt_estimate(&prepared)?;
     let initial_objective = fopdt_objective(&prepared, initial);
-    let model = match refine_fopdt(&prepared, initial) {
+    let model = match refine_fopdt(&prepared, initial, options) {
         Ok(refined) => {
             let refined_objective = fopdt_objective(&prepared, refined);
             if refined_objective <= initial_objective {
@@ -607,11 +662,20 @@ pub fn fit_fopdt_from_step_response(
 pub fn fit_sopdt_from_step_response(
     data: &StepResponseData<f64>,
 ) -> Result<ProcessFitResult<SopdtModel<f64>, f64>, PidDesignError> {
+    fit_sopdt_from_step_response_with_options(data, ProcessModelFitOptions::default())
+}
+
+/// Fits an `SOPDT` model to sampled step-response data with explicit solver
+/// options.
+pub fn fit_sopdt_from_step_response_with_options(
+    data: &StepResponseData<f64>,
+    options: ProcessModelFitOptions,
+) -> Result<ProcessFitResult<SopdtModel<f64>, f64>, PidDesignError> {
     let prepared = PreparedStepResponse::from_data(data)?;
     let fopdt = initial_fopdt_estimate(&prepared)?;
     let initial = initial_sopdt_estimate(&prepared, fopdt);
     let initial_objective = sopdt_objective(&prepared, initial);
-    let model = match refine_sopdt(&prepared, initial) {
+    let model = match refine_sopdt(&prepared, initial, options) {
         Ok(refined) => {
             let refined_objective = sopdt_objective(&prepared, refined);
             if refined_objective <= initial_objective {
@@ -1440,6 +1504,7 @@ fn initial_sopdt_estimate(data: &PreparedStepResponse, fopdt: FopdtModel<f64>) -
 fn refine_fopdt(
     data: &PreparedStepResponse,
     initial: FopdtModel<f64>,
+    options: ProcessModelFitOptions,
 ) -> Result<FopdtModel<f64>, PidDesignError> {
     let floor = positive_floor(data.time_scale);
     let problem = FopdtLmProblem {
@@ -1451,7 +1516,7 @@ fn refine_fopdt(
         ),
         floor,
     };
-    let (problem, report) = LevenbergMarquardt::new().minimize(problem);
+    let (problem, report) = process_fit_solver(options)?.minimize(problem);
     let model = problem.model();
     if !report.termination.was_successful()
         || !model.gain.is_finite()
@@ -1477,6 +1542,7 @@ fn refine_fopdt(
 fn refine_sopdt(
     data: &PreparedStepResponse,
     initial: SopdtModel<f64>,
+    options: ProcessModelFitOptions,
 ) -> Result<SopdtModel<f64>, PidDesignError> {
     let floor = positive_floor(data.time_scale);
     let base = initial.time_constant_2.max(floor);
@@ -1493,7 +1559,7 @@ fn refine_sopdt(
         ),
         floor,
     };
-    let (problem, report) = LevenbergMarquardt::new().minimize(problem);
+    let (problem, report) = process_fit_solver(options)?.minimize(problem);
     let model = problem.model();
     if !report.termination.was_successful()
         || !model.gain.is_finite()
@@ -1507,6 +1573,29 @@ fn refine_sopdt(
         return Err(PidDesignError::InvalidProcessFit);
     }
     Ok(model)
+}
+
+fn process_fit_solver(
+    options: ProcessModelFitOptions,
+) -> Result<LevenbergMarquardt<f64>, PidDesignError> {
+    let mut solver = LevenbergMarquardt::new();
+    if let Some(tolerance) = options.tolerance {
+        if !tolerance.is_finite() || tolerance <= 0.0 {
+            return Err(PidDesignError::InvalidTuningParameter {
+                which: "process_fit_tolerance",
+            });
+        }
+        solver = solver.with_tol(tolerance);
+    }
+    if let Some(patience) = options.patience {
+        if patience == 0 {
+            return Err(PidDesignError::InvalidTuningParameter {
+                which: "process_fit_patience",
+            });
+        }
+        solver = solver.with_patience(patience);
+    }
+    Ok(solver)
 }
 
 /// Sum-of-squares objective used to compare FOPDT candidates.

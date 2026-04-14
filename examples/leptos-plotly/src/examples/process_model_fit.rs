@@ -4,7 +4,8 @@ use crate::plotly_support::use_plotly_chart;
 use leptos::prelude::*;
 use numerical::control::lti::{ContinuousTransferFunction, FopdtModel, SopdtModel};
 use numerical::control::synthesis::{
-    StepResponseData, fit_fopdt_from_step_response, fit_sopdt_from_step_response,
+    ProcessModelFitOptions, StepResponseData, fit_fopdt_from_step_response_with_options,
+    fit_sopdt_from_step_response_with_options,
 };
 use plotly::Plot;
 use plotly::common::{DashType, MarkerSymbol};
@@ -48,14 +49,16 @@ pub fn ProcessModelFitPage() -> impl IntoView {
         higher_order_tail_lag: higher_order_tail_lag.get(),
     };
 
+    let demo = Memo::new(move |_| run_process_fit_demo(inputs(), ProcessModelFitOptions::fast_demo()));
+
     use_plotly_chart("process-fit-response-plot", move || {
-        build_process_fit_plot(inputs(), ProcessFitPlot::Response)
+        build_process_fit_plot(demo.get(), ProcessFitPlot::Response)
     });
     use_plotly_chart("process-fit-residual-plot", move || {
-        build_process_fit_plot(inputs(), ProcessFitPlot::Residual)
+        build_process_fit_plot(demo.get(), ProcessFitPlot::Residual)
     });
 
-    let summary = move || process_fit_summary(inputs());
+    let summary = move || process_fit_summary(demo.get());
 
     let source_controls = move || match source_kind.get() {
         FitSourceKind::Fopdt => view! {
@@ -463,6 +466,7 @@ impl Default for ProcessFitInputs {
     }
 }
 
+#[derive(Clone, PartialEq)]
 struct ProcessFitDemo {
     times: Vec<f64>,
     measured_output: Vec<f64>,
@@ -480,8 +484,8 @@ struct ProcessFitDemo {
     sopdt_true_rms: f64,
 }
 
-fn build_process_fit_plot(inputs: ProcessFitInputs, which: ProcessFitPlot) -> Plot {
-    match run_process_fit_demo(inputs) {
+fn build_process_fit_plot(result: Result<ProcessFitDemo, String>, which: ProcessFitPlot) -> Plot {
+    match result {
         Ok(demo) => match which {
             ProcessFitPlot::Response => build_line_plot(
                 "Process-model fitting",
@@ -518,8 +522,8 @@ fn build_process_fit_plot(inputs: ProcessFitInputs, which: ProcessFitPlot) -> Pl
     }
 }
 
-fn process_fit_summary(inputs: ProcessFitInputs) -> String {
-    match run_process_fit_demo(inputs) {
+fn process_fit_summary(result: Result<ProcessFitDemo, String>) -> String {
+    match result {
         Ok(demo) => format!(
             "On the {}, FOPDT objective = {:.4} and true-source RMS error = {:.4}; fitted model = K {:.3}, tau {:.3} s, delay {:.3} s. SOPDT objective = {:.4} and true-source RMS error = {:.4}; fitted model = K {:.3}, tau1 {:.3} s, tau2 {:.3} s, delay {:.3} s.",
             demo.source_kind.label(),
@@ -553,7 +557,10 @@ fn interpretation_copy(source_kind: FitSourceKind) -> &'static str {
     }
 }
 
-fn run_process_fit_demo(inputs: ProcessFitInputs) -> Result<ProcessFitDemo, String> {
+fn run_process_fit_demo(
+    inputs: ProcessFitInputs,
+    fit_options: ProcessModelFitOptions,
+) -> Result<ProcessFitDemo, String> {
     let dt = 0.1;
     let step_time = 0.5;
     let duration = source_duration(inputs);
@@ -572,8 +579,10 @@ fn run_process_fit_demo(inputs: ProcessFitInputs) -> Result<ProcessFitDemo, Stri
 
     let data = StepResponseData::new(times.clone(), input, measured_output.clone())
         .map_err(|err| err.to_string())?;
-    let fopdt_fit = fit_fopdt_from_step_response(&data).map_err(|err| err.to_string())?;
-    let sopdt_fit = fit_sopdt_from_step_response(&data).map_err(|err| err.to_string())?;
+    let fopdt_fit =
+        fit_fopdt_from_step_response_with_options(&data, fit_options).map_err(|err| err.to_string())?;
+    let sopdt_fit =
+        fit_sopdt_from_step_response_with_options(&data, fit_options).map_err(|err| err.to_string())?;
 
     let fopdt_output = times
         .iter()
@@ -725,13 +734,14 @@ fn rms_error(lhs: &[f64], rhs: &[f64]) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::{FitSourceKind, ProcessFitInputs, run_process_fit_demo};
+    use numerical::control::synthesis::ProcessModelFitOptions;
 
     #[test]
     fn process_fit_demo_runs_for_matched_sources() {
         for source in [FitSourceKind::Fopdt, FitSourceKind::Sopdt] {
             let mut inputs = ProcessFitInputs::default();
             inputs.source_kind = source;
-            let demo = run_process_fit_demo(inputs).unwrap();
+            let demo = run_process_fit_demo(inputs, ProcessModelFitOptions::fast_demo()).unwrap();
             assert_eq!(demo.times.len(), demo.true_output.len());
             assert_eq!(demo.times.len(), demo.fopdt_output.len());
             assert_eq!(demo.times.len(), demo.sopdt_output.len());
