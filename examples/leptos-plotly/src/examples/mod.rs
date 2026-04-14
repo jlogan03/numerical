@@ -6,6 +6,7 @@ mod lti;
 mod lti_gallery;
 mod nonlinear_estimation;
 mod pid_design;
+mod process_model_fit;
 mod reduction;
 mod synthesis;
 
@@ -17,5 +18,6 @@ pub use lti::LtiProcessModelsPage;
 pub use lti_gallery::LtiPlotGalleryPage;
 pub use nonlinear_estimation::NonlinearEstimationPage;
 pub use pid_design::PidDesignPage;
+pub use process_model_fit::ProcessModelFitPage;
 pub use reduction::ReductionPage;
 pub use synthesis::SynthesisPage;

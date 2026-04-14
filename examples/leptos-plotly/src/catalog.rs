@@ -15,6 +15,8 @@ pub enum ExampleId {
     NonlinearEstimation,
     /// OKID plus ERA identification flow.
     Identification,
+    /// FOPDT and SOPDT fitting from sampled step-response data.
+    ProcessModelFit,
     /// Balanced-truncation comparison.
     Reduction,
     /// PID tuning across low-order process models and a general linear plant.
@@ -123,12 +125,20 @@ pub const EXAMPLE_GROUPS: &[ExampleGroup] = &[
     ExampleGroup {
         title: "Identification",
         summary: "Data-driven realization and Markov-parameter recovery examples for ERA and OKID workflows.",
-        entries: &[ExampleEntry {
-            id: ExampleId::Identification,
-            title: "OKID + ERA",
-            summary: "Recover Markov parameters from sampled I/O data and realize a reduced discrete model with ERA.",
-            status: ExampleStatus::Ready,
-        }],
+        entries: &[
+            ExampleEntry {
+                id: ExampleId::Identification,
+                title: "OKID + ERA",
+                summary: "Recover Markov parameters from sampled I/O data and realize a reduced discrete model with ERA.",
+                status: ExampleStatus::Ready,
+            },
+            ExampleEntry {
+                id: ExampleId::ProcessModelFit,
+                title: "Process-Model Fitting",
+                summary: "Fit FOPDT and SOPDT surrogates to matched and unmatched step-response data.",
+                status: ExampleStatus::Ready,
+            },
+        ],
     },
     ExampleGroup {
         title: "Reduction",
@@ -177,6 +187,7 @@ impl ExampleId {
             Self::Estimation => EXAMPLE_GROUPS[2].entries[0],
             Self::NonlinearEstimation => EXAMPLE_GROUPS[2].entries[1],
             Self::Identification => EXAMPLE_GROUPS[3].entries[0],
+            Self::ProcessModelFit => EXAMPLE_GROUPS[3].entries[1],
             Self::Reduction => EXAMPLE_GROUPS[4].entries[0],
             Self::PidDesign => EXAMPLE_GROUPS[5].entries[0],
             Self::Synthesis => EXAMPLE_GROUPS[5].entries[1],

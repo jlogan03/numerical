@@ -23,6 +23,8 @@ pub struct LineSeries {
     pub dash: Option<DashType>,
     /// Optional explicit marker symbol override.
     pub marker_symbol: Option<MarkerSymbol>,
+    /// Optional explicit marker size override in CSS pixels.
+    pub marker_size: Option<usize>,
 }
 
 impl LineSeries {
@@ -38,6 +40,7 @@ impl LineSeries {
             line_width: 2.0,
             dash: None,
             marker_symbol: None,
+            marker_size: None,
         }
     }
 
@@ -53,6 +56,7 @@ impl LineSeries {
             line_width: 2.0,
             dash: None,
             marker_symbol: None,
+            marker_size: None,
         }
     }
 
@@ -68,6 +72,7 @@ impl LineSeries {
             line_width: 2.0,
             dash: None,
             marker_symbol: None,
+            marker_size: None,
         }
     }
 
@@ -98,6 +103,13 @@ impl LineSeries {
         self.marker_symbol = Some(marker_symbol);
         self
     }
+
+    /// Overrides the marker size.
+    #[must_use]
+    pub fn with_marker_size(mut self, marker_size: usize) -> Self {
+        self.marker_size = Some(marker_size);
+        self
+    }
 }
 
 /// Builds a multi-trace line plot with optional logarithmic x-axis scaling.
@@ -115,8 +127,12 @@ pub fn build_line_plot(
             .color("#000000")
             .dash(trace.dash.unwrap_or_else(|| dash_style(index)))
             .width(trace.line_width);
+        let marker_size = trace.marker_size.unwrap_or(11);
         let marker_style = match trace.marker_symbol {
-            Some(symbol) => Marker::new().color("#000000").symbol(symbol).size(11),
+            Some(symbol) => Marker::new()
+                .color("#000000")
+                .symbol(symbol)
+                .size(marker_size),
             None => Marker::new().color("#000000"),
         };
         plot.add_trace(

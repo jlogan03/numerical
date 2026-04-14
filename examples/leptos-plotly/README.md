@@ -49,6 +49,7 @@ Then open the local URL reported by `trunk`.
 - `Estimation / Kalman Workbench`: recursive versus steady-state discrete Kalman filtering
 - `Estimation / Nonlinear Tracking`: fixed-linearization KF versus EKF versus UKF on the same nonlinear range-tracking problem
 - `Identification / OKID + ERA`: sampled I/O identification and realized-model comparison
+- `Identification / Process-Model Fitting`: FOPDT and SOPDT surrogate fitting on matched and mismatched step-response data
 - `Reduction / Balanced Truncation`: HSV spectrum plus full/reduced step-response comparison
 - `Synthesis / PID Design`: SIMC and frequency-domain PID tuning across process models and a higher-order linear plant
 - `Synthesis / Discrete LQR`: open-loop versus closed-loop sampled regulation
