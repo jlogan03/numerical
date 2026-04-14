@@ -2,6 +2,7 @@
 
 mod app;
 mod catalog;
+mod demo_signal;
 mod examples;
 mod plot_helpers;
 mod plotly_support;

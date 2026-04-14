@@ -1,3 +1,4 @@
+use crate::demo_signal::{colored_signal, gaussianish_signal};
 use crate::plot_helpers::{LineSeries, build_line_plot};
 use crate::plotly_support::use_plotly_chart;
 use faer::Mat;
@@ -182,27 +183,25 @@ pub fn EstimationPage() -> impl IntoView {
                 </aside>
 
                 <div class="plots-grid wide">
-                    <div class="plots-grid compact">
-                        <article class="plot-card">
-                            <div class="plot-header">
-                                <div>
-                                    <h2>"Position estimate"</h2>
-                                    <p>"Truth, noisy measurement, recursive Kalman estimate, and fixed-gain estimate."</p>
-                                </div>
+                    <article class="plot-card">
+                        <div class="plot-header">
+                            <div>
+                                <h2>"Position estimate"</h2>
+                                <p>"Truth, noisy measurement, recursive Kalman estimate, and fixed-gain estimate."</p>
                             </div>
-                            <div id="estimator-position-plot" class="plot-surface"></div>
-                        </article>
+                        </div>
+                        <div id="estimator-position-plot" class="plot-surface"></div>
+                    </article>
 
-                        <article class="plot-card">
-                            <div class="plot-header">
-                                <div>
-                                    <h2>"Position variance"</h2>
-                                    <p>"Recursive posterior variance converging toward the steady-state observer covariance."</p>
-                                </div>
+                    <article class="plot-card">
+                        <div class="plot-header">
+                            <div>
+                                <h2>"Position variance"</h2>
+                                <p>"Recursive posterior variance converging toward the steady-state observer covariance."</p>
                             </div>
-                            <div id="estimator-variance-plot" class="plot-surface"></div>
-                        </article>
-                    </div>
+                        </div>
+                        <div id="estimator-variance-plot" class="plot-surface"></div>
+                    </article>
 
                     <section class="home-grid">
                         <article class="home-card">
@@ -217,9 +216,10 @@ pub fn EstimationPage() -> impl IntoView {
                         <article class="home-card">
                             <h2>"Noise generation"</h2>
                             <p class="section-copy">
-                                "The measurement is `y_k = [1 0] x_k + n_k`. Both `d_k` and `n_k` come from fixed colored"
-                                " sequences whose amplitudes are scaled by the truth-side process and measurement noise"
-                                " sliders, so the demo stays deterministic while still showing structured disturbance."
+                                "The process disturbance `d_k` is a smooth colored sequence scaled by the truth-side"
+                                " process-noise slider. The measurement error `n_k` mixes deterministic Gaussian-like"
+                                " jitter with a smaller colored bias term, so the raw measurement looks like a genuinely"
+                                " noisy sensor instead of a second smooth trajectory."
                             </p>
                         </article>
 
@@ -390,7 +390,8 @@ fn run_estimation_demo(
         let t = (step as f64) * dt;
         let command = 0.35 * (0.12 * (step as f64)).sin() + if step >= 45 { 0.18 } else { 0.0 };
         let disturbance = true_process_noise * colored_signal(step, 0.31);
-        let measurement = truth[0] + true_measurement_noise * colored_signal(step, 1.17);
+        let measurement_noise = gaussianish_signal(step, 11) + 0.20 * colored_signal(step, 1.17);
+        let measurement = truth[0] + true_measurement_noise * measurement_noise;
 
         let input = Mat::from_fn(1, 1, |_, _| command);
         let measurement_mat = Mat::from_fn(1, 1, |_, _| measurement);
@@ -430,9 +431,4 @@ fn run_estimation_demo(
         final_kalman_error: final_kalman - final_truth,
         final_steady_error: final_steady - final_truth,
     })
-}
-
-fn colored_signal(step: usize, phase: f64) -> f64 {
-    let k = step as f64;
-    0.8 * (0.17 * k + phase).sin() + 0.35 * (0.07 * k + 0.5 * phase).cos()
 }
