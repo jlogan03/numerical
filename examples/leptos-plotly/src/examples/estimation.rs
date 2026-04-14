@@ -10,25 +10,54 @@ use plotly::Plot;
 /// filters on the same measured signal.
 #[component]
 pub fn EstimationPage() -> impl IntoView {
-    let (process_noise, set_process_noise) = signal(0.18_f64);
-    let (measurement_noise, set_measurement_noise) = signal(0.35_f64);
+    let (true_process_noise, set_true_process_noise) = signal(0.18_f64);
+    let (true_measurement_noise, set_true_measurement_noise) = signal(0.35_f64);
+    let (assumed_process_noise, set_assumed_process_noise) = signal(0.18_f64);
+    let (assumed_measurement_noise, set_assumed_measurement_noise) = signal(0.35_f64);
+    let (pin_assumptions, set_pin_assumptions) = signal(true);
+
+    let effective_assumed_process_noise = Memo::new(move |_| {
+        if pin_assumptions.get() {
+            true_process_noise.get()
+        } else {
+            assumed_process_noise.get()
+        }
+    });
+    let effective_assumed_measurement_noise = Memo::new(move |_| {
+        if pin_assumptions.get() {
+            true_measurement_noise.get()
+        } else {
+            assumed_measurement_noise.get()
+        }
+    });
 
     use_plotly_chart("estimator-position-plot", move || {
         build_estimation_plot(
-            process_noise.get(),
-            measurement_noise.get(),
+            true_process_noise.get(),
+            true_measurement_noise.get(),
+            effective_assumed_process_noise.get(),
+            effective_assumed_measurement_noise.get(),
             EstimationPlot::State,
         )
     });
     use_plotly_chart("estimator-variance-plot", move || {
         build_estimation_plot(
-            process_noise.get(),
-            measurement_noise.get(),
+            true_process_noise.get(),
+            true_measurement_noise.get(),
+            effective_assumed_process_noise.get(),
+            effective_assumed_measurement_noise.get(),
             EstimationPlot::Variance,
         )
     });
 
-    let summary = move || estimation_summary(process_noise.get(), measurement_noise.get());
+    let summary = move || {
+        estimation_summary(
+            true_process_noise.get(),
+            true_measurement_noise.get(),
+            effective_assumed_process_noise.get(),
+            effective_assumed_measurement_noise.get(),
+        )
+    };
 
     view! {
         <div class="page">
@@ -45,43 +74,44 @@ pub fn EstimationPage() -> impl IntoView {
             <div class="control-layout">
                 <aside class="control-card">
                     <section>
-                        <h2>"Noise model"</h2>
+                        <h2>"Settings"</h2>
                         <p class="section-copy">
-                            "The process slider sets the assumed acceleration-disturbance standard deviation."
-                            " The measurement slider sets the position-sensor noise standard deviation."
+                            "These sliders control the synthetic plant disturbance and sensor corruption used to"
+                            " generate the truth and measurement traces, plus the Kalman covariances assumed by"
+                            " the two filters."
                         </p>
 
                         <div class="control-row">
-                            <label for="kalman-process-noise">"Process noise"</label>
-                            <output>{move || format!("{:.3}", process_noise.get())}</output>
+                            <label for="kalman-true-process-noise">"True process noise"</label>
+                            <output>{move || format!("{:.3}", true_process_noise.get())}</output>
                             <input
-                                id="kalman-process-noise"
+                                id="kalman-true-process-noise"
                                 type="range"
                                 min="0.02"
-                                max="0.60"
+                                max="2.00"
                                 step="0.01"
-                                prop:value=move || process_noise.get().to_string()
+                                prop:value=move || true_process_noise.get().to_string()
                                 on:input=move |ev| {
                                     if let Ok(value) = event_target_value(&ev).parse::<f64>() {
-                                        set_process_noise.set(value.max(0.02));
+                                        set_true_process_noise.set(value.max(0.02));
                                     }
                                 }
                             />
                         </div>
 
                         <div class="control-row">
-                            <label for="kalman-measurement-noise">"Measurement noise"</label>
-                            <output>{move || format!("{:.3}", measurement_noise.get())}</output>
+                            <label for="kalman-true-measurement-noise">"True measurement noise"</label>
+                            <output>{move || format!("{:.3}", true_measurement_noise.get())}</output>
                             <input
-                                id="kalman-measurement-noise"
+                                id="kalman-true-measurement-noise"
                                 type="range"
                                 min="0.05"
-                                max="1.00"
+                                max="2.00"
                                 step="0.01"
-                                prop:value=move || measurement_noise.get().to_string()
+                                prop:value=move || true_measurement_noise.get().to_string()
                                 on:input=move |ev| {
                                     if let Ok(value) = event_target_value(&ev).parse::<f64>() {
-                                        set_measurement_noise.set(value.max(0.05));
+                                        set_true_measurement_noise.set(value.max(0.05));
                                     }
                                 }
                             />
@@ -89,12 +119,60 @@ pub fn EstimationPage() -> impl IntoView {
                     </section>
 
                     <section>
-                        <h2>"What to look for"</h2>
+                        <h2>"Filter assumptions"</h2>
                         <p class="section-copy">
-                            "The full filter starts from a broad posterior covariance and converges toward the"
-                            " fixed-gain observer. Higher assumed process noise keeps the estimator more reactive,"
-                            " while higher measurement noise pushes both filters toward smoother state estimates."
+                            "The recursive and steady-state Kalman filters still interpret the disturbance and sensor"
+                            " error through Gaussian covariances `W` and `V`. Pinning the assumptions to truth gives the"
+                            " matched-model baseline; unlocking them lets you study mismatch directly."
                         </p>
+
+                        <div class="control-row">
+                            <label for="kalman-pin-assumptions">"Pin assumptions to truth"</label>
+                            <input
+                                id="kalman-pin-assumptions"
+                                type="checkbox"
+                                prop:checked=move || pin_assumptions.get()
+                                on:change=move |ev| set_pin_assumptions.set(event_target_checked(&ev))
+                            />
+                        </div>
+
+                        <div class="control-row">
+                            <label for="kalman-assumed-process-noise">"Assumed process noise"</label>
+                            <output>{move || format!("{:.3}", effective_assumed_process_noise.get())}</output>
+                            <input
+                                id="kalman-assumed-process-noise"
+                                type="range"
+                                min="0.02"
+                                max="2.00"
+                                step="0.01"
+                                prop:value=move || effective_assumed_process_noise.get().to_string()
+                                prop:disabled=move || pin_assumptions.get()
+                                on:input=move |ev| {
+                                    if let Ok(value) = event_target_value(&ev).parse::<f64>() {
+                                        set_assumed_process_noise.set(value.max(0.02));
+                                    }
+                                }
+                            />
+                        </div>
+
+                        <div class="control-row">
+                            <label for="kalman-assumed-measurement-noise">"Assumed measurement noise"</label>
+                            <output>{move || format!("{:.3}", effective_assumed_measurement_noise.get())}</output>
+                            <input
+                                id="kalman-assumed-measurement-noise"
+                                type="range"
+                                min="0.05"
+                                max="2.00"
+                                step="0.01"
+                                prop:value=move || effective_assumed_measurement_noise.get().to_string()
+                                prop:disabled=move || pin_assumptions.get()
+                                on:input=move |ev| {
+                                    if let Ok(value) = event_target_value(&ev).parse::<f64>() {
+                                        set_assumed_measurement_noise.set(value.max(0.05));
+                                    }
+                                }
+                            />
+                        </div>
                     </section>
 
                     <section>
@@ -103,26 +181,58 @@ pub fn EstimationPage() -> impl IntoView {
                     </section>
                 </aside>
 
-                <div class="plots-grid compact">
-                    <article class="plot-card">
-                        <div class="plot-header">
-                            <div>
-                                <h2>"Position estimate"</h2>
-                                <p>"Truth, noisy measurement, recursive Kalman estimate, and fixed-gain estimate."</p>
+                <div class="plots-grid wide">
+                    <div class="plots-grid compact">
+                        <article class="plot-card">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Position estimate"</h2>
+                                    <p>"Truth, noisy measurement, recursive Kalman estimate, and fixed-gain estimate."</p>
+                                </div>
                             </div>
-                        </div>
-                        <div id="estimator-position-plot" class="plot-surface"></div>
-                    </article>
+                            <div id="estimator-position-plot" class="plot-surface"></div>
+                        </article>
 
-                    <article class="plot-card">
-                        <div class="plot-header">
-                            <div>
-                                <h2>"Position variance"</h2>
-                                <p>"Recursive posterior variance converging toward the steady-state observer covariance."</p>
+                        <article class="plot-card">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Position variance"</h2>
+                                    <p>"Recursive posterior variance converging toward the steady-state observer covariance."</p>
+                                </div>
                             </div>
-                        </div>
-                        <div id="estimator-variance-plot" class="plot-surface"></div>
-                    </article>
+                            <div id="estimator-variance-plot" class="plot-surface"></div>
+                        </article>
+                    </div>
+
+                    <section class="home-grid">
+                        <article class="home-card">
+                            <h2>"Plant model"</h2>
+                            <p class="section-copy">
+                                "The plant is a sampled constant-velocity model with state `[position, velocity]^T`."
+                                " It evolves as `x_(k+1) = A x_k + B (u_k + d_k)`, where `u_k` is a smooth deterministic"
+                                " command and `d_k` is an acceleration disturbance injected through the same input channel."
+                            </p>
+                        </article>
+
+                        <article class="home-card">
+                            <h2>"Noise generation"</h2>
+                            <p class="section-copy">
+                                "The measurement is `y_k = [1 0] x_k + n_k`. Both `d_k` and `n_k` come from fixed colored"
+                                " sequences whose amplitudes are scaled by the truth-side process and measurement noise"
+                                " sliders, so the demo stays deterministic while still showing structured disturbance."
+                            </p>
+                        </article>
+
+                        <article class="home-card">
+                            <h2>"How To Read It"</h2>
+                            <p class="section-copy">
+                                "Process noise means unmodeled acceleration disturbance, so it changes the truth trajectory."
+                                " Measurement noise means sensor corruption, so it changes only the observed trace. Raising"
+                                " assumed process noise makes the filters more reactive; raising assumed measurement noise"
+                                " makes them smoother. Unlock the assumptions to study mismatch directly."
+                            </p>
+                        </article>
+                    </section>
                 </div>
             </div>
         </div>
@@ -148,11 +258,18 @@ struct EstimationDemo {
 }
 
 fn build_estimation_plot(
-    process_noise: f64,
-    measurement_noise: f64,
+    true_process_noise: f64,
+    true_measurement_noise: f64,
+    assumed_process_noise: f64,
+    assumed_measurement_noise: f64,
     which: EstimationPlot,
 ) -> Plot {
-    match run_estimation_demo(process_noise, measurement_noise) {
+    match run_estimation_demo(
+        true_process_noise,
+        true_measurement_noise,
+        assumed_process_noise,
+        assumed_measurement_noise,
+    ) {
         Ok(demo) => match which {
             EstimationPlot::State => build_line_plot(
                 "Position estimate",
@@ -183,19 +300,36 @@ fn build_estimation_plot(
     }
 }
 
-fn estimation_summary(process_noise: f64, measurement_noise: f64) -> String {
-    match run_estimation_demo(process_noise, measurement_noise) {
+fn estimation_summary(
+    true_process_noise: f64,
+    true_measurement_noise: f64,
+    assumed_process_noise: f64,
+    assumed_measurement_noise: f64,
+) -> String {
+    match run_estimation_demo(
+        true_process_noise,
+        true_measurement_noise,
+        assumed_process_noise,
+        assumed_measurement_noise,
+    ) {
         Ok(demo) => format!(
-            "Final position error: recursive {:.3}, steady-state {:.3}. Both filters use the same constant-velocity model, but only the full filter carries a transient covariance contraction phase.",
-            demo.final_kalman_error, demo.final_steady_error,
+            "Truth uses process {:.3} and measurement {:.3}; the filters assume process {:.3} and measurement {:.3}. Final position error: recursive {:.3}, steady-state {:.3}.",
+            true_process_noise,
+            true_measurement_noise,
+            assumed_process_noise,
+            assumed_measurement_noise,
+            demo.final_kalman_error,
+            demo.final_steady_error,
         ),
         Err(err) => format!("Estimator setup failed: {err}"),
     }
 }
 
 fn run_estimation_demo(
-    process_noise: f64,
-    measurement_noise: f64,
+    true_process_noise: f64,
+    true_measurement_noise: f64,
+    assumed_process_noise: f64,
+    assumed_measurement_noise: f64,
 ) -> Result<EstimationDemo, String> {
     let dt: f64 = 0.1;
     let system = DiscreteStateSpace::new(
@@ -213,14 +347,16 @@ fn run_estimation_demo(
     )
     .map_err(|err| err.to_string())?;
 
-    let q = process_noise * process_noise;
+    let q = assumed_process_noise * assumed_process_noise;
     let w = Mat::from_fn(2, 2, |row, col| match (row, col) {
         (0, 0) => 0.25 * dt.powi(4) * q,
         (0, 1) | (1, 0) => 0.5 * dt.powi(3) * q,
         (1, 1) => dt.powi(2) * q,
         _ => 0.0,
     });
-    let v = Mat::from_fn(1, 1, |_, _| measurement_noise * measurement_noise);
+    let v = Mat::from_fn(1, 1, |_, _| {
+        assumed_measurement_noise * assumed_measurement_noise
+    });
     let x0 = Mat::zeros(2, 1);
     let p0 = Mat::from_fn(2, 2, |row, col| {
         if row == col {
@@ -253,8 +389,8 @@ fn run_estimation_demo(
     for step in 0..n_steps {
         let t = (step as f64) * dt;
         let command = 0.35 * (0.12 * (step as f64)).sin() + if step >= 45 { 0.18 } else { 0.0 };
-        let disturbance = process_noise * colored_signal(step, 0.31);
-        let measurement = truth[0] + measurement_noise * colored_signal(step, 1.17);
+        let disturbance = true_process_noise * colored_signal(step, 0.31);
+        let measurement = truth[0] + true_measurement_noise * colored_signal(step, 1.17);
 
         let input = Mat::from_fn(1, 1, |_, _| command);
         let measurement_mat = Mat::from_fn(1, 1, |_, _| measurement);
