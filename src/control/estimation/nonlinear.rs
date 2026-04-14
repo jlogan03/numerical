@@ -114,14 +114,6 @@ where
     /// use a different measurement context than the transition-side input used
     /// during [`ExtendedKalmanFilter::predict`].
     pub output: Mat<R>,
-    /// Measurement-side sigma cloud cached by the UKF prediction stage.
-    ///
-    /// This is built from the final predicted pair `(x^-, P^-)` after process
-    /// noise injection, so the update stage uses measurement statistics
-    /// consistent with the returned prediction covariance. The cache also
-    /// preserves any custom `UkfStage::Update` sigma-point placement chosen by
-    /// the active strategy.
-    ukf_sigma: Option<SigmaPointSet<R>>,
 }
 
 /// Measurement update result of a discrete nonlinear Kalman filter.
@@ -458,7 +450,6 @@ where
             state,
             covariance,
             output,
-            ukf_sigma: None,
         })
     }
 
@@ -722,6 +713,12 @@ where
     }
 
     /// Computes the UKF prediction stage without mutating the filter state.
+    ///
+    /// This returns the prediction-time unscented measurement mean associated
+    /// with the supplied input. The split [`update`](Self::update) path
+    /// rebuilds the update-stage sigma set from its own input argument so
+    /// custom sigma-point providers can react to measurement-side input or
+    /// context changes between prediction and update.
     pub fn predict(
         &self,
         input: MatRef<'_, R>,
@@ -772,11 +769,16 @@ where
             state,
             covariance,
             output,
-            ukf_sigma: Some(measurement_sigma),
         })
     }
 
     /// Applies one UKF measurement update to an externally supplied prediction.
+    ///
+    /// The update-stage sigma set is always rebuilt from the supplied `input`
+    /// and the predicted pair `(x^-, P^-)`. This keeps custom
+    /// [`SigmaPointProvider`] implementations correct when their
+    /// `UkfStage::Update` placement depends on the measurement-side input or
+    /// context.
     pub fn update(
         &self,
         prediction: &NonlinearKalmanPrediction<R>,
@@ -792,19 +794,13 @@ where
         validate_column_vector("input", input, self.model.ninputs())?;
         validate_column_vector("measurement", measurement, self.model.noutputs())?;
 
-        let owned_sigma;
-        let sigma = if let Some(sigma) = prediction.ukf_sigma.as_ref() {
-            sigma
-        } else {
-            owned_sigma = self.sigma_strategy.sigma_points(
-                prediction.state.as_ref(),
-                prediction.covariance.as_ref(),
-                input,
-                UkfStage::Update,
-            )?;
-            &owned_sigma
-        };
-        validate_sigma_point_set(sigma, self.model.nstates())?;
+        let sigma = self.sigma_strategy.sigma_points(
+            prediction.state.as_ref(),
+            prediction.covariance.as_ref(),
+            input,
+            UkfStage::Update,
+        )?;
+        validate_sigma_point_set(&sigma, self.model.nstates())?;
 
         let output_points = propagate_sigma_points(
             sigma.points.as_ref(),
@@ -878,6 +874,11 @@ where
     }
 
     /// Runs one full UKF predict/update cycle and stores the posterior state.
+    ///
+    /// This monolithic entry point uses the same input for both stages. The
+    /// split [`predict`](Self::predict) and [`update`](Self::update) API can
+    /// use a different update-side input, and the update-stage sigma set will
+    /// be rebuilt accordingly.
     pub fn step(
         &mut self,
         input: MatRef<'_, R>,
@@ -1792,6 +1793,33 @@ mod tests {
         }
     }
 
+    struct InputAwareUpdateProvider;
+
+    impl SigmaPointProvider<f64> for InputAwareUpdateProvider {
+        fn sigma_points(
+            &self,
+            mean: faer::MatRef<'_, f64>,
+            _covariance: faer::MatRef<'_, f64>,
+            input: faer::MatRef<'_, f64>,
+            stage: UkfStage,
+        ) -> Result<SigmaPointSet<f64>, NonlinearEstimatorError> {
+            let x = mean[(0, 0)];
+            let delta = match stage {
+                UkfStage::Predict => 0.25,
+                UkfStage::Update => 0.25 + input[(0, 0)],
+            };
+            Ok(SigmaPointSet {
+                points: Mat::from_fn(1, 3, |_, col| match col {
+                    0 => x,
+                    1 => x + delta,
+                    _ => x - delta,
+                }),
+                mean_weights: vec![0.0, 0.5, 0.5],
+                cov_weights: vec![0.0, 0.5, 0.5],
+            })
+        }
+    }
+
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
         assert!(
             (lhs - rhs).abs() <= tol,
@@ -2037,7 +2065,7 @@ mod tests {
     }
 
     #[test]
-    fn ukf_update_reuses_prediction_measurement_sigma_points() {
+    fn ukf_update_rebuilds_measurement_statistics_from_predicted_pair() {
         let q = Mat::from_fn(1, 1, |_, _| 0.5);
         let r = Mat::from_fn(1, 1, |_, _| 0.2);
         let x_hat = Mat::from_fn(1, 1, |_, _| 1.0);
@@ -2061,9 +2089,9 @@ mod tests {
         let prediction = ukf.predict(u.as_ref()).unwrap();
         let update = ukf.update(&prediction, u.as_ref(), y.as_ref()).unwrap();
 
-        // The prediction stage caches the update-side sigma set built from the
-        // final `(x^-, P^-)` pair, so the measurement mean seen by `update`
-        // must agree exactly with the one returned by `predict`.
+        // With the same input passed to both stages, rebuilding the update-side
+        // sigma set from the final `(x^-, P^- )` pair must reproduce the
+        // prediction-time measurement mean exactly.
         assert_close(prediction.output[(0, 0)], 3.1875, 1.0e-12);
         assert_close(update.predicted_output[(0, 0)], 3.1875, 1.0e-12);
     }
@@ -2087,8 +2115,73 @@ mod tests {
         let y = Mat::from_fn(1, 1, |_, _| 1.0);
         let update = ukf.step(u.as_ref(), y.as_ref()).unwrap();
         assert_eq!(predict_calls.get(), 1);
-        assert_eq!(update_calls.get(), 1);
+        assert_eq!(update_calls.get(), 2);
         assert_close(update.predicted_output[(0, 0)], 1.0625, 1.0e-12);
+    }
+
+    #[test]
+    fn ukf_split_update_rebuilds_custom_update_sigma_for_update_input() {
+        let q = Mat::from_fn(1, 1, |_, _| 0.0);
+        let r = Mat::from_fn(1, 1, |_, _| 0.25);
+        let x_hat = Mat::from_fn(1, 1, |_, _| 1.0);
+        let p = Mat::from_fn(1, 1, |_, _| 0.5);
+        let ukf_split = UnscentedKalmanFilter::new_custom(
+            LinearScalarModel {
+                a: 1.0,
+                b: 0.0,
+                c: 1.0,
+                d: 0.0,
+            },
+            q.clone(),
+            r.clone(),
+            x_hat.clone(),
+            p.clone(),
+            InputAwareUpdateProvider,
+        )
+        .unwrap();
+        let mut ukf_step = UnscentedKalmanFilter::new_custom(
+            LinearScalarModel {
+                a: 1.0,
+                b: 0.0,
+                c: 1.0,
+                d: 0.0,
+            },
+            q,
+            r,
+            x_hat,
+            p,
+            InputAwareUpdateProvider,
+        )
+        .unwrap();
+
+        let predict_input = Mat::from_fn(1, 1, |_, _| 0.0);
+        let update_input = Mat::from_fn(1, 1, |_, _| 1.0);
+        let measurement = Mat::from_fn(1, 1, |_, _| 2.0);
+
+        let prediction = ukf_split.predict(predict_input.as_ref()).unwrap();
+        let split_update = ukf_split
+            .update(&prediction, update_input.as_ref(), measurement.as_ref())
+            .unwrap();
+        let step_update = ukf_step
+            .step(update_input.as_ref(), measurement.as_ref())
+            .unwrap();
+
+        assert_close(
+            split_update.predicted_output[(0, 0)],
+            step_update.predicted_output[(0, 0)],
+            1.0e-12,
+        );
+        assert_close(split_update.gain[(0, 0)], step_update.gain[(0, 0)], 1.0e-12);
+        assert_close(
+            split_update.state[(0, 0)],
+            step_update.state[(0, 0)],
+            1.0e-12,
+        );
+        assert_close(
+            split_update.covariance[(0, 0)],
+            step_update.covariance[(0, 0)],
+            1.0e-12,
+        );
     }
 
     #[test]

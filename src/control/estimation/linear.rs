@@ -96,7 +96,13 @@ where
     pub state: Mat<T>,
     /// Predicted covariance before incorporating the new measurement.
     pub covariance: Mat<T>,
-    /// Predicted output `C x^- + D u` corresponding to the supplied input.
+    /// Predicted output `C x^- + D u` corresponding to the prediction-stage
+    /// input.
+    ///
+    /// The split-step update path may recompute the measurement-side
+    /// predicted output from its own input argument so callers can supply a
+    /// different measurement-side feedthrough context than the one used during
+    /// prediction.
     pub output: Mat<T>,
 }
 
@@ -153,7 +159,13 @@ where
 {
     /// Predicted state estimate before measurement correction.
     pub state: Mat<T>,
-    /// Predicted output `C x^- + D u`.
+    /// Predicted output `C x^- + D u` corresponding to the prediction-stage
+    /// input.
+    ///
+    /// The split fixed-gain update path may recompute the measurement-side
+    /// predicted output from its own input argument so callers can supply a
+    /// different measurement-side feedthrough context than the one used during
+    /// prediction.
     pub output: Mat<T>,
 }
 
@@ -633,6 +645,12 @@ where
     }
 
     /// Applies one measurement update to an externally supplied prediction.
+    ///
+    /// Unlike the monolithic [`step`](Self::step) path, the split API lets
+    /// callers provide a measurement-side input that differs from the input
+    /// used during [`predict`](Self::predict). To keep the innovation
+    /// consistent with the supplied update input, this method recomputes the
+    /// measurement-side predicted output `C x^- + D u`.
     pub fn update(
         &self,
         prediction: &KalmanPrediction<T>,
@@ -666,7 +684,10 @@ where
         // `S = C P^- C^H + V`
         //
         // before solving for the Kalman gain.
-        let predicted_output = clone_mat(prediction.output.as_ref());
+        let predicted_output = dense_add(
+            dense_mul(self.c.as_ref(), prediction.state.as_ref()).as_ref(),
+            dense_mul(self.d.as_ref(), input).as_ref(),
+        );
         let innovation = dense_sub(measurement, predicted_output.as_ref());
         let innovation_covariance = dense_add(
             dense_mul_adjoint_rhs(
@@ -709,6 +730,11 @@ where
         let normalized_innovation_norm =
             normalized_innovation_norm(innovation.as_ref(), innovation_covariance.as_ref())?;
 
+        if !predicted_output.as_ref().is_all_finite() {
+            return Err(EstimatorError::NonFiniteResult {
+                which: "update.predicted_output",
+            });
+        }
         if !innovation.as_ref().is_all_finite() {
             return Err(EstimatorError::NonFiniteResult {
                 which: "update.innovation",
@@ -749,6 +775,11 @@ where
     }
 
     /// Runs one full predict/update cycle and stores the posterior estimate.
+    ///
+    /// This monolithic entry point uses the same input for both prediction and
+    /// measurement feedthrough. Callers that need a different update-side
+    /// input should use the split [`predict`](Self::predict) and
+    /// [`update`](Self::update) methods.
     pub fn step(
         &mut self,
         input: MatRef<'_, T>,
@@ -914,7 +945,10 @@ where
     /// `x^+ = x^- + L (y - (C x^- + D u))`
     ///
     /// so this wrapper behaves like the converged steady-state version of the
-    /// full discrete Kalman recursion.
+    /// full discrete Kalman recursion. As with the full split Kalman API, the
+    /// measurement-side predicted output is recomputed from the supplied
+    /// update input so callers can use a different feedthrough context than
+    /// the one used during prediction.
     pub fn update(
         &self,
         prediction: &SteadyStateKalmanPrediction<T>,
@@ -934,7 +968,11 @@ where
             self.c.nrows(),
         )?;
 
-        let innovation = dense_sub(measurement, prediction.output.as_ref());
+        let predicted_output = dense_add(
+            dense_mul(self.c.as_ref(), prediction.state.as_ref()).as_ref(),
+            dense_mul(self.d.as_ref(), input).as_ref(),
+        );
+        let innovation = dense_sub(measurement, predicted_output.as_ref());
         let state = dense_add(
             prediction.state.as_ref(),
             dense_mul(self.gain.as_ref(), innovation.as_ref()).as_ref(),
@@ -945,6 +983,11 @@ where
         );
         let innovation_norm = column_vector_norm(innovation.as_ref());
 
+        if !predicted_output.as_ref().is_all_finite() {
+            return Err(EstimatorError::NonFiniteResult {
+                which: "steady_state_update.predicted_output",
+            });
+        }
         if !innovation.as_ref().is_all_finite() {
             return Err(EstimatorError::NonFiniteResult {
                 which: "steady_state_update.innovation",
@@ -971,6 +1014,11 @@ where
 
     /// Runs one full fixed-gain predict/update cycle and stores the posterior
     /// state estimate.
+    ///
+    /// This monolithic entry point uses the same input for both prediction and
+    /// measurement feedthrough. Callers that need a different update-side
+    /// input should use the split [`predict`](Self::predict) and
+    /// [`update`](Self::update) methods.
     pub fn step(
         &mut self,
         input: MatRef<'_, T>,
@@ -1750,6 +1798,52 @@ mod test {
     }
 
     #[test]
+    fn discrete_kalman_split_update_recomputes_feedthrough_from_update_input() {
+        let filter_a = DiscreteKalmanFilter::new(
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 0.0f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 2.0f64),
+            Mat::from_fn(1, 1, |_, _| 0.25f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 0.5f64),
+        )
+        .unwrap();
+        let mut filter_b = DiscreteKalmanFilter::new(
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 0.0f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 2.0f64),
+            Mat::from_fn(1, 1, |_, _| 0.25f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 0.5f64),
+        )
+        .unwrap();
+
+        let predict_input = Mat::from_fn(1, 1, |_, _| 0.0f64);
+        let update_input = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let measurement = Mat::from_fn(1, 1, |_, _| 3.5f64);
+
+        let prediction = filter_a.predict(predict_input.as_ref()).unwrap();
+        let split_update = filter_a
+            .update(&prediction, update_input.as_ref(), measurement.as_ref())
+            .unwrap();
+        let step_update = filter_b
+            .step(update_input.as_ref(), measurement.as_ref())
+            .unwrap();
+
+        assert_close(
+            &split_update.predicted_output,
+            &step_update.predicted_output,
+            1.0e-12,
+        );
+        assert_close(&split_update.state, &step_update.state, 1.0e-12);
+        assert_close(&split_update.covariance, &step_update.covariance, 1.0e-12);
+    }
+
+    #[test]
     fn discrete_kalman_rejects_singular_innovation_covariance() {
         let filter = DiscreteKalmanFilter::new(
             Mat::from_fn(1, 1, |_, _| 1.0f64),
@@ -1922,6 +2016,47 @@ mod test {
             &update_from_dlqe.output,
             1.0e-10,
         );
+    }
+
+    #[test]
+    fn steady_state_split_update_recomputes_feedthrough_from_update_input() {
+        let system = DiscreteStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 0.0f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            Mat::from_fn(1, 1, |_, _| 2.0f64),
+            1.0,
+        )
+        .unwrap();
+        let filter_a = SteadyStateKalmanFilter::from_filter_gain(
+            &system,
+            Mat::from_fn(1, 1, |_, _| 0.25f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            None,
+        )
+        .unwrap();
+        let mut filter_b = SteadyStateKalmanFilter::from_filter_gain(
+            &system,
+            Mat::from_fn(1, 1, |_, _| 0.25f64),
+            Mat::from_fn(1, 1, |_, _| 1.0f64),
+            None,
+        )
+        .unwrap();
+
+        let predict_input = Mat::from_fn(1, 1, |_, _| 0.0f64);
+        let update_input = Mat::from_fn(1, 1, |_, _| 1.0f64);
+        let measurement = Mat::from_fn(1, 1, |_, _| 3.5f64);
+
+        let prediction = filter_a.predict(predict_input.as_ref()).unwrap();
+        let split_update = filter_a
+            .update(&prediction, update_input.as_ref(), measurement.as_ref())
+            .unwrap();
+        let step_update = filter_b
+            .step(update_input.as_ref(), measurement.as_ref())
+            .unwrap();
+
+        assert_close(&split_update.state, &step_update.state, 1.0e-12);
+        assert_close(&split_update.output, &step_update.output, 1.0e-12);
     }
 
     #[test]
