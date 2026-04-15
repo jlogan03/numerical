@@ -248,20 +248,6 @@ pub struct ProcessModelFitOptions {
     pub patience: Option<usize>,
 }
 
-impl ProcessModelFitOptions {
-    /// Returns a looser configuration suitable for interactive demos.
-    ///
-    /// This intentionally trades some fit quality for quicker response on
-    /// repeated slider updates.
-    #[must_use]
-    pub const fn fast_demo() -> Self {
-        Self {
-            tolerance: Some(1.0e-3),
-            patience: Some(6),
-        }
-    }
-}
-
 impl Default for ProcessModelFitOptions {
     fn default() -> Self {
         Self {

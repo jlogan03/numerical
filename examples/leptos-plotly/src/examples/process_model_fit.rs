@@ -16,6 +16,7 @@ use plotly::common::{DashType, MarkerSymbol};
 pub fn ProcessModelFitPage() -> impl IntoView {
     let (source_kind, set_source_kind) = signal(FitSourceKind::Fopdt);
     let (noise_level, set_noise_level) = signal(0.02_f64);
+    let (fit_tolerance, set_fit_tolerance) = signal(1.0e-2_f64);
 
     let (fopdt_gain, set_fopdt_gain) = signal(1.35_f64);
     let (fopdt_time_constant, set_fopdt_time_constant) = signal(3.0_f64);
@@ -35,6 +36,7 @@ pub fn ProcessModelFitPage() -> impl IntoView {
     let inputs = move || ProcessFitInputs {
         source_kind: source_kind.get(),
         noise_level: noise_level.get(),
+        fit_tolerance: fit_tolerance.get(),
         fopdt_gain: fopdt_gain.get(),
         fopdt_time_constant: fopdt_time_constant.get(),
         fopdt_delay: fopdt_delay.get(),
@@ -49,7 +51,16 @@ pub fn ProcessModelFitPage() -> impl IntoView {
         higher_order_tail_lag: higher_order_tail_lag.get(),
     };
 
-    let demo = Memo::new(move |_| run_process_fit_demo(inputs(), ProcessModelFitOptions::fast_demo()));
+    let demo = Memo::new(move |_| {
+        let inputs = inputs();
+        run_process_fit_demo(
+            inputs,
+            ProcessModelFitOptions {
+                tolerance: Some(inputs.fit_tolerance),
+                patience: Some(6),
+            },
+        )
+    });
 
     use_plotly_chart("process-fit-response-plot", move || {
         build_process_fit_plot(demo.get(), ProcessFitPlot::Response)
@@ -313,6 +324,8 @@ pub fn ProcessModelFitPage() -> impl IntoView {
                         <p class="section-copy">
                             "Matched sources show the intended process-model workflow. The higher-order source lets you"
                             " dial in underdamped or long-tail behavior and see how the low-order surrogates respond."
+                            " The fit tolerance controls how hard the nonlinear least-squares refinement works before"
+                            " the page redraws."
                         </p>
 
                         <div class="control-row">
@@ -345,6 +358,24 @@ pub fn ProcessModelFitPage() -> impl IntoView {
                                 on:input=move |ev| {
                                     if let Ok(value) = event_target_value(&ev).parse::<f64>() {
                                         set_noise_level.set(value.max(0.0));
+                                    }
+                                }
+                            />
+                        </div>
+
+                        <div class="control-row">
+                            <label for="process-fit-tolerance">"Fit tolerance"</label>
+                            <output>{move || format!("{:.1e}", fit_tolerance.get())}</output>
+                            <input
+                                id="process-fit-tolerance"
+                                type="range"
+                                min="0.0001"
+                                max="0.05"
+                                step="0.0001"
+                                prop:value=move || fit_tolerance.get().to_string()
+                                on:input=move |ev| {
+                                    if let Ok(value) = event_target_value(&ev).parse::<f64>() {
+                                        set_fit_tolerance.set(value.clamp(1.0e-4, 5.0e-2));
                                     }
                                 }
                             />
@@ -431,6 +462,7 @@ impl FitSourceKind {
 struct ProcessFitInputs {
     source_kind: FitSourceKind,
     noise_level: f64,
+    fit_tolerance: f64,
     fopdt_gain: f64,
     fopdt_time_constant: f64,
     fopdt_delay: f64,
@@ -450,6 +482,7 @@ impl Default for ProcessFitInputs {
         Self {
             source_kind: FitSourceKind::Fopdt,
             noise_level: 0.02,
+            fit_tolerance: 1.0e-2,
             fopdt_gain: 1.35,
             fopdt_time_constant: 3.0,
             fopdt_delay: 0.8,
@@ -478,6 +511,7 @@ struct ProcessFitDemo {
     source_kind: FitSourceKind,
     fopdt_model: FopdtModel<f64>,
     sopdt_model: SopdtModel<f64>,
+    fit_tolerance: f64,
     fopdt_objective: f64,
     sopdt_objective: f64,
     fopdt_true_rms: f64,
@@ -525,8 +559,9 @@ fn build_process_fit_plot(result: Result<ProcessFitDemo, String>, which: Process
 fn process_fit_summary(result: Result<ProcessFitDemo, String>) -> String {
     match result {
         Ok(demo) => format!(
-            "On the {}, FOPDT objective = {:.4} and true-source RMS error = {:.4}; fitted model = K {:.3}, tau {:.3} s, delay {:.3} s. SOPDT objective = {:.4} and true-source RMS error = {:.4}; fitted model = K {:.3}, tau1 {:.3} s, tau2 {:.3} s, delay {:.3} s.",
+            "On the {} with LM tolerance {:.1e}, FOPDT objective = {:.4} and true-source RMS error = {:.4}; fitted model = K {:.3}, tau {:.3} s, delay {:.3} s. SOPDT objective = {:.4} and true-source RMS error = {:.4}; fitted model = K {:.3}, tau1 {:.3} s, tau2 {:.3} s, delay {:.3} s.",
             demo.source_kind.label(),
+            demo.fit_tolerance,
             demo.fopdt_objective,
             demo.fopdt_true_rms,
             demo.fopdt_model.gain,
@@ -625,6 +660,7 @@ fn run_process_fit_demo(
         source_kind: inputs.source_kind,
         fopdt_model: fopdt_fit.model,
         sopdt_model: sopdt_fit.model,
+        fit_tolerance: inputs.fit_tolerance,
         fopdt_objective: fopdt_fit.objective,
         sopdt_objective: sopdt_fit.objective,
         fopdt_true_rms,
@@ -741,7 +777,14 @@ mod tests {
         for source in [FitSourceKind::Fopdt, FitSourceKind::Sopdt] {
             let mut inputs = ProcessFitInputs::default();
             inputs.source_kind = source;
-            let demo = run_process_fit_demo(inputs, ProcessModelFitOptions::fast_demo()).unwrap();
+            let demo = run_process_fit_demo(
+                inputs,
+                ProcessModelFitOptions {
+                    tolerance: Some(1.0e-3),
+                    patience: Some(6),
+                },
+            )
+            .unwrap();
             assert_eq!(demo.times.len(), demo.true_output.len());
             assert_eq!(demo.times.len(), demo.fopdt_output.len());
             assert_eq!(demo.times.len(), demo.sopdt_output.len());
