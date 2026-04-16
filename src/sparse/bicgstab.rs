@@ -24,8 +24,10 @@
 //!
 //! # Implementation Notes
 //!
-//! - The implementation uses compensated sparse reductions for the sensitive
-//!   inner products and residual norms it owns.
+//! - The implementation uses compensated reductions for the sensitive inner
+//!   products and residual norms it owns, while keeping sparse matrix-vector
+//!   products on the plain accumulation path to avoid per-iteration scratch
+//!   allocation and preserve throughput.
 //! - Any `Precond` implementation can be dropped in, including lagged sparse LU
 //!   and Cholesky factorizations from this crate.
 
@@ -315,7 +317,7 @@ where
         let mut scratch = zero_col::<T>(n);
         let mut r = zero_col::<T>(n);
 
-        a.apply_compensated(col_slice_mut(&mut scratch), col_slice(&x));
+        a.apply(col_slice_mut(&mut scratch), col_slice(&x));
         for ((r, &b), &ax) in col_slice_mut(&mut r)
             .iter_mut()
             .zip(col_slice(&b_col).iter())
@@ -400,8 +402,7 @@ where
     /// Recomputes the residual from scratch with compensated accumulation.
     pub fn hard_restart(&mut self) {
         self.hard_restart_count += 1;
-        self.a
-            .apply_compensated(col_slice_mut(&mut self.scratch), col_slice(&self.x));
+        self.a.apply(col_slice_mut(&mut self.scratch), col_slice(&self.x));
 
         for ((r, &b), &ax) in col_slice_mut(&mut self.r)
             .iter_mut()
@@ -430,8 +431,7 @@ where
             &self.p,
             &mut self.precond_buffer,
         );
-        self.a
-            .apply_compensated(col_slice_mut(&mut self.v), col_slice(&self.z));
+        self.a.apply(col_slice_mut(&mut self.v), col_slice(&self.z));
 
         let denom = dotc::<T>(col_slice(&self.rhat), col_slice(&self.v));
         if denom.abs() <= eps::<T::Real>() {
@@ -474,8 +474,7 @@ where
             &self.s,
             &mut self.precond_buffer,
         );
-        self.a
-            .apply_compensated(col_slice_mut(&mut self.t), col_slice(&self.z));
+        self.a.apply(col_slice_mut(&mut self.t), col_slice(&self.z));
 
         let t_norm_sq = norm2_sq::<T>(col_slice(&self.t));
         if t_norm_sq <= eps::<T::Real>() {
