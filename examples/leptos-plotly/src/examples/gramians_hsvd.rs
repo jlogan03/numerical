@@ -7,7 +7,9 @@ use faer::Mat;
 use leptos::prelude::*;
 use numerical::control::lti::ContinuousStateSpace;
 use numerical::control::reduction::{HsvdParams, hsvd_from_dense_gramians};
-use numerical::decomp::{DenseDecompParams, dense_self_adjoint_eigen, dense_svd};
+use numerical::decomp::{
+    DenseDecompParams, dense_eigenvalues, dense_self_adjoint_eigen, dense_svd,
+};
 use plotly::Plot;
 
 /// Interactive Gramian and HSVD exploration page.
@@ -56,7 +58,7 @@ pub fn GramianHsvdPage() -> impl IntoView {
                 <p>
                     "A configurable stable continuous-time system is analyzed through its controllability"
                     " and observability Gramians. The Hankel singular values from HSVD are then compared"
-                    " against a plain singular-value decomposition of the state matrix A."
+                    " against the singular values and eigenvalues of the state matrix A."
                 </p>
             </header>
 
@@ -217,7 +219,7 @@ pub fn GramianHsvdPage() -> impl IntoView {
                             <div class="plot-header">
                                 <div>
                                     <h2>"HSVD versus plain SVD"</h2>
-                                    <p>"Log10 Hankel singular values compared with the singular values of A."</p>
+                                    <p>"Log10 Hankel singular values compared with the singular values and eigenvalue magnitudes of A."</p>
                                 </div>
                             </div>
                             <div id="hsvd-spectrum-plot" class="plot-surface"></div>
@@ -287,12 +289,14 @@ struct GramianHsvdDemo {
     observability_log10: Vec<f64>,
     hsv_log10: Vec<f64>,
     a_svd_log10: Vec<f64>,
+    a_eig_log10: Vec<f64>,
     controllability_residual_norm: f64,
     observability_residual_norm: f64,
     controllability_ms: f64,
     observability_ms: f64,
     hsvd_ms: f64,
     svd_ms: f64,
+    eig_ms: f64,
     sigma_tol: Option<f64>,
     a_matrix: Vec<Vec<f64>>,
     wc_matrix: Vec<Vec<f64>>,
@@ -321,13 +325,18 @@ fn build_gramian_plot(result: Result<GramianHsvdDemo, String>, which: GramianPlo
                 ],
             ),
             GramianPlot::HsvdVsSvd => build_line_plot(
-                "HSVD versus SVD(A)",
+                "HSVD versus SVD(A) and |eig(A)|",
                 "state index",
                 "log10 spectrum",
                 false,
                 vec![
                     LineSeries::lines_markers("HSV", demo.state_index.clone(), demo.hsv_log10),
-                    LineSeries::lines_markers("sigma(A)", demo.state_index, demo.a_svd_log10),
+                    LineSeries::lines_markers(
+                        "sigma(A)",
+                        demo.state_index.clone(),
+                        demo.a_svd_log10,
+                    ),
+                    LineSeries::lines_markers("|lambda(A)|", demo.state_index, demo.a_eig_log10),
                 ],
             ),
             GramianPlot::StateMatrix => {
@@ -347,7 +356,7 @@ fn build_gramian_plot(result: Result<GramianHsvdDemo, String>, which: GramianPlo
 fn gramian_hsvd_summary(result: Result<GramianHsvdDemo, String>) -> String {
     match result {
         Ok(demo) => format!(
-            "Controllability Gramian solved in {:.2} ms with residual {:.2e}; observability Gramian solved in {:.2} ms with residual {:.2e}. HSVD took {:.2} ms{} and the plain SVD(A) took {:.2} ms.",
+            "Controllability Gramian solved in {:.2} ms with residual {:.2e}; observability Gramian solved in {:.2} ms with residual {:.2e}. HSVD took {:.2} ms{}; SVD(A) took {:.2} ms; |eig(A)| took {:.2} ms.",
             demo.controllability_ms,
             demo.controllability_residual_norm,
             demo.observability_ms,
@@ -358,6 +367,7 @@ fn gramian_hsvd_summary(result: Result<GramianHsvdDemo, String>) -> String {
                 None => String::from(" with automatic sigma tolerance"),
             },
             demo.svd_ms,
+            demo.eig_ms,
         ),
         Err(message) => format!("Gramian / HSVD analysis failed: {message}"),
     }
@@ -401,12 +411,18 @@ fn run_gramian_hsvd_demo(inputs: GramianInputs) -> Result<GramianHsvdDemo, Strin
     let (a_svd, svd_ms) =
         measure(|| dense_svd(system.a(), &decomp_params).map_err(|err| err.to_string()));
     let a_svd = a_svd?;
+    let (a_eig, eig_ms) = measure(|| dense_eigenvalues(system.a()).map_err(|err| err.to_string()));
+    let a_eig = a_eig?;
 
     let wc_eig = dense_self_adjoint_eigen(wc.solution.as_ref(), &decomp_params)
         .map_err(|err| err.to_string())?;
     let wo_eig = dense_self_adjoint_eigen(wo.solution.as_ref(), &decomp_params)
         .map_err(|err| err.to_string())?;
-    let n = hsvd.hankel_singular_values.nrows().max(a_svd.s.nrows());
+    let n = hsvd
+        .hankel_singular_values
+        .nrows()
+        .max(a_svd.s.nrows())
+        .max(a_eig.nrows());
     let state_index = (0..n).map(|i| (i + 1) as f64).collect::<Vec<_>>();
 
     Ok(GramianHsvdDemo {
@@ -421,12 +437,16 @@ fn run_gramian_hsvd_demo(inputs: GramianInputs) -> Result<GramianHsvdDemo, Strin
             (0..hsvd.hankel_singular_values.nrows()).map(|i| hsvd.hankel_singular_values[i].abs()),
         ),
         a_svd_log10: spectral_log10_values((0..a_svd.s.nrows()).map(|i| a_svd.s[i].abs())),
+        a_eig_log10: spectral_log10_values(
+            (0..a_eig.nrows()).map(|i| a_eig[i].re.hypot(a_eig[i].im)),
+        ),
         controllability_residual_norm: wc.residual_norm,
         observability_residual_norm: wo.residual_norm,
         controllability_ms,
         observability_ms,
         hsvd_ms,
         svd_ms,
+        eig_ms,
         sigma_tol: (!inputs.auto_sigma_tol).then_some(inputs.sigma_tol.clamp(1.0e-14, 1.0e-2)),
         a_matrix: matrix_grid_from_fn(system.nstates(), system.nstates(), |row, col| {
             system.a()[(row, col)]
@@ -506,5 +526,6 @@ mod tests {
             demo.controllability_log10.len(),
             demo.observability_log10.len()
         );
+        assert!(!demo.a_eig_log10.is_empty());
     }
 }

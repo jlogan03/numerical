@@ -5,6 +5,12 @@ pub enum ExampleId {
     Home,
     /// Sparse direct versus iterative solver comparison.
     LinearSolverComparison,
+    /// Sparse Cholesky factorization comparison.
+    SparseCholesky,
+    /// Two-sided matrix equilibration for Krylov solves.
+    Equilibration,
+    /// Dense eigen and singular-value analysis.
+    DenseSpectralDecomposition,
     /// Dense Gramian and HSVD exploration.
     GramianHsvd,
     /// Continuous-time process-model exploration.
@@ -82,12 +88,30 @@ pub struct ExampleGroup {
 pub const EXAMPLE_GROUPS: &[ExampleGroup] = &[
     ExampleGroup {
         title: "Linear Algebra",
-        summary: "Interactive comparisons for sparse solves, dense Gramians, and singular-value-based state ranking.",
+        summary: "Interactive comparisons for sparse solves, Cholesky factors, equilibration, dense spectra, and Gramian-based state ranking.",
         entries: &[
             ExampleEntry {
                 id: ExampleId::LinearSolverComparison,
                 title: "Sparse Solvers",
                 summary: "Compare sparse LU and BiCGSTAB on the same shifted tridiagonal system with adjustable tolerance.",
+                status: ExampleStatus::Ready,
+            },
+            ExampleEntry {
+                id: ExampleId::SparseCholesky,
+                title: "Sparse Cholesky",
+                summary: "Compare sparse LLT and LDLT factorizations on symmetric positive-definite and indefinite systems.",
+                status: ExampleStatus::Ready,
+            },
+            ExampleEntry {
+                id: ExampleId::Equilibration,
+                title: "Equilibration",
+                summary: "See how two-sided row and column scaling changes BiCGSTAB convergence on a badly scaled sparse system.",
+                status: ExampleStatus::Ready,
+            },
+            ExampleEntry {
+                id: ExampleId::DenseSpectralDecomposition,
+                title: "Dense Eigen + SVD",
+                summary: "Compare eigenvalue structure and singular spectra on self-adjoint and non-normal dense matrices.",
                 status: ExampleStatus::Ready,
             },
             ExampleEntry {
@@ -204,7 +228,10 @@ impl ExampleId {
                 status: ExampleStatus::Ready,
             },
             Self::LinearSolverComparison => EXAMPLE_GROUPS[0].entries[0],
-            Self::GramianHsvd => EXAMPLE_GROUPS[0].entries[1],
+            Self::SparseCholesky => EXAMPLE_GROUPS[0].entries[1],
+            Self::Equilibration => EXAMPLE_GROUPS[0].entries[2],
+            Self::DenseSpectralDecomposition => EXAMPLE_GROUPS[0].entries[3],
+            Self::GramianHsvd => EXAMPLE_GROUPS[0].entries[4],
             Self::LtiProcessModels => EXAMPLE_GROUPS[1].entries[0],
             Self::LtiPlotGallery => EXAMPLE_GROUPS[1].entries[1],
             Self::FilterDesign => EXAMPLE_GROUPS[2].entries[0],

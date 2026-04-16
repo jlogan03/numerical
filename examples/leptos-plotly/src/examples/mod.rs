@@ -1,3 +1,5 @@
+mod dense_spectral;
+mod equilibration;
 mod estimation;
 mod filter_design;
 mod gramians_hsvd;
@@ -10,8 +12,11 @@ mod nonlinear_estimation;
 mod pid_design;
 mod process_model_fit;
 mod reduction;
+mod sparse_cholesky;
 mod synthesis;
 
+pub use dense_spectral::DenseSpectralDecompositionPage;
+pub use equilibration::EquilibrationPage;
 pub use estimation::EstimationPage;
 pub use filter_design::FilterDesignPage;
 pub use gramians_hsvd::GramianHsvdPage;
@@ -24,4 +29,5 @@ pub use nonlinear_estimation::NonlinearEstimationPage;
 pub use pid_design::PidDesignPage;
 pub use process_model_fit::ProcessModelFitPage;
 pub use reduction::ReductionPage;
+pub use sparse_cholesky::SparseCholeskyPage;
 pub use synthesis::SynthesisPage;

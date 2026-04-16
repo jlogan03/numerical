@@ -44,6 +44,9 @@ Then open the local URL reported by `trunk`.
 ## Current demos
 
 - `Linear Algebra / Sparse Solvers`: sparse LU versus BiCGSTAB on the same shifted tridiagonal system
+- `Linear Algebra / Sparse Cholesky`: sparse LLT versus LDLT on symmetric positive-definite and indefinite systems
+- `Linear Algebra / Equilibration`: two-sided sparse scaling and its effect on BiCGSTAB convergence
+- `Linear Algebra / Dense Eigen + SVD`: eigenvalue maps and singular spectra for self-adjoint and non-normal dense matrices
 - `Linear Algebra / Gramians + HSVD`: controllability/observability Gramian spectra plus HSVD versus a plain SVD of `A`
 - `LTI Analysis / Process Models`: delayed FOPDT step and Bode exploration
 - `LTI Analysis / Plot Gallery`: Bode, Nyquist, Nichols, pole-zero, and root-locus inspection from one loop transfer
