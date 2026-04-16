@@ -15,12 +15,16 @@ pub fn GramianHsvdPage() -> impl IntoView {
     let (input_skew, set_input_skew) = signal(1.6_f64);
     let (output_skew, set_output_skew) = signal(1.3_f64);
     let (coupling, set_coupling) = signal(0.35_f64);
+    let (auto_sigma_tol, set_auto_sigma_tol) = signal(true);
+    let (sigma_tol_log10, set_sigma_tol_log10) = signal(-10.0_f64);
 
     let inputs = move || GramianInputs {
         plant_order: plant_order.get(),
         input_skew: input_skew.get(),
         output_skew: output_skew.get(),
         coupling: coupling.get(),
+        auto_sigma_tol: auto_sigma_tol.get(),
+        sigma_tol: 10.0_f64.powf(sigma_tol_log10.get()),
     };
     let demo = Memo::new(move |_| run_gramian_hsvd_demo(inputs()));
 
@@ -125,6 +129,43 @@ pub fn GramianHsvdPage() -> impl IntoView {
                                 }
                             />
                         </div>
+
+                        <div class="control-row checkbox-row">
+                            <label for="gramian-auto-sigma-tol">"Auto HSVD sigma tol"</label>
+                            <input
+                                id="gramian-auto-sigma-tol"
+                                type="checkbox"
+                                prop:checked=move || auto_sigma_tol.get()
+                                on:change=move |ev| set_auto_sigma_tol.set(event_target_checked(&ev))
+                            />
+                        </div>
+
+                        <div class="control-row">
+                            <label for="gramian-sigma-tol">"HSVD sigma tol"</label>
+                            <output>
+                                {move || {
+                                    if auto_sigma_tol.get() {
+                                        "auto".to_string()
+                                    } else {
+                                        format!("{:.1e}", 10.0_f64.powf(sigma_tol_log10.get()))
+                                    }
+                                }}
+                            </output>
+                            <input
+                                id="gramian-sigma-tol"
+                                type="range"
+                                min="-14"
+                                max="-2"
+                                step="0.25"
+                                prop:value=move || sigma_tol_log10.get().to_string()
+                                prop:disabled=move || auto_sigma_tol.get()
+                                on:input=move |ev| {
+                                    if let Ok(value) = event_target_value(&ev).parse::<f64>() {
+                                        set_sigma_tol_log10.set(value.clamp(-14.0, -2.0));
+                                    }
+                                }
+                            />
+                        </div>
                     </section>
 
                     <section>
@@ -133,6 +174,7 @@ pub fn GramianHsvdPage() -> impl IntoView {
                             "The Gramian spectra show how controllability and observability energy are distributed."
                             " The HSVD spectrum combines both views. Comparing it to the singular values of A"
                             " makes the point that balanced importance is not the same thing as a naive matrix SVD."
+                            " The sigma tolerance can also truncate numerically tiny HSVs before they are reported."
                         </p>
                     </section>
 
@@ -180,6 +222,8 @@ struct GramianInputs {
     input_skew: f64,
     output_skew: f64,
     coupling: f64,
+    auto_sigma_tol: bool,
+    sigma_tol: f64,
 }
 
 #[derive(Clone, PartialEq)]
@@ -195,6 +239,7 @@ struct GramianHsvdDemo {
     observability_ms: f64,
     hsvd_ms: f64,
     svd_ms: f64,
+    sigma_tol: Option<f64>,
 }
 
 fn build_gramian_plot(result: Result<GramianHsvdDemo, String>, which: GramianPlot) -> Plot {
@@ -236,12 +281,16 @@ fn build_gramian_plot(result: Result<GramianHsvdDemo, String>, which: GramianPlo
 fn gramian_hsvd_summary(result: Result<GramianHsvdDemo, String>) -> String {
     match result {
         Ok(demo) => format!(
-            "Controllability Gramian solved in {:.2} ms with residual {:.2e}; observability Gramian solved in {:.2} ms with residual {:.2e}. HSVD took {:.2} ms and the plain SVD(A) took {:.2} ms.",
+            "Controllability Gramian solved in {:.2} ms with residual {:.2e}; observability Gramian solved in {:.2} ms with residual {:.2e}. HSVD took {:.2} ms{} and the plain SVD(A) took {:.2} ms.",
             demo.controllability_ms,
             demo.controllability_residual_norm,
             demo.observability_ms,
             demo.observability_residual_norm,
             demo.hsvd_ms,
+            match demo.sigma_tol {
+                Some(sigma_tol) => format!(" with sigma tol {:.1e}", sigma_tol),
+                None => String::from(" with automatic sigma tolerance"),
+            },
             demo.svd_ms,
         ),
         Err(message) => format!("Gramian / HSVD analysis failed: {message}"),
@@ -256,6 +305,12 @@ fn run_gramian_hsvd_demo(inputs: GramianInputs) -> Result<GramianHsvdDemo, Strin
         inputs.coupling.clamp(0.10, 0.80),
     )?;
     let decomp_params = DenseDecompParams::<f64>::new();
+
+    let hsvd_params = if inputs.auto_sigma_tol {
+        HsvdParams::new()
+    } else {
+        HsvdParams::new().with_sigma_tol(inputs.sigma_tol.clamp(1.0e-14, 1.0e-2))
+    };
 
     let (wc, controllability_ms) = measure(|| {
         system
@@ -272,12 +327,8 @@ fn run_gramian_hsvd_demo(inputs: GramianInputs) -> Result<GramianHsvdDemo, Strin
     let wo = wo?;
 
     let (hsvd, hsvd_ms) = measure(|| {
-        hsvd_from_dense_gramians(
-            wc.solution.as_ref(),
-            wo.solution.as_ref(),
-            &HsvdParams::new(),
-        )
-        .map_err(|err| err.to_string())
+        hsvd_from_dense_gramians(wc.solution.as_ref(), wo.solution.as_ref(), &hsvd_params)
+            .map_err(|err| err.to_string())
     });
     let hsvd = hsvd?;
 
@@ -310,6 +361,7 @@ fn run_gramian_hsvd_demo(inputs: GramianInputs) -> Result<GramianHsvdDemo, Strin
         observability_ms,
         hsvd_ms,
         svd_ms,
+        sigma_tol: (!inputs.auto_sigma_tol).then_some(inputs.sigma_tol.clamp(1.0e-14, 1.0e-2)),
     })
 }
 
@@ -370,6 +422,8 @@ mod tests {
             input_skew: 1.6,
             output_skew: 1.3,
             coupling: 0.35,
+            auto_sigma_tol: true,
+            sigma_tol: 1.0e-10,
         })
         .unwrap();
         assert!(!demo.controllability_log10.is_empty());
