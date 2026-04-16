@@ -402,7 +402,8 @@ where
     /// Recomputes the residual from scratch with compensated accumulation.
     pub fn hard_restart(&mut self) {
         self.hard_restart_count += 1;
-        self.a.apply(col_slice_mut(&mut self.scratch), col_slice(&self.x));
+        self.a
+            .apply(col_slice_mut(&mut self.scratch), col_slice(&self.x));
 
         for ((r, &b), &ax) in col_slice_mut(&mut self.r)
             .iter_mut()

@@ -1,3 +1,4 @@
+use crate::demo_signal::gaussianish_signal;
 use crate::plot_helpers::{LineSeries, build_line_plot};
 use crate::plotly_support::use_plotly_chart;
 use crate::timing::measure_average_until;
@@ -5,7 +6,7 @@ use faer::sparse::linalg::lu::LuSymbolicParams;
 use faer::sparse::{SparseColMat, Triplet};
 use faer::{Par, Spec};
 use leptos::prelude::*;
-use numerical::sparse::{BiCGSTAB, DiagonalPrecond, SparseLu};
+use numerical::sparse::{BiCGSTAB, DiagonalPrecond, SparseLu, SparseMatVec};
 use plotly::Plot;
 
 /// Interactive sparse direct-versus-iterative solver comparison.
@@ -17,6 +18,8 @@ pub fn LinearSolverComparisonPage() -> impl IntoView {
     let (max_iterations, set_max_iterations) = signal(180_usize);
     let (warm_start, set_warm_start) = signal(false);
     let (preconditioner, set_preconditioner) = signal(BicgPreconditioner::None);
+    let (matrix_structure, set_matrix_structure) = signal(MatrixStructure::Tridiagonal);
+    let (random_sparsity_percent, set_random_sparsity_percent) = signal(0.40_f64);
 
     let inputs = move || SparseSolverInputs {
         dimension: dimension.get(),
@@ -25,6 +28,8 @@ pub fn LinearSolverComparisonPage() -> impl IntoView {
         max_iterations: max_iterations.get(),
         warm_start: warm_start.get(),
         preconditioner: preconditioner.get(),
+        matrix_structure: matrix_structure.get(),
+        random_sparsity_percent: random_sparsity_percent.get(),
     };
     let demo = Memo::new(move |_| run_sparse_solver_demo(inputs()));
 
@@ -43,9 +48,9 @@ pub fn LinearSolverComparisonPage() -> impl IntoView {
                 <p class="eyebrow">"Linear Algebra"</p>
                 <h1>"Sparse Solver Comparison"</h1>
                 <p>
-                    "The same shifted tridiagonal system is solved with sparse LU and with BiCGSTAB."
-                    " The direct path gives a machine-precision baseline, while the iterative path"
-                    " trades time for residual accuracy according to the selected tolerance."
+                    "Choose between a structured tridiagonal system and a harder deterministic random"
+                    " sparse system, then compare sparse LU against BiCGSTAB under different solver"
+                    " settings."
                 </p>
             </header>
 
@@ -54,10 +59,34 @@ pub fn LinearSolverComparisonPage() -> impl IntoView {
                     <section>
                         <h2>"System"</h2>
                         <p class="section-copy">
-                            "The planted system is a diagonally shifted one-dimensional Laplacian."
-                            " Larger shifts improve conditioning, while looser BiCGSTAB tolerances"
-                            " reduce iteration count."
+                            "The tridiagonal option is a one-dimensional Laplacian baseline. The"
+                            " random sparse option adds irregular longer-range couplings while keeping"
+                            " a strong diagonal so both solvers see a stable, repeatable problem."
                         </p>
+
+                        <div class="control-row">
+                            <label for="linear-solvers-structure">"Matrix structure"</label>
+                            <select
+                                id="linear-solvers-structure"
+                                on:change=move |ev| {
+                                    set_matrix_structure
+                                        .set(MatrixStructure::from_form_value(&event_target_value(&ev)));
+                                }
+                            >
+                                <option
+                                    value="tridiagonal"
+                                    selected=move || matrix_structure.get() == MatrixStructure::Tridiagonal
+                                >
+                                    "Tridiagonal"
+                                </option>
+                                <option
+                                    value="random_sparse"
+                                    selected=move || matrix_structure.get() == MatrixStructure::RandomSparse
+                                >
+                                    "Random sparse"
+                                </option>
+                            </select>
+                        </div>
 
                         <div class="control-row">
                             <label for="linear-solvers-dimension">"Dimension"</label>
@@ -66,12 +95,31 @@ pub fn LinearSolverComparisonPage() -> impl IntoView {
                                 id="linear-solvers-dimension"
                                 type="range"
                                 min="20"
-                                max="260"
-                                step="10"
+                                max="3000"
+                                step="20"
                                 prop:value=move || dimension.get().to_string()
                                 on:input=move |ev| {
                                     if let Ok(value) = event_target_value(&ev).parse::<usize>() {
-                                        set_dimension.set(value.clamp(20, 260));
+                                        set_dimension.set(value.clamp(20, 3000));
+                                    }
+                                }
+                            />
+                        </div>
+
+                        <div class="control-row">
+                            <label for="linear-solvers-random-sparsity">"Random sparsity"</label>
+                            <output>{move || format!("{:.2}%", random_sparsity_percent.get())}</output>
+                            <input
+                                id="linear-solvers-random-sparsity"
+                                type="range"
+                                min="0.05"
+                                max="1.50"
+                                step="0.05"
+                                prop:value=move || random_sparsity_percent.get().to_string()
+                                prop:disabled=move || matrix_structure.get() != MatrixStructure::RandomSparse
+                                on:input=move |ev| {
+                                    if let Ok(value) = event_target_value(&ev).parse::<f64>() {
+                                        set_random_sparsity_percent.set(value.clamp(0.05, 1.50));
                                     }
                                 }
                             />
@@ -172,9 +220,10 @@ pub fn LinearSolverComparisonPage() -> impl IntoView {
                             "Sparse LU is a direct solve, so its accuracy is mostly independent of the"
                             " iterative tolerance slider. BiCGSTAB exposes the classic Krylov tradeoff:"
                             " tighter tolerance means more iterations and lower residual, especially on"
-                            " the more weakly shifted systems. The warm-start toggle seeds the Krylov"
-                            " solve with a diagonal-inverse guess instead of the zero vector, while"
-                            " the preconditioner menu controls the right-preconditioning strategy."
+                            " the more weakly shifted or less structured systems. The warm-start toggle"
+                            " seeds the Krylov solve with a diagonal-inverse guess instead of the zero"
+                            " vector, while the preconditioner menu controls the right-preconditioning"
+                            " strategy."
                         </p>
                     </section>
 
@@ -224,6 +273,8 @@ struct SparseSolverInputs {
     max_iterations: usize,
     warm_start: bool,
     preconditioner: BicgPreconditioner,
+    matrix_structure: MatrixStructure,
+    random_sparsity_percent: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -248,6 +299,28 @@ impl BicgPreconditioner {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MatrixStructure {
+    Tridiagonal,
+    RandomSparse,
+}
+
+impl MatrixStructure {
+    fn from_form_value(value: &str) -> Self {
+        match value {
+            "random_sparse" => Self::RandomSparse,
+            _ => Self::Tridiagonal,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Tridiagonal => "tridiagonal",
+            Self::RandomSparse => "random sparse",
+        }
+    }
+}
+
 #[derive(Clone, PartialEq)]
 struct SparseSolverDemo {
     state_index: Vec<f64>,
@@ -257,7 +330,8 @@ struct SparseSolverDemo {
     bicg_log10_residual_history: Vec<f64>,
     tolerance_log10_line: Vec<f64>,
     lu_residual_log10_line: Vec<f64>,
-    lu_ms: f64,
+    lu_factor_ms: f64,
+    lu_solve_ms: f64,
     bicg_ms: f64,
     lu_relative_error: f64,
     bicg_relative_error: f64,
@@ -267,7 +341,9 @@ struct SparseSolverDemo {
     bicg_converged: bool,
     bicg_warm_started: bool,
     bicg_preconditioner: BicgPreconditioner,
-    lu_repetitions: usize,
+    matrix_structure: MatrixStructure,
+    lu_factor_repetitions: usize,
+    lu_solve_repetitions: usize,
     bicg_repetitions: usize,
 }
 
@@ -315,12 +391,15 @@ fn build_solver_plot(result: Result<SparseSolverDemo, String>, which: SolverPlot
 fn sparse_solver_summary(result: Result<SparseSolverDemo, String>) -> String {
     match result {
         Ok(demo) => format!(
-            "Sparse LU averaged {:.1} us over {} solves with relative solution error {:.2e} and residual {:.2e}. BiCGSTAB averaged {:.1} us over {} solves after {} iterations{}{} using {} preconditioning with relative solution error {:.2e} and residual {:.2e}.",
-            millis_to_micros(demo.lu_ms),
-            demo.lu_repetitions,
+            "On the {} system, sparse LU factorization averaged {:.3} ms over {} runs and LU solve averaged {:.3} ms over {} runs, with relative solution error {:.2e} and residual {:.2e}. BiCGSTAB averaged {:.3} ms over {} solves after {} iterations{}{} using {} preconditioning with relative solution error {:.2e} and residual {:.2e}.",
+            demo.matrix_structure.label(),
+            demo.lu_factor_ms,
+            demo.lu_factor_repetitions,
+            demo.lu_solve_ms,
+            demo.lu_solve_repetitions,
             demo.lu_relative_error,
             demo.lu_residual_norm,
-            millis_to_micros(demo.bicg_ms),
+            demo.bicg_ms,
             demo.bicg_repetitions,
             demo.bicg_iterations,
             if demo.bicg_converged {
@@ -342,23 +421,27 @@ fn sparse_solver_summary(result: Result<SparseSolverDemo, String>) -> String {
 }
 
 fn run_sparse_solver_demo(inputs: SparseSolverInputs) -> Result<SparseSolverDemo, String> {
-    let n = inputs.dimension.clamp(20, 260);
+    let n = inputs.dimension.clamp(20, 3000);
     let shift = inputs.diagonal_shift.clamp(0.05, 2.0);
     let tolerance = inputs.tolerance.clamp(1.0e-12, 1.0e-3);
     let max_iterations = inputs.max_iterations.clamp(1, 400);
-    let matrix = shifted_laplacian_matrix(n, shift).map_err(|err| err.to_string())?;
+    let random_sparsity_percent = inputs.random_sparsity_percent.clamp(0.05, 1.50);
+    let matrix = build_demo_matrix(inputs.matrix_structure, n, shift, random_sparsity_percent)
+        .map_err(|err| err.to_string())?;
     let x_true = planted_solution(n);
-    let b = apply_shifted_laplacian(&x_true, shift);
+    let b = apply_matrix(&matrix, &x_true);
     let bicg_initial_guess = if inputs.warm_start {
-        diagonal_inverse_guess(&b, shift)
+        diagonal_inverse_guess(&matrix, &b)
     } else {
         vec![0.0; n]
     };
 
-    let (lu_solution, lu_ms, lu_repetitions) =
-        measure_average_until(25.0, || solve_with_lu(&matrix, &b));
-    let lu_solution = lu_solution?;
-    let lu_solution_vec = lu_solution;
+    let (lu_factors, lu_factor_ms, lu_factor_repetitions) =
+        measure_average_until(25.0, || factorize_lu(&matrix));
+    let lu_factors = lu_factors?;
+    let (lu_solution, lu_solve_ms, lu_solve_repetitions) =
+        measure_average_until(25.0, || solve_with_lu_factors(&lu_factors, &b));
+    let lu_solution_vec = lu_solution?;
 
     let (bicg_result, bicg_ms, bicg_repetitions) = measure_average_until(25.0, || {
         solve_with_bicg(
@@ -376,8 +459,8 @@ fn run_sparse_solver_demo(inputs: SparseSolverInputs) -> Result<SparseSolverDemo
     let state_index = (0..n).map(|i| (i + 1) as f64).collect::<Vec<_>>();
     let lu_error = pointwise_log10_error(&lu_solution_vec, &x_true);
     let bicg_error = pointwise_log10_error(&bicg_solution_vec, &x_true);
-    let lu_residual = residual_norm(&lu_solution_vec, &b, shift);
-    let bicg_residual = residual_norm(&bicg_solution_vec, &b, shift);
+    let lu_residual = residual_norm(&matrix, &lu_solution_vec, &b);
+    let bicg_residual = residual_norm(&matrix, &bicg_solution_vec, &b);
     let lu_relative_error = relative_error(&lu_solution_vec, &x_true);
     let bicg_relative_error = relative_error(&bicg_solution_vec, &x_true);
     let iteration_index = (0..bicg_result.residual_history.len())
@@ -399,7 +482,8 @@ fn run_sparse_solver_demo(inputs: SparseSolverInputs) -> Result<SparseSolverDemo
         bicg_log10_residual_history,
         tolerance_log10_line,
         lu_residual_log10_line,
-        lu_ms,
+        lu_factor_ms,
+        lu_solve_ms,
         bicg_ms,
         lu_relative_error,
         bicg_relative_error,
@@ -409,7 +493,9 @@ fn run_sparse_solver_demo(inputs: SparseSolverInputs) -> Result<SparseSolverDemo
         bicg_converged: bicg_result.converged,
         bicg_warm_started: inputs.warm_start,
         bicg_preconditioner: inputs.preconditioner,
-        lu_repetitions,
+        matrix_structure: inputs.matrix_structure,
+        lu_factor_repetitions,
+        lu_solve_repetitions,
         bicg_repetitions,
     })
 }
@@ -421,14 +507,17 @@ struct BicgSolveResult {
     converged: bool,
 }
 
-fn solve_with_lu(matrix: &SparseColMat<usize, f64>, b: &[f64]) -> Result<Vec<f64>, String> {
-    let lu = SparseLu::<usize, f64>::factorize(
+fn factorize_lu(matrix: &SparseColMat<usize, f64>) -> Result<SparseLu<usize, f64>, String> {
+    SparseLu::<usize, f64>::factorize(
         matrix.as_ref(),
         Par::Seq,
         LuSymbolicParams::default(),
         Spec::default(),
     )
-    .map_err(|err| err.to_string())?;
+    .map_err(|err| err.to_string())
+}
+
+fn solve_with_lu_factors(lu: &SparseLu<usize, f64>, b: &[f64]) -> Result<Vec<f64>, String> {
     let solution = lu.solve_rhs(b, Par::Seq).map_err(|err| err.to_string())?;
     Ok((0..b.len()).map(|i| solution[i]).collect())
 }
@@ -483,6 +572,18 @@ where
     })
 }
 
+fn build_demo_matrix(
+    structure: MatrixStructure,
+    n: usize,
+    shift: f64,
+    random_sparsity_percent: f64,
+) -> Result<SparseColMat<usize, f64>, faer::sparse::CreationError> {
+    match structure {
+        MatrixStructure::Tridiagonal => shifted_laplacian_matrix(n, shift),
+        MatrixStructure::RandomSparse => random_sparse_matrix(n, shift, random_sparsity_percent),
+    }
+}
+
 fn shifted_laplacian_matrix(
     n: usize,
     shift: f64,
@@ -500,6 +601,68 @@ fn shifted_laplacian_matrix(
     SparseColMat::try_new_from_triplets(n, n, &triplets)
 }
 
+fn random_sparse_matrix(
+    n: usize,
+    shift: f64,
+    random_sparsity_percent: f64,
+) -> Result<SparseColMat<usize, f64>, faer::sparse::CreationError> {
+    let target_edges = ((random_sparsity_percent / 100.0) * n as f64).round() as usize;
+    let random_edges = (3 + target_edges).clamp(3, 32);
+    let mut triplets = Vec::with_capacity(n * (5 + random_edges));
+    for row in 0..n {
+        let mut cols = Vec::with_capacity(4 + random_edges);
+        let mut vals = Vec::with_capacity(4 + random_edges);
+
+        for &(offset, base_weight) in &[(-2_isize, -0.10_f64), (-1, -0.16), (1, -0.14), (2, -0.09)]
+        {
+            let col = row as isize + offset;
+            if !(0..n as isize).contains(&col) {
+                continue;
+            }
+            cols.push(col as usize);
+            vals.push(
+                base_weight
+                    * (1.0 + 0.15 * gaussianish_signal(row + offset.unsigned_abs(), 0x51a2).tanh()),
+            );
+        }
+
+        let row_random_edges = random_edges.min(n.saturating_sub(1));
+        for edge in 0..row_random_edges {
+            let mut jump = (gaussianish_signal(row * 17 + edge, 0x8f3d + edge as u64).abs()
+                * n as f64
+                * 0.37) as usize;
+            jump = jump % n.max(1);
+            let mut col = (row + 3 + jump + edge * 11) % n.max(1);
+            if col == row {
+                col = (col + 1) % n.max(1);
+            }
+            while cols.contains(&col) || col == row {
+                col = (col + 1) % n.max(1);
+            }
+            let magnitude = 0.03
+                + 0.05
+                    * (gaussianish_signal(row * 23 + edge, 0x1d4f + edge as u64)
+                        .abs()
+                        .min(3.0)
+                        / 3.0);
+            let sign = if gaussianish_signal(row * 29 + edge, 0xa761 + edge as u64) >= 0.0 {
+                1.0
+            } else {
+                -1.0
+            };
+            cols.push(col);
+            vals.push(sign * magnitude);
+        }
+
+        let row_abs_sum = vals.iter().map(|value| value.abs()).sum::<f64>();
+        triplets.push(Triplet::new(row, row, shift + 0.75 + 1.15 * row_abs_sum));
+        for (&col, &value) in cols.iter().zip(vals.iter()) {
+            triplets.push(Triplet::new(row, col, value));
+        }
+    }
+    SparseColMat::try_new_from_triplets(n, n, &triplets)
+}
+
 fn planted_solution(n: usize) -> Vec<f64> {
     (0..n)
         .map(|i| {
@@ -509,29 +672,21 @@ fn planted_solution(n: usize) -> Vec<f64> {
         .collect()
 }
 
-fn apply_shifted_laplacian(x: &[f64], shift: f64) -> Vec<f64> {
-    let n = x.len();
-    let mut out = vec![0.0; n];
-    for row in 0..n {
-        let mut acc = (2.0 + shift) * x[row];
-        if row > 0 {
-            acc -= x[row - 1];
-        }
-        if row + 1 < n {
-            acc -= x[row + 1];
-        }
-        out[row] = acc;
-    }
+fn apply_matrix(matrix: &SparseColMat<usize, f64>, x: &[f64]) -> Vec<f64> {
+    let mut out = vec![0.0; matrix.nrows()];
+    matrix.as_ref().apply(&mut out, x);
     out
 }
 
-fn diagonal_inverse_guess(b: &[f64], shift: f64) -> Vec<f64> {
-    let diag = 2.0 + shift;
-    b.iter().map(|rhs| rhs / diag).collect()
+fn diagonal_inverse_guess(matrix: &SparseColMat<usize, f64>, b: &[f64]) -> Vec<f64> {
+    let diagonal = DiagonalPrecond::try_from(matrix.as_ref())
+        .expect("demo matrices always include a nonzero diagonal");
+    let inv_diag = diagonal.inverse_diagonal();
+    (0..b.len()).map(|i| b[i] * inv_diag[i]).collect()
 }
 
-fn residual_norm(x: &[f64], b: &[f64], shift: f64) -> f64 {
-    let residual = apply_shifted_laplacian(x, shift)
+fn residual_norm(matrix: &SparseColMat<usize, f64>, x: &[f64], b: &[f64]) -> f64 {
+    let residual = apply_matrix(matrix, x)
         .iter()
         .zip(b.iter())
         .map(|(ax, rhs)| ax - rhs)
@@ -563,13 +718,9 @@ fn safe_log10(value: f64) -> f64 {
     value.max(1.0e-16).log10()
 }
 
-fn millis_to_micros(millis: f64) -> f64 {
-    millis * 1.0e3
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{BicgPreconditioner, SparseSolverInputs, run_sparse_solver_demo};
+    use super::{BicgPreconditioner, MatrixStructure, SparseSolverInputs, run_sparse_solver_demo};
 
     #[test]
     fn sparse_solver_demo_runs() {
@@ -580,6 +731,25 @@ mod tests {
             max_iterations: 180,
             warm_start: false,
             preconditioner: BicgPreconditioner::None,
+            matrix_structure: MatrixStructure::Tridiagonal,
+            random_sparsity_percent: 0.40,
+        })
+        .unwrap();
+        assert_eq!(demo.state_index.len(), 80);
+        assert!(!demo.bicg_log10_residual_history.is_empty());
+    }
+
+    #[test]
+    fn sparse_solver_demo_runs_on_random_sparse_matrix() {
+        let demo = run_sparse_solver_demo(SparseSolverInputs {
+            dimension: 80,
+            diagonal_shift: 0.35,
+            tolerance: 1.0e-6,
+            max_iterations: 220,
+            warm_start: true,
+            preconditioner: BicgPreconditioner::Diagonal,
+            matrix_structure: MatrixStructure::RandomSparse,
+            random_sparsity_percent: 0.60,
         })
         .unwrap();
         assert_eq!(demo.state_index.len(), 80);
