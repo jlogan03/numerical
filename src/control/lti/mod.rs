@@ -118,7 +118,9 @@ pub use filter_design::{
 pub use fir::{Fir, FirFilterState, SavGolSpec, design_savgol};
 pub use loop_analysis::{LoopCrossovers, LoopMargins, NicholsData, NyquistData};
 pub use plot_data::{BodeData, PoleZeroData};
-pub use process_models::{FopdtModel, SopdtModel};
+pub use process_models::{
+    FopdtModel, FopdtStepResponseJacobian, SopdtModel, SopdtStepResponseJacobian,
+};
 pub use response::{
     ContinuousImpulseResponse, ContinuousSimulation, DiscreteSimulation, SampledResponse,
 };

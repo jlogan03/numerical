@@ -1662,10 +1662,25 @@ impl<'a> LeastSquaresProblem<f64, Dyn, U3> for FopdtLmProblem<'a> {
     }
 
     fn jacobian(&self) -> Option<OMatrix<f64, Dyn, U3>> {
-        // A numerical Jacobian keeps the implementation compact. The
-        // fitted problems are small enough that this cost is acceptable.
-        let mut clone = self.clone();
-        differentiate_numerically(&mut clone)
+        let raw_tau = self.params[1].exp();
+        let raw_delay = self.params[2].exp();
+        let d_tau_d_log_tau = if raw_tau > self.floor { raw_tau } else { 0.0 };
+        let d_delay_d_log_delay = if raw_delay > self.floor {
+            raw_delay
+        } else {
+            0.0
+        };
+        let model = self.model();
+        let mut jacobian =
+            OMatrix::<f64, Dyn, U3>::zeros_generic(Dyn(self.data.time_relative.len()), U3);
+        for (row, &time_since_step) in self.data.time_relative.iter().enumerate() {
+            let partials =
+                model.step_response_jacobian_value(time_since_step, self.data.step_amplitude);
+            jacobian[(row, 0)] = partials.gain;
+            jacobian[(row, 1)] = partials.time_constant * d_tau_d_log_tau;
+            jacobian[(row, 2)] = partials.delay * d_delay_d_log_delay;
+        }
+        Some(jacobian)
     }
 }
 
@@ -1724,11 +1739,33 @@ impl<'a> LeastSquaresProblem<f64, Dyn, U4> for SopdtLmProblem<'a> {
     }
 
     fn jacobian(&self) -> Option<OMatrix<f64, Dyn, U4>> {
-        // As in the FOPDT path, numerical differentiation is enough for this
-        // small reference fitter and keeps the algebra out of the core model
-        // specification.
-        let mut clone = self.clone();
-        differentiate_numerically(&mut clone)
+        let raw_base = self.params[1].exp();
+        let raw_extra = self.params[2].exp();
+        let raw_delay = self.params[3].exp();
+        let d_base_d_log_base = if raw_base > self.floor { raw_base } else { 0.0 };
+        let d_extra_d_log_extra = if raw_extra > self.floor {
+            raw_extra
+        } else {
+            0.0
+        };
+        let d_delay_d_log_delay = if raw_delay > self.floor {
+            raw_delay
+        } else {
+            0.0
+        };
+        let model = self.model();
+        let mut jacobian =
+            OMatrix::<f64, Dyn, U4>::zeros_generic(Dyn(self.data.time_relative.len()), U4);
+        for (row, &time_since_step) in self.data.time_relative.iter().enumerate() {
+            let partials =
+                model.step_response_jacobian_value(time_since_step, self.data.step_amplitude);
+            jacobian[(row, 0)] = partials.gain;
+            jacobian[(row, 1)] =
+                (partials.time_constant_1 + partials.time_constant_2) * d_base_d_log_base;
+            jacobian[(row, 2)] = partials.time_constant_1 * d_extra_d_log_extra;
+            jacobian[(row, 3)] = partials.delay * d_delay_d_log_delay;
+        }
+        Some(jacobian)
     }
 }
 

@@ -16,7 +16,7 @@ use plotly::common::{DashType, MarkerSymbol};
 pub fn ProcessModelFitPage() -> impl IntoView {
     let (source_kind, set_source_kind) = signal(FitSourceKind::Fopdt);
     let (noise_level, set_noise_level) = signal(0.02_f64);
-    let (fit_tolerance, set_fit_tolerance) = signal(1.0e-2_f64);
+    let (fit_tolerance, set_fit_tolerance) = signal(1.0e-3_f64);
 
     let (fopdt_gain, set_fopdt_gain) = signal(1.35_f64);
     let (fopdt_time_constant, set_fopdt_time_constant) = signal(3.0_f64);
@@ -482,7 +482,7 @@ impl Default for ProcessFitInputs {
         Self {
             source_kind: FitSourceKind::Fopdt,
             noise_level: 0.02,
-            fit_tolerance: 1.0e-2,
+            fit_tolerance: 1.0e-3,
             fopdt_gain: 1.35,
             fopdt_time_constant: 3.0,
             fopdt_delay: 0.8,
@@ -612,8 +612,18 @@ fn run_process_fit_demo(
         .map(|(index, &value)| value + inputs.noise_level * gaussianish_signal(index, 0xfeed_beef))
         .collect::<Vec<_>>();
 
-    let data = StepResponseData::new(times.clone(), input, measured_output.clone())
-        .map_err(|err| err.to_string())?;
+    let fit_end_time = step_time + fit_window_duration(inputs).min(duration - step_time);
+    let fit_len = times
+        .iter()
+        .position(|&time| time > fit_end_time)
+        .unwrap_or(times.len())
+        .max(4);
+    let data = StepResponseData::new(
+        times[..fit_len].to_vec(),
+        input[..fit_len].to_vec(),
+        measured_output[..fit_len].to_vec(),
+    )
+    .map_err(|err| err.to_string())?;
     let fopdt_fit =
         fit_fopdt_from_step_response_with_options(&data, fit_options).map_err(|err| err.to_string())?;
     let sopdt_fit =
@@ -751,6 +761,26 @@ fn source_duration(inputs: ProcessFitInputs) -> f64 {
         FitSourceKind::HigherOrder => (8.0 * inputs.higher_order_tail_lag
             + 8.0 * (2.0 * std::f64::consts::PI / inputs.higher_order_natural_frequency))
             .clamp(20.0, 44.0),
+    }
+}
+
+fn fit_window_duration(inputs: ProcessFitInputs) -> f64 {
+    match inputs.source_kind {
+        FitSourceKind::Fopdt => 2.0 * (inputs.fopdt_time_constant + inputs.fopdt_delay),
+        FitSourceKind::Sopdt => {
+            2.0 * (inputs.sopdt_time_constant_1 + inputs.sopdt_time_constant_2 + inputs.sopdt_delay)
+        }
+        FitSourceKind::HigherOrder => {
+            let oscillatory_envelope =
+                1.0 / (inputs.higher_order_damping_ratio * inputs.higher_order_natural_frequency)
+                    .max(0.1);
+            2.0
+                * (
+                    inputs.higher_order_tail_lag
+                        + oscillatory_envelope
+                        + inputs.higher_order_zero_time_constant
+                )
+        }
     }
 }
 
