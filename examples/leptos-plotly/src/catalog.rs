@@ -19,6 +19,8 @@ pub enum ExampleId {
     LtiPlotGallery,
     /// Digital IIR filter design exploration.
     FilterDesign,
+    /// Savitzky-Golay FIR smoothing versus sliding-mean comparison.
+    SavGolDesign,
     /// Linear estimator comparison.
     Estimation,
     /// Nonlinear estimator comparison on a shared tracking problem.
@@ -143,12 +145,20 @@ pub const EXAMPLE_GROUPS: &[ExampleGroup] = &[
     ExampleGroup {
         title: "Filter Design",
         summary: "Digital filter design examples with immediately inspectable frequency-domain behavior.",
-        entries: &[ExampleEntry {
-            id: ExampleId::FilterDesign,
-            title: "Butterworth Lowpass",
-            summary: "Tune order, cutoff, and sample rate and inspect the designed IIR directly in SOS form.",
-            status: ExampleStatus::Ready,
-        }],
+        entries: &[
+            ExampleEntry {
+                id: ExampleId::FilterDesign,
+                title: "Low-pass",
+                summary: "Switch between Butterworth and Chebyshev Type I designs, then inspect frequency response and state-space sweeps.",
+                status: ExampleStatus::Ready,
+            },
+            ExampleEntry {
+                id: ExampleId::SavGolDesign,
+                title: "Savitzky-Golay",
+                summary: "Compare Savitzky-Golay smoothing against a same-window sliding mean in Bode and tap views.",
+                status: ExampleStatus::Ready,
+            },
+        ],
     },
     ExampleGroup {
         title: "Estimation",
@@ -235,6 +245,7 @@ impl ExampleId {
             Self::LtiProcessModels => EXAMPLE_GROUPS[1].entries[0],
             Self::LtiPlotGallery => EXAMPLE_GROUPS[1].entries[1],
             Self::FilterDesign => EXAMPLE_GROUPS[2].entries[0],
+            Self::SavGolDesign => EXAMPLE_GROUPS[2].entries[1],
             Self::Estimation => EXAMPLE_GROUPS[3].entries[0],
             Self::NonlinearEstimation => EXAMPLE_GROUPS[3].entries[1],
             Self::Identification => EXAMPLE_GROUPS[4].entries[0],

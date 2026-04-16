@@ -12,6 +12,7 @@ mod nonlinear_estimation;
 mod pid_design;
 mod process_model_fit;
 mod reduction;
+mod savgol_design;
 mod sparse_cholesky;
 mod synthesis;
 
@@ -29,5 +30,6 @@ pub use nonlinear_estimation::NonlinearEstimationPage;
 pub use pid_design::PidDesignPage;
 pub use process_model_fit::ProcessModelFitPage;
 pub use reduction::ReductionPage;
+pub use savgol_design::SavGolDesignPage;
 pub use sparse_cholesky::SparseCholeskyPage;
 pub use synthesis::SynthesisPage;

@@ -3,7 +3,7 @@ use crate::examples::{
     DenseSpectralDecompositionPage, EquilibrationPage, EstimationPage, FilterDesignPage,
     GramianHsvdPage, HomePage, IdentificationPage, LinearSolverComparisonPage, LtiPlotGalleryPage,
     LtiProcessModelsPage, NonlinearEstimationPage, PidDesignPage, ProcessModelFitPage,
-    ReductionPage, SparseCholeskyPage, SynthesisPage,
+    ReductionPage, SavGolDesignPage, SparseCholeskyPage, SynthesisPage,
 };
 use leptos::prelude::*;
 
@@ -25,6 +25,7 @@ pub fn App() -> impl IntoView {
         ExampleId::LtiProcessModels => view! { <LtiProcessModelsPage /> }.into_any(),
         ExampleId::LtiPlotGallery => view! { <LtiPlotGalleryPage /> }.into_any(),
         ExampleId::FilterDesign => view! { <FilterDesignPage /> }.into_any(),
+        ExampleId::SavGolDesign => view! { <SavGolDesignPage /> }.into_any(),
         ExampleId::Estimation => view! { <EstimationPage /> }.into_any(),
         ExampleId::NonlinearEstimation => view! { <NonlinearEstimationPage /> }.into_any(),
         ExampleId::Identification => view! { <IdentificationPage /> }.into_any(),

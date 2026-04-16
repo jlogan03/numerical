@@ -50,7 +50,8 @@ Then open the local URL reported by `trunk`.
 - `Linear Algebra / Gramians + HSVD`: controllability/observability Gramian spectra plus HSVD versus a plain SVD of `A`
 - `LTI Analysis / Process Models`: delayed FOPDT step and Bode exploration
 - `LTI Analysis / Plot Gallery`: Bode, Nyquist, Nichols, pole-zero, and root-locus inspection from one loop transfer
-- `Filter Design / Butterworth Lowpass`: interactive digital SOS design and Bode inspection
+- `Filter Design / Low-pass`: interactive digital low-pass design, response inspection, and state-space cutoff sweeps
+- `Filter Design / Savitzky-Golay`: FIR smoothing versus sliding-mean comparison with response and tap views
 - `Estimation / Kalman Workbench`: recursive versus steady-state discrete Kalman filtering
 - `Estimation / Nonlinear Tracking`: fixed-linearization KF versus EKF versus UKF on the same nonlinear range-tracking problem
 - `Identification / OKID + ERA`: sampled I/O identification and realized-model comparison
