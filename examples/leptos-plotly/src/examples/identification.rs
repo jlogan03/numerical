@@ -165,31 +165,39 @@ pub fn IdentificationPage() -> impl IntoView {
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
-                                <h2>"Markov parameters"</h2>
-                                <p>"Planted versus identified impulse-response blocks."</p>
+                                <h2>"Identification traces"</h2>
+                                <p>"Markov recovery, realized step response, and model mismatch for the same OKID -> ERA run."</p>
                             </div>
                         </div>
-                        <div id="identification-markov-plot" class="plot-surface"></div>
-                    </article>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Markov parameters"</h2>
+                                    <p>"Planted versus identified impulse-response blocks."</p>
+                                </div>
+                            </div>
+                            <div id="identification-markov-plot" class="plot-surface"></div>
+                        </div>
 
-                    <article class="plot-card">
-                        <div class="plot-header">
-                            <div>
-                                <h2>"Step response"</h2>
-                                <p>"Planted model versus the ERA realization built from the identified Markov sequence."</p>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Step response"</h2>
+                                    <p>"Planted model versus the ERA realization built from the identified Markov sequence."</p>
+                                </div>
                             </div>
+                            <div id="identification-step-plot" class="plot-surface"></div>
                         </div>
-                        <div id="identification-step-plot" class="plot-surface"></div>
-                    </article>
 
-                    <article class="plot-card">
-                        <div class="plot-header">
-                            <div>
-                                <h2>"Plant vs. model error"</h2>
-                                <p>"Signed step-response mismatch between the planted system and the ERA realization."</p>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Plant vs. model error"</h2>
+                                    <p>"Signed step-response mismatch between the planted system and the ERA realization."</p>
+                                </div>
                             </div>
+                            <div id="identification-error-plot" class="plot-surface"></div>
                         </div>
-                        <div id="identification-error-plot" class="plot-surface"></div>
                     </article>
                 </div>
             </div>

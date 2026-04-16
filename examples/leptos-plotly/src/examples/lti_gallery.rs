@@ -112,8 +112,14 @@ pub fn LtiPlotGalleryPage() -> impl IntoView {
                 </aside>
 
                 <div class="plots-grid wide">
-                    <div class="plots-grid compact">
-                        <article class="plot-card">
+                    <article class="plot-card">
+                        <div class="plot-header">
+                            <div>
+                                <h2>"Bode charts"</h2>
+                                <p>"Magnitude and phase views of the same open-loop frequency response."</p>
+                            </div>
+                        </div>
+                        <div class="plot-subsection">
                             <div class="plot-header">
                                 <div>
                                     <h2>"Bode magnitude"</h2>
@@ -121,9 +127,9 @@ pub fn LtiPlotGalleryPage() -> impl IntoView {
                                 </div>
                             </div>
                             <div id="lti-gallery-bode-mag" class="plot-surface"></div>
-                        </article>
+                        </div>
 
-                        <article class="plot-card">
+                        <div class="plot-subsection">
                             <div class="plot-header">
                                 <div>
                                     <h2>"Bode phase"</h2>
@@ -131,8 +137,8 @@ pub fn LtiPlotGalleryPage() -> impl IntoView {
                                 </div>
                             </div>
                             <div id="lti-gallery-bode-phase" class="plot-surface"></div>
-                        </article>
-                    </div>
+                        </div>
+                    </article>
 
                     <article class="plot-card">
                         <div class="plot-header">

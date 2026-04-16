@@ -116,25 +116,33 @@ pub fn FilterDesignPage() -> impl IntoView {
                     </section>
                 </aside>
 
-                <div class="plots-grid compact">
+                <div class="plots-grid wide">
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
-                                <h2>"Magnitude"</h2>
-                                <p>"Sampled from the designed digital SOS filter on the unit circle."</p>
+                                <h2>"Butterworth frequency response"</h2>
+                                <p>"Magnitude and phase of the same designed digital SOS filter."</p>
                             </div>
                         </div>
-                        <div id="butterworth-mag-plot" class="plot-surface"></div>
-                    </article>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Magnitude"</h2>
+                                    <p>"Sampled from the designed digital SOS filter on the unit circle."</p>
+                                </div>
+                            </div>
+                            <div id="butterworth-mag-plot" class="plot-surface"></div>
+                        </div>
 
-                    <article class="plot-card">
-                        <div class="plot-header">
-                            <div>
-                                <h2>"Phase"</h2>
-                                <p>"Unwrapped phase over the same monotone frequency grid."</p>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Phase"</h2>
+                                    <p>"Unwrapped phase over the same monotone frequency grid."</p>
+                                </div>
                             </div>
+                            <div id="butterworth-phase-plot" class="plot-surface"></div>
                         </div>
-                        <div id="butterworth-phase-plot" class="plot-surface"></div>
                     </article>
                 </div>
             </div>

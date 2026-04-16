@@ -266,23 +266,31 @@ pub fn NonlinearEstimationPage() -> impl IntoView {
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
-                                <h2>"Position estimate"</h2>
-                                <p>
-                                    "Truth and the three competing filters on the same tracking run."
-                                </p>
+                                <h2>"Nonlinear tracking traces"</h2>
+                                <p>"Trajectory and error views for the same linearized KF, EKF, and UKF run."</p>
                             </div>
                         </div>
-                        <div id="nonlinear-estimator-position-plot" class="plot-surface"></div>
-                    </article>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Position estimate"</h2>
+                                    <p>
+                                        "Truth and the three competing filters on the same tracking run."
+                                    </p>
+                                </div>
+                            </div>
+                            <div id="nonlinear-estimator-position-plot" class="plot-surface"></div>
+                        </div>
 
-                    <article class="plot-card">
-                        <div class="plot-header">
-                            <div>
-                                <h2>"Absolute error"</h2>
-                                <p>"Position-estimation error on the same tracking run."</p>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Absolute error"</h2>
+                                    <p>"Position-estimation error on the same tracking run."</p>
+                                </div>
                             </div>
+                            <div id="nonlinear-estimator-error-plot" class="plot-surface"></div>
                         </div>
-                        <div id="nonlinear-estimator-error-plot" class="plot-surface"></div>
                     </article>
 
                     <section class="home-grid">

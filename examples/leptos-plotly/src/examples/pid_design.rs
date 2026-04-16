@@ -420,24 +420,32 @@ pub fn PidDesignPage() -> impl IntoView {
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
-                                <h2>"Output response"</h2>
-                                <p>
-                                    "Setpoint tracking under the tuned controller, with the plant's unit-step response"
-                                    " shown for comparison."
-                                </p>
+                                <h2>"PID closed-loop traces"</h2>
+                                <p>"Output and actuation views for the same tuned controller and term selection."</p>
                             </div>
                         </div>
-                        <div id="pid-design-output-plot" class="plot-surface"></div>
-                    </article>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Output response"</h2>
+                                    <p>
+                                        "Setpoint tracking under the tuned controller, with the plant's unit-step response"
+                                        " shown for comparison."
+                                    </p>
+                                </div>
+                            </div>
+                            <div id="pid-design-output-plot" class="plot-surface"></div>
+                        </div>
 
-                    <article class="plot-card">
-                        <div class="plot-header">
-                            <div>
-                                <h2>"Control effort"</h2>
-                                <p>"Sampled PID command `u[k]` produced by the active P/I/D term selection."</p>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Control effort"</h2>
+                                    <p>"Sampled PID command `u[k]` produced by the active P/I/D term selection."</p>
+                                </div>
                             </div>
+                            <div id="pid-design-control-plot" class="plot-surface"></div>
                         </div>
-                        <div id="pid-design-control-plot" class="plot-surface"></div>
                     </article>
                 </div>
             </div>

@@ -17,7 +17,14 @@ where
         use leptos::prelude::*;
 
         Effect::new(move |_| {
-            let next_plot = plot();
+            let mut next_plot = plot();
+            let responsive_config = next_plot
+                .configuration()
+                .clone()
+                .responsive(true)
+                .autosizable(true)
+                .fill_frame(false);
+            next_plot.set_configuration(responsive_config);
             wasm_bindgen_futures::spawn_local(async move {
                 plotly::bindings::new_plot(id, &next_plot).await;
             });

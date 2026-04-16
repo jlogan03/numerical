@@ -1,4 +1,6 @@
-use crate::plot_helpers::{LineSeries, build_line_plot, linspace};
+use crate::plot_helpers::{
+    LineSeries, build_line_plot, build_matrix_heatmap_plot, linspace, matrix_grid_from_fn,
+};
 use crate::plotly_support::use_plotly_chart;
 use faer::Mat;
 use leptos::prelude::*;
@@ -11,19 +13,22 @@ use plotly::Plot;
 pub fn ReductionPage() -> impl IntoView {
     let (plant_order, set_plant_order) = signal(6_usize);
     let (retained_order, set_retained_order) = signal(3_usize);
+    let demo = Memo::new(move |_| run_reduction_demo(plant_order.get(), retained_order.get()));
 
     use_plotly_chart("reduction-step-plot", move || {
-        build_reduction_plot(
-            plant_order.get(),
-            retained_order.get(),
-            ReductionPlot::StepResponse,
-        )
+        build_reduction_plot(demo.get(), ReductionPlot::StepResponse)
     });
     use_plotly_chart("reduction-hsv-plot", move || {
-        build_reduction_plot(plant_order.get(), retained_order.get(), ReductionPlot::Hsv)
+        build_reduction_plot(demo.get(), ReductionPlot::Hsv)
+    });
+    use_plotly_chart("reduction-full-a-plot", move || {
+        build_reduction_plot(demo.get(), ReductionPlot::FullStateMatrix)
+    });
+    use_plotly_chart("reduction-reduced-a-plot", move || {
+        build_reduction_plot(demo.get(), ReductionPlot::ReducedStateMatrix)
     });
 
-    let summary = move || reduction_summary(plant_order.get(), retained_order.get());
+    let summary = move || reduction_summary(demo.get());
 
     view! {
         <div class="page">
@@ -107,22 +112,52 @@ pub fn ReductionPage() -> impl IntoView {
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
-                                <h2>"Step response"</h2>
-                                <p>"Full model versus balanced-truncated model."</p>
+                                <h2>"Balanced truncation traces"</h2>
+                                <p>"Response and HSV views for the same full-versus-reduced model comparison."</p>
                             </div>
                         </div>
-                        <div id="reduction-step-plot" class="plot-surface"></div>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Step response"</h2>
+                                    <p>"Full model versus balanced-truncated model."</p>
+                                </div>
+                            </div>
+                            <div id="reduction-step-plot" class="plot-surface"></div>
+                        </div>
+
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Hankel singular values"</h2>
+                                    <p>"Balanced energy spectrum for the same model."</p>
+                                </div>
+                            </div>
+                            <div id="reduction-hsv-plot" class="plot-surface"></div>
+                        </div>
                     </article>
 
-                    <article class="plot-card">
-                        <div class="plot-header">
-                            <div>
-                                <h2>"Hankel singular values"</h2>
-                                <p>"Balanced energy spectrum for the same model."</p>
+                    <div class="plots-grid two-up">
+                        <article class="plot-card">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Full state matrix"</h2>
+                                    <p>"The planted continuous-time `A` matrix before reduction."</p>
+                                </div>
                             </div>
-                        </div>
-                        <div id="reduction-hsv-plot" class="plot-surface"></div>
-                    </article>
+                            <div id="reduction-full-a-plot" class="plot-surface"></div>
+                        </article>
+
+                        <article class="plot-card">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Reduced state matrix"</h2>
+                                    <p>"The balanced-truncated `A_r` matrix after retaining the selected order."</p>
+                                </div>
+                            </div>
+                            <div id="reduction-reduced-a-plot" class="plot-surface"></div>
+                        </article>
+                    </div>
                 </div>
             </div>
         </div>
@@ -133,8 +168,11 @@ pub fn ReductionPage() -> impl IntoView {
 enum ReductionPlot {
     StepResponse,
     Hsv,
+    FullStateMatrix,
+    ReducedStateMatrix,
 }
 
+#[derive(Clone, PartialEq)]
 struct ReductionDemo {
     times: Vec<f64>,
     full_step: Vec<f64>,
@@ -147,10 +185,12 @@ struct ReductionDemo {
     error_bound: Option<f64>,
     rms_step_error: f64,
     final_output_error: f64,
+    full_a_matrix: Vec<Vec<f64>>,
+    reduced_a_matrix: Vec<Vec<f64>>,
 }
 
-fn build_reduction_plot(plant_order: usize, retained_order: usize, which: ReductionPlot) -> Plot {
-    match run_reduction_demo(plant_order, retained_order) {
+fn build_reduction_plot(result: Result<ReductionDemo, String>, which: ReductionPlot) -> Plot {
+    match result {
         Ok(demo) => match which {
             ReductionPlot::StepResponse => build_line_plot(
                 "Balanced truncation step response",
@@ -173,13 +213,19 @@ fn build_reduction_plot(plant_order: usize, retained_order: usize, which: Reduct
                     demo.hsv_values,
                 )],
             ),
+            ReductionPlot::FullStateMatrix => {
+                build_matrix_heatmap_plot("Full state matrix A", demo.full_a_matrix, true)
+            }
+            ReductionPlot::ReducedStateMatrix => {
+                build_matrix_heatmap_plot("Reduced state matrix Ar", demo.reduced_a_matrix, true)
+            }
         },
         Err(message) => build_line_plot(&message, "", "", false, Vec::new()),
     }
 }
 
-fn reduction_summary(plant_order: usize, retained_order: usize) -> String {
-    match run_reduction_demo(plant_order, retained_order) {
+fn reduction_summary(result: Result<ReductionDemo, String>) -> String {
+    match result {
         Ok(demo) => match demo.error_bound {
             Some(bound) => format!(
                 "Plant order {} with retained order {}{} has balanced-truncation tail bound {:.4}. Sampled step-response RMS error is {:.4}; final sampled error is {:.4}.",
@@ -277,6 +323,14 @@ fn run_reduction_demo(plant_order: usize, retained_order: usize) -> Result<Reduc
         error_bound: result.error_bound,
         rms_step_error,
         final_output_error,
+        full_a_matrix: matrix_grid_from_fn(system.a().nrows(), system.a().ncols(), |row, col| {
+            system.a()[(row, col)]
+        }),
+        reduced_a_matrix: matrix_grid_from_fn(
+            result.reduced.a().nrows(),
+            result.reduced.a().ncols(),
+            |row, col| result.reduced.a()[(row, col)],
+        ),
     })
 }
 

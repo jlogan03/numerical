@@ -1,5 +1,5 @@
 use crate::demo_signal::gaussianish_signal;
-use crate::plot_helpers::{LineSeries, build_line_plot};
+use crate::plot_helpers::{LineSeries, build_line_plot, build_sparse_pattern_plot};
 use crate::plotly_support::use_plotly_chart;
 use crate::timing::measure_average_until;
 use faer::sparse::linalg::lu::LuSymbolicParams;
@@ -38,6 +38,9 @@ pub fn LinearSolverComparisonPage() -> impl IntoView {
     });
     use_plotly_chart("linear-solvers-residual-plot", move || {
         build_solver_plot(demo.get(), SolverPlot::ResidualHistory)
+    });
+    use_plotly_chart("linear-solvers-matrix-plot", move || {
+        build_solver_plot(demo.get(), SolverPlot::MatrixPattern)
     });
 
     let summary = move || sparse_solver_summary(demo.get());
@@ -237,21 +240,39 @@ pub fn LinearSolverComparisonPage() -> impl IntoView {
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
-                                <h2>"Statewise solution error"</h2>
-                                <p>"Pointwise log10 absolute error against a planted dense truth vector."</p>
+                                <h2>"Solver comparison traces"</h2>
+                                <p>"Error and residual views for the same direct-versus-iterative solve run."</p>
                             </div>
                         </div>
-                        <div id="linear-solvers-error-plot" class="plot-surface"></div>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Statewise solution error"</h2>
+                                    <p>"Pointwise log10 absolute error against a planted dense truth vector."</p>
+                                </div>
+                            </div>
+                            <div id="linear-solvers-error-plot" class="plot-surface"></div>
+                        </div>
+
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Residual history"</h2>
+                                    <p>"BiCGSTAB residual norm per iteration, alongside the target tolerance and LU residual."</p>
+                                </div>
+                            </div>
+                            <div id="linear-solvers-residual-plot" class="plot-surface"></div>
+                        </div>
                     </article>
 
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
-                                <h2>"Residual history"</h2>
-                                <p>"BiCGSTAB residual norm per iteration, alongside the target tolerance and LU residual."</p>
+                                <h2>"Matrix sparsity pattern"</h2>
+                                <p>"Spy-style nonzero pattern for the system matrix used by both solvers."</p>
                             </div>
                         </div>
-                        <div id="linear-solvers-residual-plot" class="plot-surface"></div>
+                        <div id="linear-solvers-matrix-plot" class="plot-surface"></div>
                     </article>
                 </div>
             </div>
@@ -263,6 +284,7 @@ pub fn LinearSolverComparisonPage() -> impl IntoView {
 enum SolverPlot {
     StateError,
     ResidualHistory,
+    MatrixPattern,
 }
 
 #[derive(Clone, Copy)]
@@ -342,9 +364,23 @@ struct SparseSolverDemo {
     bicg_warm_started: bool,
     bicg_preconditioner: BicgPreconditioner,
     matrix_structure: MatrixStructure,
+    matrix_pattern_columns: Vec<f64>,
+    matrix_pattern_rows: Vec<f64>,
+    matrix_pattern_displayed: usize,
+    matrix_pattern_total: usize,
+    matrix_nrows: usize,
+    matrix_ncols: usize,
     lu_factor_repetitions: usize,
     lu_solve_repetitions: usize,
     bicg_repetitions: usize,
+}
+
+struct SparseMatrixBuild {
+    matrix: SparseColMat<usize, f64>,
+    pattern_columns: Vec<f64>,
+    pattern_rows: Vec<f64>,
+    displayed_nonzeros: usize,
+    total_nonzeros: usize,
 }
 
 fn build_solver_plot(result: Result<SparseSolverDemo, String>, which: SolverPlot) -> Plot {
@@ -382,6 +418,16 @@ fn build_solver_plot(result: Result<SparseSolverDemo, String>, which: SolverPlot
                         demo.lu_residual_log10_line,
                     ),
                 ],
+            ),
+            SolverPlot::MatrixPattern => build_sparse_pattern_plot(
+                &format!(
+                    "Matrix sparsity pattern (showing {} of {} nonzeros)",
+                    demo.matrix_pattern_displayed, demo.matrix_pattern_total
+                ),
+                demo.matrix_nrows,
+                demo.matrix_ncols,
+                demo.matrix_pattern_columns,
+                demo.matrix_pattern_rows,
             ),
         },
         Err(message) => build_line_plot(&message, "", "", false, Vec::new()),
@@ -426,8 +472,10 @@ fn run_sparse_solver_demo(inputs: SparseSolverInputs) -> Result<SparseSolverDemo
     let tolerance = inputs.tolerance.clamp(1.0e-12, 1.0e-3);
     let max_iterations = inputs.max_iterations.clamp(1, 400);
     let random_sparsity_percent = inputs.random_sparsity_percent.clamp(0.05, 1.50);
-    let matrix = build_demo_matrix(inputs.matrix_structure, n, shift, random_sparsity_percent)
-        .map_err(|err| err.to_string())?;
+    let matrix_build =
+        build_demo_matrix(inputs.matrix_structure, n, shift, random_sparsity_percent)
+            .map_err(|err| err.to_string())?;
+    let matrix = matrix_build.matrix;
     let x_true = planted_solution(n);
     let b = apply_matrix(&matrix, &x_true);
     let bicg_initial_guess = if inputs.warm_start {
@@ -494,6 +542,12 @@ fn run_sparse_solver_demo(inputs: SparseSolverInputs) -> Result<SparseSolverDemo
         bicg_warm_started: inputs.warm_start,
         bicg_preconditioner: inputs.preconditioner,
         matrix_structure: inputs.matrix_structure,
+        matrix_pattern_columns: matrix_build.pattern_columns,
+        matrix_pattern_rows: matrix_build.pattern_rows,
+        matrix_pattern_displayed: matrix_build.displayed_nonzeros,
+        matrix_pattern_total: matrix_build.total_nonzeros,
+        matrix_nrows: matrix.nrows(),
+        matrix_ncols: matrix.ncols(),
         lu_factor_repetitions,
         lu_solve_repetitions,
         bicg_repetitions,
@@ -577,7 +631,7 @@ fn build_demo_matrix(
     n: usize,
     shift: f64,
     random_sparsity_percent: f64,
-) -> Result<SparseColMat<usize, f64>, faer::sparse::CreationError> {
+) -> Result<SparseMatrixBuild, faer::sparse::CreationError> {
     match structure {
         MatrixStructure::Tridiagonal => shifted_laplacian_matrix(n, shift),
         MatrixStructure::RandomSparse => random_sparse_matrix(n, shift, random_sparsity_percent),
@@ -587,7 +641,7 @@ fn build_demo_matrix(
 fn shifted_laplacian_matrix(
     n: usize,
     shift: f64,
-) -> Result<SparseColMat<usize, f64>, faer::sparse::CreationError> {
+) -> Result<SparseMatrixBuild, faer::sparse::CreationError> {
     let mut triplets = Vec::with_capacity(3 * n.saturating_sub(2) + 2);
     for row in 0..n {
         triplets.push(Triplet::new(row, row, 2.0 + shift));
@@ -598,14 +652,14 @@ fn shifted_laplacian_matrix(
             triplets.push(Triplet::new(row, row + 1, -1.0));
         }
     }
-    SparseColMat::try_new_from_triplets(n, n, &triplets)
+    sparse_matrix_build_from_triplets(n, n, triplets)
 }
 
 fn random_sparse_matrix(
     n: usize,
     shift: f64,
     random_sparsity_percent: f64,
-) -> Result<SparseColMat<usize, f64>, faer::sparse::CreationError> {
+) -> Result<SparseMatrixBuild, faer::sparse::CreationError> {
     let target_edges = ((random_sparsity_percent / 100.0) * n as f64).round() as usize;
     let random_edges = (3 + target_edges).clamp(3, 32);
     let mut triplets = Vec::with_capacity(n * (5 + random_edges));
@@ -660,7 +714,45 @@ fn random_sparse_matrix(
             triplets.push(Triplet::new(row, col, value));
         }
     }
-    SparseColMat::try_new_from_triplets(n, n, &triplets)
+    sparse_matrix_build_from_triplets(n, n, triplets)
+}
+
+fn sparse_matrix_build_from_triplets(
+    nrows: usize,
+    ncols: usize,
+    triplets: Vec<Triplet<usize, usize, f64>>,
+) -> Result<SparseMatrixBuild, faer::sparse::CreationError> {
+    let (pattern_columns, pattern_rows, displayed_nonzeros, total_nonzeros) =
+        sample_sparse_pattern(&triplets, 16_000);
+    let matrix = SparseColMat::try_new_from_triplets(nrows, ncols, &triplets)?;
+    Ok(SparseMatrixBuild {
+        matrix,
+        pattern_columns,
+        pattern_rows,
+        displayed_nonzeros,
+        total_nonzeros,
+    })
+}
+
+fn sample_sparse_pattern(
+    triplets: &[Triplet<usize, usize, f64>],
+    max_points: usize,
+) -> (Vec<f64>, Vec<f64>, usize, usize) {
+    let total_nonzeros = triplets.len();
+    let stride = (total_nonzeros / max_points.max(1)).max(1);
+    let mut columns = Vec::with_capacity(total_nonzeros.min(max_points));
+    let mut rows = Vec::with_capacity(total_nonzeros.min(max_points));
+
+    for triplet in triplets.iter().step_by(stride) {
+        columns.push((triplet.col + 1) as f64);
+        rows.push((triplet.row + 1) as f64);
+        if columns.len() == max_points {
+            break;
+        }
+    }
+
+    let displayed_nonzeros = columns.len();
+    (columns, rows, displayed_nonzeros, total_nonzeros)
 }
 
 fn planted_solution(n: usize) -> Vec<f64> {

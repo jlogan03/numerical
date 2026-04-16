@@ -1,10 +1,12 @@
-use crate::plot_helpers::{LineSeries, build_line_plot};
+use crate::plot_helpers::{
+    LineSeries, build_line_plot, build_matrix_heatmap_plot, matrix_grid_from_fn,
+};
 use crate::plotly_support::use_plotly_chart;
 use faer::Mat;
 use leptos::prelude::*;
 use numerical::control::lti::DiscreteStateSpace;
-use plotly::Plot;
-use plotly::common::DashType;
+use plotly::common::{DashType, Title};
+use plotly::{Layout, Plot};
 
 /// Interactive controller-synthesis page using a discrete LQR design on a
 /// lightly unstable second-order plant.
@@ -13,25 +15,29 @@ pub fn SynthesisPage() -> impl IntoView {
     let (q_position, set_q_position) = signal(12.0_f64);
     let (q_velocity, set_q_velocity) = signal(1.5_f64);
     let (r_control, set_r_control) = signal(0.8_f64);
+    let demo =
+        Memo::new(move |_| run_synthesis_demo(q_position.get(), q_velocity.get(), r_control.get()));
 
     use_plotly_chart("synthesis-position-plot", move || {
-        build_synthesis_plot(
-            q_position.get(),
-            q_velocity.get(),
-            r_control.get(),
-            SynthesisPlot::Position,
-        )
+        build_synthesis_plot(demo.get(), SynthesisPlot::Position)
     });
     use_plotly_chart("synthesis-control-plot", move || {
-        build_synthesis_plot(
-            q_position.get(),
-            q_velocity.get(),
-            r_control.get(),
-            SynthesisPlot::Control,
-        )
+        build_synthesis_plot(demo.get(), SynthesisPlot::Control)
+    });
+    use_plotly_chart("synthesis-q-plot", move || {
+        build_synthesis_plot(demo.get(), SynthesisPlot::StateCost)
+    });
+    use_plotly_chart("synthesis-k-plot", move || {
+        build_synthesis_plot(demo.get(), SynthesisPlot::FeedbackGain)
+    });
+    use_plotly_chart("synthesis-open-a-plot", move || {
+        build_synthesis_plot(demo.get(), SynthesisPlot::OpenLoopStateMatrix)
+    });
+    use_plotly_chart("synthesis-closed-a-plot", move || {
+        build_synthesis_plot(demo.get(), SynthesisPlot::ClosedLoopStateMatrix)
     });
 
-    let summary = move || synthesis_summary(q_position.get(), q_velocity.get(), r_control.get());
+    let summary = move || synthesis_summary(demo.get());
 
     view! {
         <div class="page">
@@ -127,22 +133,72 @@ pub fn SynthesisPage() -> impl IntoView {
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
-                                <h2>"Position trajectory"</h2>
-                                <p>"Open loop versus closed loop from the same initial state."</p>
+                                <h2>"Closed-loop response"</h2>
+                                <p>"Position and control traces for the same DLQR design, kept in one card but rendered as separate plots."</p>
                             </div>
                         </div>
-                        <div id="synthesis-position-plot" class="plot-surface"></div>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Position trajectory"</h2>
+                                    <p>"Open loop versus closed loop from the same initial state."</p>
+                                </div>
+                            </div>
+                            <div id="synthesis-position-plot" class="plot-surface"></div>
+                        </div>
+
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Control effort"</h2>
+                                    <p>"State-feedback actuation commanded by the DLQR gain."</p>
+                                </div>
+                            </div>
+                            <div id="synthesis-control-plot" class="plot-surface"></div>
+                        </div>
                     </article>
 
-                    <article class="plot-card">
-                        <div class="plot-header">
-                            <div>
-                                <h2>"Control effort"</h2>
-                                <p>"State-feedback actuation commanded by the DLQR gain."</p>
+                    <div class="plots-grid compact">
+                        <article class="plot-card">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"State cost Q"</h2>
+                                    <p>"The diagonal state-weight matrix built directly from the sliders."</p>
+                                </div>
                             </div>
-                        </div>
-                        <div id="synthesis-control-plot" class="plot-surface"></div>
-                    </article>
+                            <div id="synthesis-q-plot" class="plot-surface"></div>
+                        </article>
+
+                        <article class="plot-card">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Feedback gain K"</h2>
+                                    <p>"The DLQR state-feedback gain used in `u = -Kx`."</p>
+                                </div>
+                            </div>
+                            <div id="synthesis-k-plot" class="plot-surface"></div>
+                        </article>
+
+                        <article class="plot-card">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Open-loop A"</h2>
+                                    <p>"The sampled unstable state matrix before feedback."</p>
+                                </div>
+                            </div>
+                            <div id="synthesis-open-a-plot" class="plot-surface"></div>
+                        </article>
+
+                        <article class="plot-card">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Closed-loop A - BK"</h2>
+                                    <p>"The stabilized state matrix after applying the DLQR gain."</p>
+                                </div>
+                            </div>
+                            <div id="synthesis-closed-a-plot" class="plot-surface"></div>
+                        </article>
+                    </div>
                 </div>
             </div>
         </div>
@@ -153,8 +209,13 @@ pub fn SynthesisPage() -> impl IntoView {
 enum SynthesisPlot {
     Position,
     Control,
+    StateCost,
+    FeedbackGain,
+    OpenLoopStateMatrix,
+    ClosedLoopStateMatrix,
 }
 
+#[derive(Clone, PartialEq)]
 struct SynthesisDemo {
     times: Vec<f64>,
     open_loop_position: Vec<f64>,
@@ -162,15 +223,14 @@ struct SynthesisDemo {
     control_effort: Vec<f64>,
     gain: [f64; 2],
     spectral_radius: f64,
+    q_matrix: Vec<Vec<f64>>,
+    gain_matrix: Vec<Vec<f64>>,
+    open_loop_a_matrix: Vec<Vec<f64>>,
+    closed_loop_a_matrix: Vec<Vec<f64>>,
 }
 
-fn build_synthesis_plot(
-    q_position: f64,
-    q_velocity: f64,
-    r_control: f64,
-    which: SynthesisPlot,
-) -> Plot {
-    match run_synthesis_demo(q_position, q_velocity, r_control) {
+fn build_synthesis_plot(result: Result<SynthesisDemo, String>, which: SynthesisPlot) -> Plot {
+    match result {
         Ok(demo) => match which {
             SynthesisPlot::Position => build_line_plot(
                 "Open-loop vs closed-loop position",
@@ -189,19 +249,36 @@ fn build_synthesis_plot(
                 "time (s)",
                 "u[k]",
                 false,
-                vec![LineSeries::lines(
-                    "u = -Kx",
-                    demo.times,
-                    demo.control_effort,
-                )],
+                vec![
+                    LineSeries::lines("u = -Kx", demo.times, demo.control_effort)
+                        .with_dash(DashType::Dot),
+                ],
+            ),
+            SynthesisPlot::StateCost => {
+                build_matrix_heatmap_plot("State cost matrix Q", demo.q_matrix, false)
+            }
+            SynthesisPlot::FeedbackGain => {
+                build_matrix_heatmap_plot("DLQR gain K", demo.gain_matrix, true)
+            }
+            SynthesisPlot::OpenLoopStateMatrix => {
+                build_matrix_heatmap_plot("Open-loop state matrix A", demo.open_loop_a_matrix, true)
+            }
+            SynthesisPlot::ClosedLoopStateMatrix => build_matrix_heatmap_plot(
+                "Closed-loop state matrix A - BK",
+                demo.closed_loop_a_matrix,
+                true,
             ),
         },
-        Err(message) => build_line_plot(&message, "", "", false, Vec::new()),
+        Err(message) => {
+            let mut plot = Plot::new();
+            plot.set_layout(Layout::new().title(Title::with_text(message)));
+            plot
+        }
     }
 }
 
-fn synthesis_summary(q_position: f64, q_velocity: f64, r_control: f64) -> String {
-    match run_synthesis_demo(q_position, q_velocity, r_control) {
+fn synthesis_summary(result: Result<SynthesisDemo, String>) -> String {
+    match result {
         Ok(demo) => format!(
             "DLQR gain K = [{:.3}, {:.3}] with closed-loop spectral radius {:.3}. Lower `R` or higher state weights move the poles deeper inside the unit disk and increase control effort.",
             demo.gain[0], demo.gain[1], demo.spectral_radius,
@@ -278,5 +355,15 @@ fn run_synthesis_demo(
         control_effort,
         gain: [solve.gain[(0, 0)], solve.gain[(0, 1)]],
         spectral_radius,
+        q_matrix: matrix_grid_from_fn(q.nrows(), q.ncols(), |row, col| q[(row, col)]),
+        gain_matrix: matrix_grid_from_fn(solve.gain.nrows(), solve.gain.ncols(), |row, col| {
+            solve.gain[(row, col)]
+        }),
+        open_loop_a_matrix: matrix_grid_from_fn(a.nrows(), a.ncols(), |row, col| a[(row, col)]),
+        closed_loop_a_matrix: matrix_grid_from_fn(
+            solve.closed_loop_a.nrows(),
+            solve.closed_loop_a.ncols(),
+            |row, col| solve.closed_loop_a[(row, col)],
+        ),
     })
 }

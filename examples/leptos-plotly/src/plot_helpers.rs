@@ -1,6 +1,6 @@
 use plotly::{
-    Layout, Plot, Scatter,
-    common::{DashType, Line, Marker, MarkerSymbol, Mode, Title},
+    HeatMap, Layout, Plot, Scatter,
+    common::{ColorScale, ColorScalePalette, DashType, Line, Marker, MarkerSymbol, Mode, Title},
     layout::{Axis, AxisConstrain, AxisType},
 };
 
@@ -182,6 +182,148 @@ pub fn build_complex_plane_plot(title: &str, series: Vec<LineSeries>) -> Plot {
             ),
     );
     plot
+}
+
+/// Builds a heatmap view of a dense matrix.
+#[must_use]
+pub fn build_matrix_heatmap_plot(
+    title: &str,
+    values: Vec<Vec<f64>>,
+    symmetric_about_zero: bool,
+) -> Plot {
+    let nrows = values.len();
+    let ncols = values.first().map_or(0, Vec::len);
+    let x = (0..ncols).map(|idx| (idx + 1) as f64).collect::<Vec<_>>();
+    let y = (0..nrows).map(|idx| (idx + 1) as f64).collect::<Vec<_>>();
+
+    let (zmin, zmax, zmid) = if symmetric_about_zero {
+        let max_abs = values
+            .iter()
+            .flat_map(|row| row.iter())
+            .map(|value| value.abs())
+            .fold(0.0_f64, f64::max)
+            .max(1.0e-12);
+        (-max_abs, max_abs, Some(0.0))
+    } else {
+        let min_value = values
+            .iter()
+            .flat_map(|row| row.iter())
+            .copied()
+            .fold(f64::INFINITY, f64::min);
+        let max_value = values
+            .iter()
+            .flat_map(|row| row.iter())
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max);
+        let fallback = if min_value.is_finite() && max_value.is_finite() {
+            None
+        } else {
+            Some((0.0, 1.0))
+        };
+        match fallback {
+            Some((zmin, zmax)) => (zmin, zmax, None),
+            None => (min_value, max_value.max(min_value + 1.0e-12), None),
+        }
+    };
+
+    let colorscale = if symmetric_about_zero {
+        ColorScale::Palette(ColorScalePalette::RdBu)
+    } else {
+        ColorScale::Palette(ColorScalePalette::Greys)
+    };
+
+    let mut plot = Plot::new();
+    let mut trace = HeatMap::new(x, y, values)
+        .color_scale(colorscale)
+        .zmin(zmin)
+        .zmax(zmax)
+        .x_gap(1)
+        .y_gap(1);
+    if let Some(zmid) = zmid {
+        trace = trace.zmid(zmid);
+    }
+    plot.add_trace(trace);
+    plot.set_layout(
+        Layout::new()
+            .title(Title::with_text(title))
+            .x_axis(
+                Axis::new()
+                    .title(Title::with_text("column"))
+                    .range(vec![0.5, (ncols.max(1) as f64) + 0.5])
+                    .show_grid(false)
+                    .zero_line(false)
+                    .show_line(false),
+            )
+            .y_axis(
+                Axis::new()
+                    .title(Title::with_text("row"))
+                    .range(vec![(nrows.max(1) as f64) + 0.5, 0.5])
+                    .show_grid(false)
+                    .zero_line(false)
+                    .show_line(false)
+                    .constrain(AxisConstrain::Range)
+                    .scale_anchor("x")
+                    .scale_ratio(1.0),
+            ),
+    );
+    plot
+}
+
+/// Builds a spy-style sparse pattern plot from row/column nonzero locations.
+#[must_use]
+pub fn build_sparse_pattern_plot(
+    title: &str,
+    nrows: usize,
+    ncols: usize,
+    columns: Vec<f64>,
+    rows: Vec<f64>,
+) -> Plot {
+    let mut plot = Plot::new();
+    plot.add_trace(
+        Scatter::new(columns, rows).mode(Mode::Markers).marker(
+            Marker::new()
+                .color("#000000")
+                .size(4)
+                .symbol(MarkerSymbol::Square),
+        ),
+    );
+    plot.set_layout(
+        Layout::new()
+            .title(Title::with_text(title))
+            .x_axis(
+                Axis::new()
+                    .title(Title::with_text("column"))
+                    .range(vec![0.5, (ncols.max(1) as f64) + 0.5])
+                    .show_grid(false)
+                    .zero_line(false)
+                    .show_line(false)
+                    .constrain(AxisConstrain::Range),
+            )
+            .y_axis(
+                Axis::new()
+                    .title(Title::with_text("row"))
+                    .range(vec![(nrows.max(1) as f64) + 0.5, 0.5])
+                    .show_grid(false)
+                    .zero_line(false)
+                    .show_line(false)
+                    .constrain(AxisConstrain::Range)
+                    .scale_anchor("x")
+                    .scale_ratio(1.0),
+            ),
+    );
+    plot
+}
+
+/// Samples a dense matrix into a row-major nested vector for plotting.
+#[must_use]
+pub fn matrix_grid_from_fn(
+    nrows: usize,
+    ncols: usize,
+    mut sample: impl FnMut(usize, usize) -> f64,
+) -> Vec<Vec<f64>> {
+    (0..nrows)
+        .map(|row| (0..ncols).map(|col| sample(row, col)).collect())
+        .collect()
 }
 
 fn dash_style(index: usize) -> DashType {

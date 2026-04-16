@@ -142,11 +142,13 @@ input {
 
 .content {
   padding: 2rem;
+  min-width: 0;
 }
 
 .page {
   max-width: 1320px;
   margin: 0 auto;
+  min-width: 0;
 }
 
 .page-header {
@@ -178,6 +180,7 @@ input {
 .plots-grid {
   display: grid;
   gap: 1rem;
+  min-width: 0;
 }
 
 .home-grid {
@@ -211,6 +214,7 @@ input {
   display: grid;
   grid-template-columns: 320px minmax(0, 1fr);
   gap: 1rem;
+  min-width: 0;
 }
 
 .control-card {
@@ -263,6 +267,8 @@ input {
 
 .plot-card {
   padding: 1rem;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .plot-header {
@@ -278,12 +284,32 @@ input {
   color: var(--muted);
 }
 
+.plot-subsection + .plot-subsection {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
 .plot-surface {
   min-height: 320px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.plot-surface .js-plotly-plot,
+.plot-surface .plot-container,
+.plot-surface .svg-container {
+  width: 100% !important;
+  max-width: 100% !important;
 }
 
 .plots-grid.compact {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.plots-grid.two-up {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .plots-grid.wide {
@@ -339,5 +365,9 @@ input {
 
   .control-layout {
     grid-template-columns: 1fr;
+  }
+
+  .plots-grid.two-up {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

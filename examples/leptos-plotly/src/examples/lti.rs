@@ -139,15 +139,21 @@ pub fn LtiProcessModelsPage() -> impl IntoView {
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
-                                <h2>"Step response"</h2>
-                                <p>"Absolute-time delayed step sampled directly from `FopdtModel`."</p>
+                                <h2>"Process-model responses"</h2>
+                                <p>"Step and frequency-domain views of the same delayed first-order model."</p>
                             </div>
                         </div>
-                        <div id="fopdt-step-plot" class="plot-surface"></div>
-                    </article>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Step response"</h2>
+                                    <p>"Absolute-time delayed step sampled directly from `FopdtModel`."</p>
+                                </div>
+                            </div>
+                            <div id="fopdt-step-plot" class="plot-surface"></div>
+                        </div>
 
-                    <div class="plots-grid compact">
-                        <article class="plot-card">
+                        <div class="plot-subsection">
                             <div class="plot-header">
                                 <div>
                                     <h2>"Bode magnitude"</h2>
@@ -155,9 +161,9 @@ pub fn LtiProcessModelsPage() -> impl IntoView {
                                 </div>
                             </div>
                             <div id="fopdt-bode-mag-plot" class="plot-surface"></div>
-                        </article>
+                        </div>
 
-                        <article class="plot-card">
+                        <div class="plot-subsection">
                             <div class="plot-header">
                                 <div>
                                     <h2>"Bode phase"</h2>
@@ -165,8 +171,8 @@ pub fn LtiProcessModelsPage() -> impl IntoView {
                                 </div>
                             </div>
                             <div id="fopdt-bode-phase-plot" class="plot-surface"></div>
-                        </article>
-                    </div>
+                        </div>
+                    </article>
                 </div>
             </div>
         </div>

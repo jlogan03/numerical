@@ -186,21 +186,29 @@ pub fn EstimationPage() -> impl IntoView {
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
-                                <h2>"Position estimate"</h2>
-                                <p>"Truth, noisy measurement, recursive Kalman estimate, and fixed-gain estimate."</p>
+                                <h2>"Kalman filter traces"</h2>
+                                <p>"State and covariance views of the same recursive versus steady-state comparison."</p>
                             </div>
                         </div>
-                        <div id="estimator-position-plot" class="plot-surface"></div>
-                    </article>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Position estimate"</h2>
+                                    <p>"Truth, noisy measurement, recursive Kalman estimate, and fixed-gain estimate."</p>
+                                </div>
+                            </div>
+                            <div id="estimator-position-plot" class="plot-surface"></div>
+                        </div>
 
-                    <article class="plot-card">
-                        <div class="plot-header">
-                            <div>
-                                <h2>"Position variance"</h2>
-                                <p>"Recursive posterior variance converging toward the steady-state observer covariance."</p>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Position variance"</h2>
+                                    <p>"Recursive posterior variance converging toward the steady-state observer covariance."</p>
+                                </div>
                             </div>
+                            <div id="estimator-variance-plot" class="plot-surface"></div>
                         </div>
-                        <div id="estimator-variance-plot" class="plot-surface"></div>
                     </article>
 
                     <section class="home-grid">

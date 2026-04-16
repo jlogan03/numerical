@@ -397,21 +397,29 @@ pub fn ProcessModelFitPage() -> impl IntoView {
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
-                                <h2>"Step-response fit"</h2>
-                                <p>"Noisy sampled data, the true source response, and both fitted low-order surrogates."</p>
+                                <h2>"Process-model fit traces"</h2>
+                                <p>"Fit comparison and residual view for the same sampled step-response record."</p>
                             </div>
                         </div>
-                        <div id="process-fit-response-plot" class="plot-surface"></div>
-                    </article>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Step-response fit"</h2>
+                                    <p>"Noisy sampled data, the true source response, and both fitted low-order surrogates."</p>
+                                </div>
+                            </div>
+                            <div id="process-fit-response-plot" class="plot-surface"></div>
+                        </div>
 
-                    <article class="plot-card">
-                        <div class="plot-header">
-                            <div>
-                                <h2>"Residuals"</h2>
-                                <p>"Signed fit error against the sampled data used by the fitting routines."</p>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Residuals"</h2>
+                                    <p>"Signed fit error against the sampled data used by the fitting routines."</p>
+                                </div>
                             </div>
+                            <div id="process-fit-residual-plot" class="plot-surface"></div>
                         </div>
-                        <div id="process-fit-residual-plot" class="plot-surface"></div>
                     </article>
                 </div>
             </div>

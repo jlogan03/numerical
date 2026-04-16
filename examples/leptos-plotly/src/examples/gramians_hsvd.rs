@@ -1,4 +1,6 @@
-use crate::plot_helpers::{LineSeries, build_line_plot};
+use crate::plot_helpers::{
+    LineSeries, build_line_plot, build_matrix_heatmap_plot, matrix_grid_from_fn,
+};
 use crate::plotly_support::use_plotly_chart;
 use crate::timing::measure;
 use faer::Mat;
@@ -33,6 +35,15 @@ pub fn GramianHsvdPage() -> impl IntoView {
     });
     use_plotly_chart("hsvd-spectrum-plot", move || {
         build_gramian_plot(demo.get(), GramianPlot::HsvdVsSvd)
+    });
+    use_plotly_chart("gramian-a-matrix-plot", move || {
+        build_gramian_plot(demo.get(), GramianPlot::StateMatrix)
+    });
+    use_plotly_chart("gramian-wc-matrix-plot", move || {
+        build_gramian_plot(demo.get(), GramianPlot::ControllabilityMatrix)
+    });
+    use_plotly_chart("gramian-wo-matrix-plot", move || {
+        build_gramian_plot(demo.get(), GramianPlot::ObservabilityMatrix)
     });
 
     let summary = move || gramian_hsvd_summary(demo.get());
@@ -188,22 +199,62 @@ pub fn GramianHsvdPage() -> impl IntoView {
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
-                                <h2>"Gramian spectra"</h2>
-                                <p>"Log10 eigenvalue spectra of the controllability and observability Gramians."</p>
+                                <h2>"Gramian and HSVD spectra"</h2>
+                                <p>"Energy-distribution and balanced-importance views for the same planted system."</p>
                             </div>
                         </div>
-                        <div id="gramian-spectrum-plot" class="plot-surface"></div>
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Gramian spectra"</h2>
+                                    <p>"Log10 eigenvalue spectra of the controllability and observability Gramians."</p>
+                                </div>
+                            </div>
+                            <div id="gramian-spectrum-plot" class="plot-surface"></div>
+                        </div>
+
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"HSVD versus plain SVD"</h2>
+                                    <p>"Log10 Hankel singular values compared with the singular values of A."</p>
+                                </div>
+                            </div>
+                            <div id="hsvd-spectrum-plot" class="plot-surface"></div>
+                        </div>
                     </article>
 
-                    <article class="plot-card">
-                        <div class="plot-header">
-                            <div>
-                                <h2>"HSVD versus plain SVD"</h2>
-                                <p>"Log10 Hankel singular values compared with the singular values of A."</p>
+                    <div class="plots-grid compact">
+                        <article class="plot-card">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"State matrix A"</h2>
+                                    <p>"The planted stable dynamics matrix whose naive SVD is compared against HSVD."</p>
+                                </div>
                             </div>
-                        </div>
-                        <div id="hsvd-spectrum-plot" class="plot-surface"></div>
-                    </article>
+                            <div id="gramian-a-matrix-plot" class="plot-surface"></div>
+                        </article>
+
+                        <article class="plot-card">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Controllability Gramian"</h2>
+                                    <p>"Dense solution of `A Wc + Wc A^T + B B^T = 0`."</p>
+                                </div>
+                            </div>
+                            <div id="gramian-wc-matrix-plot" class="plot-surface"></div>
+                        </article>
+
+                        <article class="plot-card">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Observability Gramian"</h2>
+                                    <p>"Dense solution of `A^T Wo + Wo A + C^T C = 0`."</p>
+                                </div>
+                            </div>
+                            <div id="gramian-wo-matrix-plot" class="plot-surface"></div>
+                        </article>
+                    </div>
                 </div>
             </div>
         </div>
@@ -214,6 +265,9 @@ pub fn GramianHsvdPage() -> impl IntoView {
 enum GramianPlot {
     GramianSpectra,
     HsvdVsSvd,
+    StateMatrix,
+    ControllabilityMatrix,
+    ObservabilityMatrix,
 }
 
 #[derive(Clone, Copy)]
@@ -240,6 +294,9 @@ struct GramianHsvdDemo {
     hsvd_ms: f64,
     svd_ms: f64,
     sigma_tol: Option<f64>,
+    a_matrix: Vec<Vec<f64>>,
+    wc_matrix: Vec<Vec<f64>>,
+    wo_matrix: Vec<Vec<f64>>,
 }
 
 fn build_gramian_plot(result: Result<GramianHsvdDemo, String>, which: GramianPlot) -> Plot {
@@ -273,6 +330,15 @@ fn build_gramian_plot(result: Result<GramianHsvdDemo, String>, which: GramianPlo
                     LineSeries::lines_markers("sigma(A)", demo.state_index, demo.a_svd_log10),
                 ],
             ),
+            GramianPlot::StateMatrix => {
+                build_matrix_heatmap_plot("State matrix A", demo.a_matrix, true)
+            }
+            GramianPlot::ControllabilityMatrix => {
+                build_matrix_heatmap_plot("Controllability Gramian", demo.wc_matrix, true)
+            }
+            GramianPlot::ObservabilityMatrix => {
+                build_matrix_heatmap_plot("Observability Gramian", demo.wo_matrix, true)
+            }
         },
         Err(message) => build_line_plot(&message, "", "", false, Vec::new()),
     }
@@ -362,6 +428,15 @@ fn run_gramian_hsvd_demo(inputs: GramianInputs) -> Result<GramianHsvdDemo, Strin
         hsvd_ms,
         svd_ms,
         sigma_tol: (!inputs.auto_sigma_tol).then_some(inputs.sigma_tol.clamp(1.0e-14, 1.0e-2)),
+        a_matrix: matrix_grid_from_fn(system.nstates(), system.nstates(), |row, col| {
+            system.a()[(row, col)]
+        }),
+        wc_matrix: matrix_grid_from_fn(wc.solution.nrows(), wc.solution.ncols(), |row, col| {
+            wc.solution[(row, col)]
+        }),
+        wo_matrix: matrix_grid_from_fn(wo.solution.nrows(), wo.solution.ncols(), |row, col| {
+            wo.solution[(row, col)]
+        }),
     })
 }
 
