@@ -50,7 +50,6 @@ pub fn App() -> impl IntoView {
                         <span>"Overview"</span>
                         <StatusBadge entry=ExampleId::Home.entry() />
                     </span>
-                    <p class="nav-button-copy">{ExampleId::Home.entry().summary}</p>
                 </button>
 
                 {EXAMPLE_GROUPS
@@ -75,7 +74,6 @@ pub fn App() -> impl IntoView {
                                                         <span>{entry.title}</span>
                                                         <StatusBadge entry />
                                                     </span>
-                                                    <p class="nav-button-copy">{entry.summary}</p>
                                                 </button>
                                             }
                                         })

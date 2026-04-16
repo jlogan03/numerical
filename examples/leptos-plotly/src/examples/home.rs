@@ -16,7 +16,7 @@ pub fn HomePage(set_selected: WriteSignal<ExampleId>) -> impl IntoView {
                 </p>
             </header>
 
-            <div class="home-grid">
+            <div class="home-grid home-masonry">
                 {EXAMPLE_GROUPS
                     .iter()
                     .copied()

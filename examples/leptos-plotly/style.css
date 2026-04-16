@@ -187,6 +187,19 @@ input {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
 
+.home-masonry {
+  display: block;
+  columns: 320px;
+  column-gap: 1rem;
+}
+
+.home-masonry > .home-card {
+  break-inside: avoid;
+  display: inline-block;
+  width: 100%;
+  margin: 0 0 1rem;
+}
+
 .home-card,
 .control-card,
 .plot-card,
@@ -369,5 +382,9 @@ input {
 
   .plots-grid.two-up {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .home-masonry {
+    columns: 1;
   }
 }
