@@ -6,6 +6,7 @@ mod demo_signal;
 mod examples;
 mod plot_helpers;
 mod plotly_support;
+mod timing;
 
 #[cfg(target_arch = "wasm32")]
 fn main() {

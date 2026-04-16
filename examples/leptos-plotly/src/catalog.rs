@@ -3,6 +3,10 @@
 pub enum ExampleId {
     /// Landing page and catalog overview.
     Home,
+    /// Sparse direct versus iterative solver comparison.
+    LinearSolverComparison,
+    /// Dense Gramian and HSVD exploration.
+    GramianHsvd,
     /// Continuous-time process-model exploration.
     LtiProcessModels,
     /// Gallery of LTI plotting-data surfaces.
@@ -76,6 +80,24 @@ pub struct ExampleGroup {
 
 /// Example groups exposed by the current app shell.
 pub const EXAMPLE_GROUPS: &[ExampleGroup] = &[
+    ExampleGroup {
+        title: "Linear Algebra",
+        summary: "Interactive comparisons for sparse solves, dense Gramians, and singular-value-based state ranking.",
+        entries: &[
+            ExampleEntry {
+                id: ExampleId::LinearSolverComparison,
+                title: "Sparse Solvers",
+                summary: "Compare sparse LU and BiCGSTAB on the same shifted tridiagonal system with adjustable tolerance.",
+                status: ExampleStatus::Ready,
+            },
+            ExampleEntry {
+                id: ExampleId::GramianHsvd,
+                title: "Gramians + HSVD",
+                summary: "Inspect controllability and observability Gramians, then compare Hankel singular values against a plain SVD of A.",
+                status: ExampleStatus::Ready,
+            },
+        ],
+    },
     ExampleGroup {
         title: "LTI Analysis",
         summary: "Interactive sampling and plotting for process models, time responses, and frequency views.",
@@ -181,16 +203,18 @@ impl ExampleId {
                 summary: "Start here to browse the major feature areas and implemented demos.",
                 status: ExampleStatus::Ready,
             },
-            Self::LtiProcessModels => EXAMPLE_GROUPS[0].entries[0],
-            Self::LtiPlotGallery => EXAMPLE_GROUPS[0].entries[1],
-            Self::FilterDesign => EXAMPLE_GROUPS[1].entries[0],
-            Self::Estimation => EXAMPLE_GROUPS[2].entries[0],
-            Self::NonlinearEstimation => EXAMPLE_GROUPS[2].entries[1],
-            Self::Identification => EXAMPLE_GROUPS[3].entries[0],
-            Self::ProcessModelFit => EXAMPLE_GROUPS[3].entries[1],
-            Self::Reduction => EXAMPLE_GROUPS[4].entries[0],
-            Self::PidDesign => EXAMPLE_GROUPS[5].entries[0],
-            Self::Synthesis => EXAMPLE_GROUPS[5].entries[1],
+            Self::LinearSolverComparison => EXAMPLE_GROUPS[0].entries[0],
+            Self::GramianHsvd => EXAMPLE_GROUPS[0].entries[1],
+            Self::LtiProcessModels => EXAMPLE_GROUPS[1].entries[0],
+            Self::LtiPlotGallery => EXAMPLE_GROUPS[1].entries[1],
+            Self::FilterDesign => EXAMPLE_GROUPS[2].entries[0],
+            Self::Estimation => EXAMPLE_GROUPS[3].entries[0],
+            Self::NonlinearEstimation => EXAMPLE_GROUPS[3].entries[1],
+            Self::Identification => EXAMPLE_GROUPS[4].entries[0],
+            Self::ProcessModelFit => EXAMPLE_GROUPS[4].entries[1],
+            Self::Reduction => EXAMPLE_GROUPS[5].entries[0],
+            Self::PidDesign => EXAMPLE_GROUPS[6].entries[0],
+            Self::Synthesis => EXAMPLE_GROUPS[6].entries[1],
         }
     }
 }

@@ -1,8 +1,8 @@
 use crate::catalog::{EXAMPLE_GROUPS, ExampleEntry, ExampleId};
 use crate::examples::{
-    EstimationPage, FilterDesignPage, HomePage, IdentificationPage, LtiPlotGalleryPage,
-    LtiProcessModelsPage, NonlinearEstimationPage, PidDesignPage, ProcessModelFitPage,
-    ReductionPage, SynthesisPage,
+    EstimationPage, FilterDesignPage, GramianHsvdPage, HomePage, IdentificationPage,
+    LinearSolverComparisonPage, LtiPlotGalleryPage, LtiProcessModelsPage, NonlinearEstimationPage,
+    PidDesignPage, ProcessModelFitPage, ReductionPage, SynthesisPage,
 };
 use leptos::prelude::*;
 
@@ -14,6 +14,8 @@ pub fn App() -> impl IntoView {
     let current_entry = move || selected.get().entry();
     let current_page = move || match selected.get() {
         ExampleId::Home => view! { <HomePage set_selected /> }.into_any(),
+        ExampleId::LinearSolverComparison => view! { <LinearSolverComparisonPage /> }.into_any(),
+        ExampleId::GramianHsvd => view! { <GramianHsvdPage /> }.into_any(),
         ExampleId::LtiProcessModels => view! { <LtiProcessModelsPage /> }.into_any(),
         ExampleId::LtiPlotGallery => view! { <LtiPlotGalleryPage /> }.into_any(),
         ExampleId::FilterDesign => view! { <FilterDesignPage /> }.into_any(),

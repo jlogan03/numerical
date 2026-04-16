@@ -1774,6 +1774,7 @@ dependencies = [
  "numerical",
  "plotly",
  "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

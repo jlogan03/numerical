@@ -43,6 +43,8 @@ Then open the local URL reported by `trunk`.
 
 ## Current demos
 
+- `Linear Algebra / Sparse Solvers`: sparse LU versus BiCGSTAB on the same shifted tridiagonal system
+- `Linear Algebra / Gramians + HSVD`: controllability/observability Gramian spectra plus HSVD versus a plain SVD of `A`
 - `LTI Analysis / Process Models`: delayed FOPDT step and Bode exploration
 - `LTI Analysis / Plot Gallery`: Bode, Nyquist, Nichols, pole-zero, and root-locus inspection from one loop transfer
 - `Filter Design / Butterworth Lowpass`: interactive digital SOS design and Bode inspection

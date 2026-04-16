@@ -624,10 +624,10 @@ fn run_process_fit_demo(
         measured_output[..fit_len].to_vec(),
     )
     .map_err(|err| err.to_string())?;
-    let fopdt_fit =
-        fit_fopdt_from_step_response_with_options(&data, fit_options).map_err(|err| err.to_string())?;
-    let sopdt_fit =
-        fit_sopdt_from_step_response_with_options(&data, fit_options).map_err(|err| err.to_string())?;
+    let fopdt_fit = fit_fopdt_from_step_response_with_options(&data, fit_options)
+        .map_err(|err| err.to_string())?;
+    let sopdt_fit = fit_sopdt_from_step_response_with_options(&data, fit_options)
+        .map_err(|err| err.to_string())?;
 
     let fopdt_output = times
         .iter()
@@ -771,15 +771,12 @@ fn fit_window_duration(inputs: ProcessFitInputs) -> f64 {
             2.0 * (inputs.sopdt_time_constant_1 + inputs.sopdt_time_constant_2 + inputs.sopdt_delay)
         }
         FitSourceKind::HigherOrder => {
-            let oscillatory_envelope =
-                1.0 / (inputs.higher_order_damping_ratio * inputs.higher_order_natural_frequency)
+            let oscillatory_envelope = 1.0
+                / (inputs.higher_order_damping_ratio * inputs.higher_order_natural_frequency)
                     .max(0.1);
-            2.0
-                * (
-                    inputs.higher_order_tail_lag
-                        + oscillatory_envelope
-                        + inputs.higher_order_zero_time_constant
-                )
+            2.0 * (inputs.higher_order_tail_lag
+                + oscillatory_envelope
+                + inputs.higher_order_zero_time_constant)
         }
     }
 }

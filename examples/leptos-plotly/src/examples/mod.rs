@@ -1,7 +1,9 @@
 mod estimation;
 mod filter_design;
+mod gramians_hsvd;
 mod home;
 mod identification;
+mod linear_solvers;
 mod lti;
 mod lti_gallery;
 mod nonlinear_estimation;
@@ -12,8 +14,10 @@ mod synthesis;
 
 pub use estimation::EstimationPage;
 pub use filter_design::FilterDesignPage;
+pub use gramians_hsvd::GramianHsvdPage;
 pub use home::HomePage;
 pub use identification::IdentificationPage;
+pub use linear_solvers::LinearSolverComparisonPage;
 pub use lti::LtiProcessModelsPage;
 pub use lti_gallery::LtiPlotGalleryPage;
 pub use nonlinear_estimation::NonlinearEstimationPage;
