@@ -57,7 +57,7 @@ pub fn SavGolDesignPage() -> impl IntoView {
                                 id="savgol-window-len"
                                 type="range"
                                 min="3"
-                                max="31"
+                                max="201"
                                 step="2"
                                 prop:value=move || window_len.get().to_string()
                                 on:input=move |ev| {
@@ -324,7 +324,7 @@ fn savgol_summary(result: Result<SavGolData, String>) -> String {
 }
 
 fn clamp_window_len(value: usize) -> usize {
-    value.clamp(3, 31) | 1
+    value.clamp(3, 201) | 1
 }
 
 const fn nine_tap_default() -> usize {

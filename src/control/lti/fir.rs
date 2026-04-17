@@ -33,19 +33,19 @@
 //!
 //! - FIR runtime execution stays native to the tap representation.
 //! - `filtfilt` shares the padding policy with the IIR simulation module.
-//! - Savitzky-Golay design uses an SVD-based pseudoinverse for numerical
-//!   robustness on small windows.
+//! - Savitzky-Golay design uses a direct small dense normal-equations solve,
+//!   which matches the actual problem size and keeps the implementation simple.
 
 use super::sim::{padded_sample, resolve_pad_len};
 use super::{
     BodeData, DiscreteTransferFunction, FiltFiltParams, FilteredSignal, LtiError, PoleZeroData,
     StatefulFilteredSignal,
 };
-use crate::decomp::{DenseDecompParams, dense_svd};
 use crate::scalar::real_complex_mul_add;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use faer::Mat;
 use faer::complex::Complex;
+use faer::prelude::Solve;
 use faer_traits::RealField;
 use num_traits::Float;
 
@@ -354,24 +354,31 @@ where
         R::from(offset).unwrap().powi(col as i32)
     });
 
-    // Savitzky-Golay taps are entries of the pseudoinverse row corresponding
-    // to the requested derivative evaluated at the window center. Using the
-    // SVD keeps the design numerically stable for modest polynomial orders and
-    // makes rank deficiency explicit instead of silently amplifying it.
-    let svd = dense_svd(a.as_ref(), &DenseDecompParams::<R>::new())?;
-    let singular_values = (0..svd.s.nrows())
-        .map(|i| svd.s[i].abs())
-        .collect::<Vec<_>>();
-    let max_sigma = singular_values
-        .iter()
-        .copied()
-        .fold(R::zero(), |acc, value| acc.max(value));
-    let tol = R::epsilon().sqrt() * max_sigma;
-    let retained = singular_values
-        .iter()
-        .take_while(|&&sigma| sigma > tol)
-        .count();
-    if retained <= spec.derivative_order {
+    // The fitting problem is always tiny in this API, so form the normal
+    // equations directly instead of routing through the large-problem SVD
+    // machinery. The requested Savitzky-Golay row is:
+    //
+    // A^+ = (A^T A)^-1 A^T
+    // taps = e_d^T A^+
+    //
+    // which we assemble by solving `(A^T A) q = e_d` and then evaluating
+    // `A q` at each sample location.
+    let gram = Mat::from_fn(spec.poly_order + 1, spec.poly_order + 1, |row, col| {
+        let mut acc = CompensatedSum::<R>::default();
+        for sample_idx in 0..spec.window_len {
+            acc.add(a[(sample_idx, row)] * a[(sample_idx, col)]);
+        }
+        acc.finish()
+    });
+    let rhs = Mat::from_fn(spec.poly_order + 1, 1, |row, _| {
+        if row == spec.derivative_order {
+            R::one()
+        } else {
+            R::zero()
+        }
+    });
+    let coeffs = gram.full_piv_lu().solve(rhs.as_ref());
+    if !coeffs.as_ref().is_all_finite() {
         return Err(LtiError::InvalidSavGolSpec {
             which: "rank_deficient_design",
         });
@@ -382,14 +389,8 @@ where
     let taps = (0..spec.window_len)
         .map(|sample_idx| {
             let mut acc = CompensatedSum::<R>::default();
-            // This is the `(d, sample_idx)` entry of `A^+`, assembled from the
-            // retained singular triplets only.
-            for k in 0..retained {
-                acc.add(
-                    svd.v[(spec.derivative_order, k)]
-                        * singular_values[k].recip()
-                        * svd.u[(sample_idx, k)],
-                );
+            for basis_idx in 0..=spec.poly_order {
+                acc.add(a[(sample_idx, basis_idx)] * coeffs[(basis_idx, 0)]);
             }
             deriv_scale * acc.finish()
         })
@@ -596,6 +597,14 @@ mod tests {
             .map(|(&tap, &sample)| tap * sample)
             .sum::<f64>();
         assert_close(value, 2.0, 1.0e-12);
+    }
+
+    #[test]
+    fn savgol_high_order_smoothing_preserves_dc_gain() {
+        let spec = SavGolSpec::new(21, 10, 0, 1.0).unwrap();
+        let fir = design_savgol(&spec).unwrap();
+        assert!(fir.is_symmetric(1.0e-8));
+        assert_close(fir.dc_gain(), 1.0, 1.0e-8);
     }
 
     #[test]
