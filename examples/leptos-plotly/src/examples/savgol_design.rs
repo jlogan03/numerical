@@ -179,7 +179,7 @@ struct SavGolData {
     group_delay_samples: f64,
     sg_dc_gain: f64,
     mean_dc_gain: f64,
-    angular_frequencies: Vec<f64>,
+    frequency_over_fs: Vec<f64>,
     sg_magnitude_db: Vec<f64>,
     mean_magnitude_db: Vec<f64>,
     sg_phase_deg: Vec<f64>,
@@ -201,18 +201,18 @@ fn build_savgol_plot(result: Result<SavGolData, String>, kind: SavGolPlotKind) -
         Ok(data) => match kind {
             SavGolPlotKind::Magnitude => build_line_plot(
                 "Savitzky-Golay vs sliding mean magnitude",
-                "angular frequency",
+                "frequency / fs",
                 "magnitude (dB)",
                 true,
                 vec![
                     LineSeries::lines(
                         "Savitzky-Golay",
-                        data.angular_frequencies.clone(),
+                        data.frequency_over_fs.clone(),
                         data.sg_magnitude_db,
                     ),
                     LineSeries::lines(
                         "Sliding mean",
-                        data.angular_frequencies,
+                        data.frequency_over_fs,
                         data.mean_magnitude_db,
                     )
                     .with_dash(plotly::common::DashType::Dash),
@@ -220,21 +220,17 @@ fn build_savgol_plot(result: Result<SavGolData, String>, kind: SavGolPlotKind) -
             ),
             SavGolPlotKind::Phase => build_line_plot(
                 "Savitzky-Golay vs sliding mean phase",
-                "angular frequency",
+                "frequency / fs",
                 "phase (deg)",
                 true,
                 vec![
                     LineSeries::lines(
                         "Savitzky-Golay",
-                        data.angular_frequencies.clone(),
+                        data.frequency_over_fs.clone(),
                         data.sg_phase_deg,
                     ),
-                    LineSeries::lines(
-                        "Sliding mean",
-                        data.angular_frequencies,
-                        data.mean_phase_deg,
-                    )
-                    .with_dash(plotly::common::DashType::Dash),
+                    LineSeries::lines("Sliding mean", data.frequency_over_fs, data.mean_phase_deg)
+                        .with_dash(plotly::common::DashType::Dash),
                 ],
             ),
             SavGolPlotKind::Taps => build_line_plot(
@@ -282,6 +278,11 @@ fn run_savgol_design(inputs: SavGolInputs) -> Result<SavGolData, String> {
     let mean_bode = mean
         .bode_data(&angular_frequencies)
         .map_err(|err| err.to_string())?;
+    let frequency_over_fs = savgol_bode
+        .angular_frequencies
+        .iter()
+        .map(|omega| *omega / sample_rate)
+        .collect::<Vec<_>>();
 
     let half = (window_len / 2) as isize;
     let tap_offsets = (-half..=half)
@@ -296,7 +297,7 @@ fn run_savgol_design(inputs: SavGolInputs) -> Result<SavGolData, String> {
         group_delay_samples: savgol.group_delay_samples(1.0e-12).unwrap_or(0.0),
         sg_dc_gain: savgol.dc_gain(),
         mean_dc_gain: mean.dc_gain(),
-        angular_frequencies: savgol_bode.angular_frequencies.clone(),
+        frequency_over_fs,
         sg_magnitude_db: savgol_bode.magnitude_db,
         mean_magnitude_db: mean_bode.magnitude_db,
         sg_phase_deg: savgol_bode.phase_deg,

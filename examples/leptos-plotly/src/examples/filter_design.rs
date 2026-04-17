@@ -289,10 +289,10 @@ struct FilterDesignData {
     sections: usize,
     state_order: usize,
     dc_gain: f64,
-    response_frequencies: Vec<f64>,
+    response_frequency_over_fs: Vec<f64>,
     magnitude_db: Vec<f64>,
     phase_deg: Vec<f64>,
-    sweep_cutoffs: Vec<f64>,
+    sweep_cutoff_over_fs: Vec<f64>,
     a_entry_series: Vec<Vec<f64>>,
     c_entry_series: Vec<Vec<f64>>,
     d_entry_series: Vec<Vec<f64>>,
@@ -312,43 +312,43 @@ fn build_filter_plot(result: Result<FilterDesignData, String>, kind: FilterPlotK
         Ok(data) => match kind {
             FilterPlotKind::Magnitude => build_multiline_plot(
                 &format!("{} magnitude", data.family.label()),
-                "angular frequency",
+                "frequency / fs",
                 "magnitude (dB)",
                 true,
                 false,
                 true,
                 vec![(
                     "response".to_string(),
-                    data.response_frequencies,
+                    data.response_frequency_over_fs,
                     data.magnitude_db,
                 )],
             ),
             FilterPlotKind::Phase => build_multiline_plot(
                 &format!("{} phase", data.family.label()),
-                "angular frequency",
+                "frequency / fs",
                 "phase (deg)",
                 true,
                 false,
                 true,
                 vec![(
                     "response".to_string(),
-                    data.response_frequencies,
+                    data.response_frequency_over_fs,
                     data.phase_deg,
                 )],
             ),
             FilterPlotKind::AEntries => build_unlabeled_entry_plot(
                 "A entries vs cutoff",
-                &data.sweep_cutoffs,
+                &data.sweep_cutoff_over_fs,
                 &data.a_entry_series,
             ),
             FilterPlotKind::CEntries => build_unlabeled_entry_plot(
                 "C entries vs cutoff",
-                &data.sweep_cutoffs,
+                &data.sweep_cutoff_over_fs,
                 &data.c_entry_series,
             ),
             FilterPlotKind::DEntries => build_unlabeled_entry_plot(
                 "D entries vs cutoff",
-                &data.sweep_cutoffs,
+                &data.sweep_cutoff_over_fs,
                 &data.d_entry_series,
             ),
         },
@@ -374,6 +374,11 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
     let bode = filter
         .bode_data(&response_frequencies)
         .map_err(|err| err.to_string())?;
+    let response_frequency_over_fs = bode
+        .angular_frequencies
+        .iter()
+        .map(|omega| *omega / sample_rate)
+        .collect::<Vec<_>>();
 
     let sweep_cutoffs = logspace(
         (MIN_CUTOFF_FRACTION * sample_rate).log10(),
@@ -398,10 +403,13 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
         sections: filter.sections().len(),
         state_order: state_space.nstates(),
         dc_gain: filter.dc_gain().map(|value| value.re).unwrap_or(0.0),
-        response_frequencies: bode.angular_frequencies.clone(),
+        response_frequency_over_fs,
         magnitude_db: bode.magnitude_db,
         phase_deg: bode.phase_deg,
-        sweep_cutoffs,
+        sweep_cutoff_over_fs: sweep_cutoffs
+            .iter()
+            .map(|cutoff| *cutoff / sample_rate)
+            .collect(),
         a_entry_series,
         c_entry_series,
         d_entry_series,
@@ -530,7 +538,7 @@ fn build_unlabeled_entry_plot(title: &str, x: &[f64], series: &[Vec<f64>]) -> Pl
     if series.is_empty() {
         return build_empty_plot(
             &format!("{title}: no nontrivial entries"),
-            "cutoff",
+            "cutoff / fs",
             "|entry|",
         );
     }
@@ -549,7 +557,7 @@ fn build_unlabeled_entry_plot(title: &str, x: &[f64], series: &[Vec<f64>]) -> Pl
             )
         })
         .collect::<Vec<_>>();
-    build_multiline_plot(title, "cutoff", "|entry|", true, true, false, traces)
+    build_multiline_plot(title, "cutoff / fs", "|entry|", true, true, false, traces)
 }
 
 fn build_multiline_plot(
