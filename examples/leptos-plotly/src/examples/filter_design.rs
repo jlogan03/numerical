@@ -1,3 +1,4 @@
+use crate::demo_signal::step_then_tone_signal;
 use crate::plotly_support::use_plotly_chart;
 use leptos::prelude::*;
 use numerical::control::lti::{
@@ -17,6 +18,7 @@ pub fn FilterDesignPage() -> impl IntoView {
     let (cutoff_fraction, set_cutoff_fraction) = signal(0.4_f64);
     let (sample_rate, set_sample_rate) = signal(20.0_f64);
     let (ripple_db, set_ripple_db) = signal(1.0_f64);
+    let (sim_method, set_sim_method) = signal(FilterSimMethod::Sos);
 
     let inputs = move || FilterDesignInputs {
         family: family.get(),
@@ -24,6 +26,7 @@ pub fn FilterDesignPage() -> impl IntoView {
         cutoff_fraction: cutoff_fraction.get(),
         sample_rate: sample_rate.get(),
         ripple_db: ripple_db.get(),
+        sim_method: sim_method.get(),
     };
     let design = Memo::new(move |_| run_filter_design(inputs()));
 
@@ -41,6 +44,9 @@ pub fn FilterDesignPage() -> impl IntoView {
     });
     use_plotly_chart("filter-design-d-sweep-plot", move || {
         build_filter_plot(design.get(), FilterPlotKind::DEntries)
+    });
+    use_plotly_chart("filter-design-time-plot", move || {
+        build_filter_plot(design.get(), FilterPlotKind::TimeResponse)
     });
 
     let design_status = move || filter_summary(design.get());
@@ -166,6 +172,20 @@ pub fn FilterDesignPage() -> impl IntoView {
                                 }
                             />
                         </div>
+
+                        <div class="control-row">
+                            <label for="filter-sim-method">"Simulation kernel"</label>
+                            <select
+                                id="filter-sim-method"
+                                prop:value=move || sim_method.get().as_key().to_string()
+                                on:change=move |ev| {
+                                    set_sim_method.set(FilterSimMethod::from_form_value(&event_target_value(&ev)));
+                                }
+                            >
+                                <option value="sos">"SOS cascade"</option>
+                                <option value="state-space">"State-space"</option>
+                            </select>
+                        </div>
                     </section>
 
                     <section>
@@ -200,6 +220,16 @@ pub fn FilterDesignPage() -> impl IntoView {
                                 </div>
                             </div>
                             <div id="filter-design-phase-plot" class="plot-surface"></div>
+                        </div>
+
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Time-domain response"</h2>
+                                    <p>"A short step followed by a single-tone check at the selected cutoff frequency."</p>
+                                </div>
+                            </div>
+                            <div id="filter-design-time-plot" class="plot-surface"></div>
                         </div>
                     </article>
 
@@ -276,6 +306,7 @@ struct FilterDesignInputs {
     cutoff_fraction: f64,
     sample_rate: f64,
     ripple_db: f64,
+    sim_method: FilterSimMethod,
 }
 
 #[derive(Clone, PartialEq)]
@@ -289,19 +320,53 @@ struct FilterDesignData {
     sections: usize,
     state_order: usize,
     dc_gain: f64,
+    sim_method: FilterSimMethod,
     response_frequency_over_fs: Vec<f64>,
     magnitude_db: Vec<f64>,
     phase_deg: Vec<f64>,
+    simulation_times: Vec<f64>,
+    simulation_input: Vec<f64>,
+    simulation_output: Vec<f64>,
     sweep_cutoff_over_fs: Vec<f64>,
     a_entry_series: Vec<Vec<f64>>,
     c_entry_series: Vec<Vec<f64>>,
     d_entry_series: Vec<Vec<f64>>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FilterSimMethod {
+    Sos,
+    StateSpace,
+}
+
+impl FilterSimMethod {
+    fn as_key(self) -> &'static str {
+        match self {
+            Self::Sos => "sos",
+            Self::StateSpace => "state-space",
+        }
+    }
+
+    fn from_form_value(value: &str) -> Self {
+        match value {
+            "state-space" => Self::StateSpace,
+            _ => Self::Sos,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::Sos => "SOS cascade",
+            Self::StateSpace => "state-space",
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum FilterPlotKind {
     Magnitude,
     Phase,
+    TimeResponse,
     AEntries,
     CEntries,
     DEntries,
@@ -336,6 +401,30 @@ fn build_filter_plot(result: Result<FilterDesignData, String>, kind: FilterPlotK
                     data.phase_deg,
                 )],
             ),
+            FilterPlotKind::TimeResponse => build_multiline_plot(
+                &format!(
+                    "{} time response ({})",
+                    data.family.label(),
+                    data.sim_method.label()
+                ),
+                "time (s)",
+                "signal",
+                false,
+                false,
+                true,
+                vec![
+                    (
+                        "input".to_string(),
+                        data.simulation_times.clone(),
+                        data.simulation_input,
+                    ),
+                    (
+                        "filtered".to_string(),
+                        data.simulation_times,
+                        data.simulation_output,
+                    ),
+                ],
+            ),
             FilterPlotKind::AEntries => build_unlabeled_entry_plot(
                 "A entries vs cutoff",
                 &data.sweep_cutoff_over_fs,
@@ -361,14 +450,15 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
     let sample_rate = inputs.sample_rate.clamp(4.0, 40.0);
     let cutoff_fraction = clamp_cutoff_fraction(inputs.cutoff_fraction);
     let cutoff = cutoff_fraction * sample_rate;
+    let cutoff_angular = cutoff * core::f64::consts::TAU;
     let ripple_db = inputs.ripple_db.clamp(0.10, 3.00);
-    let spec = make_filter_spec(inputs.family, order, cutoff, sample_rate, ripple_db)?;
+    let spec = make_filter_spec(inputs.family, order, cutoff_angular, sample_rate, ripple_db)?;
     let filter = design_digital_filter_sos(&spec).map_err(|err| err.to_string())?;
     let state_space = filter.to_state_space().map_err(|err| err.to_string())?;
 
     let response_frequencies = logspace(
-        (1.0e-6 * sample_rate).log10(),
-        (sample_rate * core::f64::consts::PI * 0.98).log10(),
+        (MIN_CUTOFF_FRACTION * sample_rate * core::f64::consts::TAU).log10(),
+        (MAX_CUTOFF_FRACTION * sample_rate * core::f64::consts::TAU).log10(),
         260,
     );
     let bode = filter
@@ -377,12 +467,12 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
     let response_frequency_over_fs = bode
         .angular_frequencies
         .iter()
-        .map(|omega| *omega / sample_rate)
+        .map(|omega| *omega / (sample_rate * core::f64::consts::TAU))
         .collect::<Vec<_>>();
 
     let sweep_cutoffs = logspace(
-        (MIN_CUTOFF_FRACTION * sample_rate).log10(),
-        (MAX_SWEEP_CUTOFF_FRACTION * sample_rate).log10(),
+        (MIN_CUTOFF_FRACTION * sample_rate * core::f64::consts::TAU).log10(),
+        (MAX_SWEEP_CUTOFF_FRACTION * sample_rate * core::f64::consts::TAU).log10(),
         120,
     );
     let (a_entry_series, c_entry_series, d_entry_series) = collect_state_space_entry_sweeps(
@@ -392,6 +482,21 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
         ripple_db,
         &sweep_cutoffs,
     )?;
+    let (simulation_times, simulation_input) = step_then_tone_signal(sample_rate, cutoff_fraction);
+    let simulation_output = match inputs.sim_method {
+        FilterSimMethod::Sos => {
+            filter
+                .filter_forward(&simulation_input)
+                .map_err(|err| err.to_string())?
+                .output
+        }
+        FilterSimMethod::StateSpace => {
+            state_space
+                .filter_forward(&simulation_input)
+                .map_err(|err| err.to_string())?
+                .output
+        }
+    };
 
     Ok(FilterDesignData {
         family: inputs.family,
@@ -403,12 +508,16 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
         sections: filter.sections().len(),
         state_order: state_space.nstates(),
         dc_gain: filter.dc_gain().map(|value| value.re).unwrap_or(0.0),
+        sim_method: inputs.sim_method,
         response_frequency_over_fs,
         magnitude_db: bode.magnitude_db,
         phase_deg: bode.phase_deg,
+        simulation_times,
+        simulation_input,
+        simulation_output,
         sweep_cutoff_over_fs: sweep_cutoffs
             .iter()
-            .map(|cutoff| *cutoff / sample_rate)
+            .map(|cutoff| *cutoff / (sample_rate * core::f64::consts::TAU))
             .collect(),
         a_entry_series,
         c_entry_series,
@@ -495,7 +604,7 @@ fn retain_nontrivial_series(series: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
 fn make_filter_spec(
     family: FilterFamilyChoice,
     order: usize,
-    cutoff: f64,
+    cutoff_angular: f64,
     sample_rate: f64,
     ripple_db: f64,
 ) -> Result<DigitalFilterSpec<f64>, String> {
@@ -503,8 +612,15 @@ fn make_filter_spec(
         FilterFamilyChoice::Butterworth => DigitalFilterFamily::Butterworth,
         FilterFamilyChoice::Chebyshev1 => DigitalFilterFamily::Chebyshev1 { ripple_db },
     };
-    DigitalFilterSpec::new(order, family, FilterShape::Lowpass { cutoff }, sample_rate)
-        .map_err(|err| err.to_string())
+    DigitalFilterSpec::new(
+        order,
+        family,
+        FilterShape::Lowpass {
+            cutoff: cutoff_angular,
+        },
+        sample_rate,
+    )
+    .map_err(|err| err.to_string())
 }
 
 fn filter_summary(result: Result<FilterDesignData, String>) -> String {
@@ -515,13 +631,14 @@ fn filter_summary(result: Result<FilterDesignData, String>) -> String {
                 FilterFamilyChoice::Chebyshev1 => format!(", ripple {:.2} dB", data.ripple_db),
             };
             format!(
-                "{} order-{} lowpass at cutoff {:.3e} fs ({:.4}) with fs {:.2}{}. Designed {} second-order sections with {} states, DC gain {:.3}, and {} / {} / {} nontrivial A/C/D sweep traces.",
+                "{} order-{} lowpass at cutoff {:.3e} fs ({:.4}) with fs {:.2}{} using {} simulation. Designed {} second-order sections with {} states, DC gain {:.3}, and {} / {} / {} nontrivial A/C/D sweep traces.",
                 data.family.label(),
                 data.order,
                 data.cutoff_fraction,
                 data.cutoff,
                 data.sample_rate,
                 ripple_text,
+                data.sim_method.label(),
                 data.sections,
                 data.state_order,
                 data.dc_gain,
@@ -644,7 +761,7 @@ fn log10_to_cutoff_fraction(value: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{FilterDesignInputs, FilterFamilyChoice, run_filter_design};
+    use super::{FilterDesignInputs, FilterFamilyChoice, FilterSimMethod, run_filter_design};
 
     #[test]
     fn filter_design_demo_runs_for_butterworth_and_chebyshev() {
@@ -654,10 +771,15 @@ mod tests {
             cutoff_fraction: 0.4,
             sample_rate: 20.0,
             ripple_db: 1.0,
+            sim_method: FilterSimMethod::Sos,
         })
         .unwrap();
         assert!(!butterworth.magnitude_db.is_empty());
         assert!(!butterworth.a_entry_series.is_empty());
+        assert_eq!(
+            butterworth.simulation_times.len(),
+            butterworth.simulation_output.len()
+        );
 
         let chebyshev = run_filter_design(FilterDesignInputs {
             family: FilterFamilyChoice::Chebyshev1,
@@ -665,9 +787,44 @@ mod tests {
             cutoff_fraction: 0.4,
             sample_rate: 20.0,
             ripple_db: 1.0,
+            sim_method: FilterSimMethod::StateSpace,
         })
         .unwrap();
         assert!(!chebyshev.phase_deg.is_empty());
         assert!(!chebyshev.c_entry_series.is_empty());
+        assert_eq!(
+            chebyshev.simulation_input.len(),
+            chebyshev.simulation_output.len()
+        );
+    }
+
+    #[test]
+    fn butterworth_cutoff_tracks_selected_frequency_over_fs() {
+        let sample_rate = 20.0;
+        let cutoff_fraction = 0.125;
+        let designed = run_filter_design(FilterDesignInputs {
+            family: FilterFamilyChoice::Butterworth,
+            order: 4,
+            cutoff_fraction,
+            sample_rate,
+            ripple_db: 1.0,
+            sim_method: FilterSimMethod::Sos,
+        })
+        .unwrap();
+
+        let (nearest_index, nearest_frequency) = designed
+            .response_frequency_over_fs
+            .iter()
+            .enumerate()
+            .min_by(|(_, lhs), (_, rhs)| {
+                (*lhs - cutoff_fraction)
+                    .abs()
+                    .total_cmp(&(*rhs - cutoff_fraction).abs())
+            })
+            .map(|(index, &frequency)| (index, frequency))
+            .unwrap();
+
+        assert!((nearest_frequency - cutoff_fraction).abs() <= 0.01);
+        assert!((designed.magnitude_db[nearest_index] + 3.0).abs() <= 0.75);
     }
 }

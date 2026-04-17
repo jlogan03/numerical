@@ -274,9 +274,10 @@ pub(crate) fn real_poly_from_roots<R: Float + Copy + RealField>(
 
 /// Groups roots into first- or second-order real polynomial sections.
 ///
-/// Real roots become first-order sections padded to the SOS width, while
-/// complex roots must appear in conjugate pairs so each section still has real
-/// coefficients.
+/// Real roots are paired into quadratic sections where possible so discrete
+/// SOS cascades stay sectionwise proper. Any unpaired real root becomes a
+/// padded first-order section. Complex roots must appear in conjugate pairs so
+/// each section still has real coefficients.
 ///
 /// The padded first-order convention is:
 ///
@@ -303,7 +304,21 @@ pub(crate) fn root_sections<R: Float + Copy + RealField>(
         used[i] = true;
 
         if root.im.abs() <= tol {
-            sections.push([R::zero(), R::one(), -root.re]);
+            let mut partner = None;
+            for j in (i + 1)..roots.len() {
+                if !used[j] && roots[j].im.abs() <= tol {
+                    partner = Some(j);
+                    break;
+                }
+            }
+
+            if let Some(j) = partner {
+                used[j] = true;
+                let other = roots[j];
+                sections.push([R::one(), -(root.re + other.re), root.re * other.re]);
+            } else {
+                sections.push([R::zero(), R::one(), -root.re]);
+            }
             continue;
         }
 

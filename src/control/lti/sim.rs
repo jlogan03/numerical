@@ -503,8 +503,8 @@ where
 {
     let mut sample = input * system.gain();
     for (section, state) in system.sections().iter().zip(section_state.iter_mut()) {
-        let [b0, b1, b2] = section.numerator();
-        let [_one, a1, a2] = section.denominator();
+        let ([b0, b1, b2], [_one, a1, a2]) =
+            section_df2t_coeffs(section.numerator(), section.denominator());
         // Direct-form II transposed:
         //
         // y[n]   = b0 x[n] + s1[n-1]
@@ -522,11 +522,42 @@ where
     sample
 }
 
+fn section_df2t_coeffs<R>(numerator: [R; 3], denominator: [R; 3]) -> ([R; 3], [R; 3])
+where
+    R: Float + Copy + RealField,
+{
+    let den_start = denominator
+        .iter()
+        .position(|&value| value != R::zero())
+        .expect("SOS denominator must have a nonzero leading coefficient");
+    let den_order = 2 - den_start;
+
+    let mut a = [R::zero(); 3];
+    for idx in 0..=den_order {
+        a[idx] = denominator[den_start + idx];
+    }
+
+    let mut b = [R::zero(); 3];
+    if let Some(num_start) = numerator.iter().position(|&value| value != R::zero()) {
+        let num_order = 2 - num_start;
+        let delay = den_order
+            .checked_sub(num_order)
+            .expect("SOS numerator order must not exceed denominator order");
+        for idx in 0..=num_order {
+            b[delay + idx] = numerator[num_start + idx];
+        }
+    }
+
+    (b, a)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{FiltFiltPadLen, FiltFiltPadMode, FiltFiltParams, SosFilterState, clamp_pad_len};
     use crate::control::lti::{
-        DiscreteSos, DiscreteStateSpace, DiscreteTransferFunction, LtiError, SecondOrderSection,
+        DigitalFilterFamily, DigitalFilterSpec, DiscreteSos, DiscreteStateSpace,
+        DiscreteTransferFunction, FilterShape, LtiError, SecondOrderSection,
+        design_digital_filter_sos,
     };
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
@@ -579,6 +610,41 @@ mod tests {
         let lhs = sos.filter_forward(&input).unwrap();
         let rhs = state_space.filter_forward(&input).unwrap();
         assert_vec_close(&lhs.output, &rhs.output, 1.0e-12);
+    }
+
+    fn designed_butterworth_sos(order: usize) -> DiscreteSos<f64> {
+        let sample_rate = 20.0;
+        let cutoff = 0.125 * sample_rate * core::f64::consts::TAU;
+        let spec = DigitalFilterSpec::new(
+            order,
+            DigitalFilterFamily::Butterworth,
+            FilterShape::Lowpass { cutoff },
+            sample_rate,
+        )
+        .unwrap();
+        design_digital_filter_sos(&spec).unwrap()
+    }
+
+    #[test]
+    fn even_order_designed_sos_forward_matches_equivalent_state_space() {
+        let sos = designed_butterworth_sos(4);
+        let state_space = sos.to_state_space().unwrap();
+        let input = vec![1.0; 32];
+
+        let lhs = sos.filter_forward(&input).unwrap();
+        let rhs = state_space.filter_forward(&input).unwrap();
+        assert_vec_close(&lhs.output, &rhs.output, 1.0e-10);
+    }
+
+    #[test]
+    fn odd_order_designed_sos_forward_matches_equivalent_state_space() {
+        let sos = designed_butterworth_sos(5);
+        let state_space = sos.to_state_space().unwrap();
+        let input = vec![1.0; 32];
+
+        let lhs = sos.filter_forward(&input).unwrap();
+        let rhs = state_space.filter_forward(&input).unwrap();
+        assert_vec_close(&lhs.output, &rhs.output, 1.0e-10);
     }
 
     #[test]

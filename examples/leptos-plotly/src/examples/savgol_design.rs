@@ -1,3 +1,4 @@
+use crate::demo_signal::step_then_tone_signal;
 use crate::plot_helpers::{LineSeries, build_line_plot, logspace};
 use crate::plotly_support::use_plotly_chart;
 use leptos::prelude::*;
@@ -26,6 +27,9 @@ pub fn SavGolDesignPage() -> impl IntoView {
     });
     use_plotly_chart("savgol-design-taps-plot", move || {
         build_savgol_plot(design.get(), SavGolPlotKind::Taps)
+    });
+    use_plotly_chart("savgol-design-time-plot", move || {
+        build_savgol_plot(design.get(), SavGolPlotKind::TimeResponse)
     });
 
     let design_status = move || savgol_summary(design.get());
@@ -150,6 +154,16 @@ pub fn SavGolDesignPage() -> impl IntoView {
                         <div class="plot-subsection">
                             <div class="plot-header">
                                 <div>
+                                    <h2>"Time-domain response"</h2>
+                                    <p>"A short step followed by a single-tone check at the Savitzky-Golay `-3 dB` cutoff."</p>
+                                </div>
+                            </div>
+                            <div id="savgol-design-time-plot" class="plot-surface"></div>
+                        </div>
+
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
                                     <h2>"Tap values"</h2>
                                     <p>"Tap weights versus centered sample offset, shown after the usual Bode plots."</p>
                                 </div>
@@ -184,6 +198,11 @@ struct SavGolData {
     mean_magnitude_db: Vec<f64>,
     sg_phase_deg: Vec<f64>,
     mean_phase_deg: Vec<f64>,
+    effective_cutoff_over_fs: f64,
+    simulation_times: Vec<f64>,
+    simulation_input: Vec<f64>,
+    sg_simulation_output: Vec<f64>,
+    mean_simulation_output: Vec<f64>,
     tap_offsets: Vec<f64>,
     sg_taps: Vec<f64>,
     mean_taps: Vec<f64>,
@@ -193,6 +212,7 @@ struct SavGolData {
 enum SavGolPlotKind {
     Magnitude,
     Phase,
+    TimeResponse,
     Taps,
 }
 
@@ -233,6 +253,30 @@ fn build_savgol_plot(result: Result<SavGolData, String>, kind: SavGolPlotKind) -
                         .with_dash(plotly::common::DashType::Dash),
                 ],
             ),
+            SavGolPlotKind::TimeResponse => build_line_plot(
+                "Step plus tone response",
+                "time (s)",
+                "signal",
+                false,
+                vec![
+                    LineSeries::lines(
+                        "input",
+                        data.simulation_times.clone(),
+                        data.simulation_input,
+                    ),
+                    LineSeries::lines(
+                        "Savitzky-Golay",
+                        data.simulation_times.clone(),
+                        data.sg_simulation_output,
+                    ),
+                    LineSeries::lines(
+                        "Sliding mean",
+                        data.simulation_times,
+                        data.mean_simulation_output,
+                    )
+                    .with_dash(plotly::common::DashType::Dash),
+                ],
+            ),
             SavGolPlotKind::Taps => build_line_plot(
                 "Tap values",
                 "sample offset",
@@ -268,8 +312,8 @@ fn run_savgol_design(inputs: SavGolInputs) -> Result<SavGolData, String> {
         .map_err(|err| err.to_string())?;
 
     let angular_frequencies = logspace(
-        (1.0e-6 * sample_rate).log10(),
-        (sample_rate * core::f64::consts::PI * 0.98).log10(),
+        (1.0e-6 * sample_rate * core::f64::consts::TAU).log10(),
+        (0.49 * sample_rate * core::f64::consts::TAU).log10(),
         260,
     );
     let savgol_bode = savgol
@@ -281,8 +325,23 @@ fn run_savgol_design(inputs: SavGolInputs) -> Result<SavGolData, String> {
     let frequency_over_fs = savgol_bode
         .angular_frequencies
         .iter()
-        .map(|omega| *omega / sample_rate)
+        .map(|omega| *omega / (sample_rate * core::f64::consts::TAU))
         .collect::<Vec<_>>();
+    let effective_cutoff_over_fs = approximate_cutoff_over_fs(
+        &savgol_bode.angular_frequencies,
+        &savgol_bode.magnitude_db,
+        sample_rate,
+    );
+    let (simulation_times, simulation_input) =
+        step_then_tone_signal(sample_rate, effective_cutoff_over_fs);
+    let sg_simulation_output = savgol
+        .filter_forward(&simulation_input)
+        .map_err(|err| err.to_string())?
+        .output;
+    let mean_simulation_output = mean
+        .filter_forward(&simulation_input)
+        .map_err(|err| err.to_string())?
+        .output;
 
     let half = (window_len / 2) as isize;
     let tap_offsets = (-half..=half)
@@ -302,6 +361,11 @@ fn run_savgol_design(inputs: SavGolInputs) -> Result<SavGolData, String> {
         mean_magnitude_db: mean_bode.magnitude_db,
         sg_phase_deg: savgol_bode.phase_deg,
         mean_phase_deg: mean_bode.phase_deg,
+        effective_cutoff_over_fs,
+        simulation_times,
+        simulation_input,
+        sg_simulation_output,
+        mean_simulation_output,
         tap_offsets,
         sg_taps: savgol.taps().to_vec(),
         mean_taps: mean.taps().to_vec(),
@@ -311,7 +375,7 @@ fn run_savgol_design(inputs: SavGolInputs) -> Result<SavGolData, String> {
 fn savgol_summary(result: Result<SavGolData, String>) -> String {
     match result {
         Ok(data) => format!(
-            "Window {} with polynomial order {} at fs {:.2} (dt {:.4}) gives both filters a group delay of {:.1} samples. DC gain is {:.3} for Savitzky-Golay and {:.3} for the sliding mean.",
+            "Window {} with polynomial order {} at fs {:.2} (dt {:.4}) gives both filters a group delay of {:.1} samples. DC gain is {:.3} for Savitzky-Golay and {:.3} for the sliding mean. The Savitzky-Golay `-3 dB` point is approximately {:.3e} fs and sets the single-tone simulation frequency.",
             data.window_len,
             data.poly_order,
             data.sample_rate,
@@ -319,6 +383,7 @@ fn savgol_summary(result: Result<SavGolData, String>) -> String {
             data.group_delay_samples,
             data.sg_dc_gain,
             data.mean_dc_gain,
+            data.effective_cutoff_over_fs,
         ),
         Err(message) => format!("Design failed: {message}"),
     }
@@ -330,6 +395,21 @@ fn clamp_window_len(value: usize) -> usize {
 
 const fn nine_tap_default() -> usize {
     9
+}
+
+fn approximate_cutoff_over_fs(
+    angular_frequencies: &[f64],
+    magnitude_db: &[f64],
+    sample_rate: f64,
+) -> f64 {
+    angular_frequencies
+        .iter()
+        .zip(magnitude_db.iter())
+        .find_map(|(&omega, &magnitude_db)| {
+            (magnitude_db <= -3.0).then_some(omega / (sample_rate * core::f64::consts::TAU))
+        })
+        .unwrap_or(0.25)
+        .clamp(1.0e-6, 0.49)
 }
 
 #[cfg(test)]
@@ -350,5 +430,10 @@ mod tests {
         assert_eq!(data.mean_taps.len(), 9);
         assert!(!data.sg_magnitude_db.is_empty());
         assert!(!data.mean_phase_deg.is_empty());
+        assert_eq!(data.simulation_input.len(), data.sg_simulation_output.len());
+        assert_eq!(
+            data.simulation_input.len(),
+            data.mean_simulation_output.len()
+        );
     }
 }
