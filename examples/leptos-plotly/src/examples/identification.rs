@@ -1,4 +1,4 @@
-use crate::plot_helpers::{LineSeries, build_line_plot};
+use crate::plot_helpers::{LineSeries, build_line_plot, logspace};
 use crate::plotly_support::use_plotly_chart;
 use faer::Mat;
 use leptos::prelude::*;
@@ -14,43 +14,32 @@ pub fn IdentificationPage() -> impl IntoView {
     let (noise_level, set_noise_level) = signal(0.03_f64);
     let (observer_order, set_observer_order) = signal(6_usize);
     let (retained_order, set_retained_order) = signal(2_usize);
+    let demo = Memo::new(move |_| {
+        run_identification_demo(
+            plant_order.get(),
+            noise_level.get(),
+            observer_order.get(),
+            retained_order.get(),
+        )
+    });
 
     use_plotly_chart("identification-markov-plot", move || {
-        build_identification_plot(
-            plant_order.get(),
-            noise_level.get(),
-            observer_order.get(),
-            retained_order.get(),
-            IdentificationPlot::Markov,
-        )
+        build_identification_plot(demo.get(), IdentificationPlot::Markov)
     });
     use_plotly_chart("identification-step-plot", move || {
-        build_identification_plot(
-            plant_order.get(),
-            noise_level.get(),
-            observer_order.get(),
-            retained_order.get(),
-            IdentificationPlot::StepResponse,
-        )
+        build_identification_plot(demo.get(), IdentificationPlot::StepResponse)
     });
     use_plotly_chart("identification-error-plot", move || {
-        build_identification_plot(
-            plant_order.get(),
-            noise_level.get(),
-            observer_order.get(),
-            retained_order.get(),
-            IdentificationPlot::StepError,
-        )
+        build_identification_plot(demo.get(), IdentificationPlot::StepError)
+    });
+    use_plotly_chart("identification-bode-mag-plot", move || {
+        build_identification_plot(demo.get(), IdentificationPlot::BodeMagnitude)
+    });
+    use_plotly_chart("identification-bode-phase-plot", move || {
+        build_identification_plot(demo.get(), IdentificationPlot::BodePhase)
     });
 
-    let summary = move || {
-        identification_summary(
-            plant_order.get(),
-            noise_level.get(),
-            observer_order.get(),
-            retained_order.get(),
-        )
-    };
+    let summary = move || identification_summary(demo.get());
 
     view! {
         <div class="page">
@@ -151,7 +140,7 @@ pub fn IdentificationPage() -> impl IntoView {
                         <p class="section-copy">
                             "The left plot checks whether OKID recovered the planted Markov sequence. The right plot"
                             " checks whether the ERA realization built from those Markov parameters reproduces the"
-                            " system-level step response."
+                            " planted step and frequency response."
                         </p>
                     </section>
 
@@ -198,6 +187,26 @@ pub fn IdentificationPage() -> impl IntoView {
                             </div>
                             <div id="identification-error-plot" class="plot-surface"></div>
                         </div>
+
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Bode magnitude"</h2>
+                                    <p>"Frequency-response magnitude for the planted system and the ERA realization."</p>
+                                </div>
+                            </div>
+                            <div id="identification-bode-mag-plot" class="plot-surface"></div>
+                        </div>
+
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Bode phase"</h2>
+                                    <p>"Frequency-response phase for the same planted-versus-identified comparison."</p>
+                                </div>
+                            </div>
+                            <div id="identification-bode-phase-plot" class="plot-surface"></div>
+                        </div>
                     </article>
                 </div>
             </div>
@@ -210,8 +219,11 @@ enum IdentificationPlot {
     Markov,
     StepResponse,
     StepError,
+    BodeMagnitude,
+    BodePhase,
 }
 
+#[derive(Clone, PartialEq)]
 struct IdentificationDemo {
     lags: Vec<f64>,
     planted_markov: Vec<f64>,
@@ -220,6 +232,11 @@ struct IdentificationDemo {
     planted_step: Vec<f64>,
     identified_step: Vec<f64>,
     step_error: Vec<f64>,
+    bode_frequency_over_fs: Vec<f64>,
+    planted_bode_magnitude_db: Vec<f64>,
+    identified_bode_magnitude_db: Vec<f64>,
+    planted_bode_phase_deg: Vec<f64>,
+    identified_bode_phase_deg: Vec<f64>,
     plant_order: usize,
     requested_order: usize,
     retained_order: usize,
@@ -227,13 +244,10 @@ struct IdentificationDemo {
 }
 
 fn build_identification_plot(
-    plant_order: usize,
-    noise_level: f64,
-    observer_order: usize,
-    retained_order: usize,
+    result: Result<IdentificationDemo, String>,
     which: IdentificationPlot,
 ) -> Plot {
-    match run_identification_demo(plant_order, noise_level, observer_order, retained_order) {
+    match result {
         Ok(demo) => match which {
             IdentificationPlot::Markov => build_line_plot(
                 "Markov-parameter recovery",
@@ -262,18 +276,49 @@ fn build_identification_plot(
                 false,
                 vec![LineSeries::lines("error", demo.steps, demo.step_error)],
             ),
+            IdentificationPlot::BodeMagnitude => build_line_plot(
+                "Frequency-response magnitude",
+                "frequency / fs",
+                "magnitude (dB)",
+                true,
+                vec![
+                    LineSeries::lines(
+                        "planted",
+                        demo.bode_frequency_over_fs.clone(),
+                        demo.planted_bode_magnitude_db,
+                    ),
+                    LineSeries::lines(
+                        "identified",
+                        demo.bode_frequency_over_fs,
+                        demo.identified_bode_magnitude_db,
+                    ),
+                ],
+            ),
+            IdentificationPlot::BodePhase => build_line_plot(
+                "Frequency-response phase",
+                "frequency / fs",
+                "phase (deg)",
+                true,
+                vec![
+                    LineSeries::lines(
+                        "planted",
+                        demo.bode_frequency_over_fs.clone(),
+                        demo.planted_bode_phase_deg,
+                    ),
+                    LineSeries::lines(
+                        "identified",
+                        demo.bode_frequency_over_fs,
+                        demo.identified_bode_phase_deg,
+                    ),
+                ],
+            ),
         },
         Err(message) => build_line_plot(&message, "", "", false, Vec::new()),
     }
 }
 
-fn identification_summary(
-    plant_order: usize,
-    noise_level: f64,
-    observer_order: usize,
-    retained_order: usize,
-) -> String {
-    match run_identification_demo(plant_order, noise_level, observer_order, retained_order) {
+fn identification_summary(result: Result<IdentificationDemo, String>) -> String {
+    match result {
         Ok(demo) => {
             let order_note = if demo.requested_order == demo.retained_order {
                 format!("ERA retained order {}", demo.retained_order)
@@ -353,6 +398,19 @@ fn run_identification_demo(
         .iter()
         .map(|block| block[(0, 0)])
         .collect::<Vec<_>>();
+    let sample_rate = 1.0 / dt;
+    let response_frequencies = logspace(
+        (1.0e-6 * sample_rate).log10(),
+        (sample_rate * core::f64::consts::PI * 0.98).log10(),
+        260,
+    );
+    let planted_bode = system
+        .bode_data(&response_frequencies)
+        .map_err(|err| err.to_string())?;
+    let identified_bode = era
+        .realized
+        .bode_data(&response_frequencies)
+        .map_err(|err| err.to_string())?;
     let step_error = identified_step
         .iter()
         .zip(&planted_step)
@@ -377,6 +435,15 @@ fn run_identification_demo(
         planted_step,
         identified_step,
         step_error,
+        bode_frequency_over_fs: planted_bode
+            .angular_frequencies
+            .iter()
+            .map(|omega| *omega / sample_rate)
+            .collect(),
+        planted_bode_magnitude_db: planted_bode.magnitude_db,
+        identified_bode_magnitude_db: identified_bode.magnitude_db,
+        planted_bode_phase_deg: planted_bode.phase_deg,
+        identified_bode_phase_deg: identified_bode.phase_deg,
         plant_order: effective_plant_order,
         requested_order,
         retained_order: era.retained_order,
@@ -434,4 +501,35 @@ fn excitation_signal(step: usize) -> f64 {
 fn measurement_noise_signal(step: usize) -> f64 {
     let k = step as f64;
     0.7 * (0.37 * k + 0.2).sin() + 0.25 * (0.11 * k + 0.8).cos()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::run_identification_demo;
+
+    #[test]
+    fn identification_demo_includes_frequency_response_comparison() {
+        let demo = run_identification_demo(4, 0.03, 6, 2).expect("identification demo should run");
+
+        assert_eq!(
+            demo.bode_frequency_over_fs.len(),
+            demo.planted_bode_magnitude_db.len()
+        );
+        assert_eq!(
+            demo.bode_frequency_over_fs.len(),
+            demo.identified_bode_magnitude_db.len()
+        );
+        assert_eq!(
+            demo.bode_frequency_over_fs.len(),
+            demo.planted_bode_phase_deg.len()
+        );
+        assert_eq!(
+            demo.bode_frequency_over_fs.len(),
+            demo.identified_bode_phase_deg.len()
+        );
+        assert!(
+            !demo.bode_frequency_over_fs.is_empty(),
+            "expected bode samples in identification demo"
+        );
+    }
 }

@@ -1,5 +1,5 @@
 use crate::demo_signal::gaussianish_signal;
-use crate::plot_helpers::{LineSeries, build_line_plot, linspace};
+use crate::plot_helpers::{LineSeries, build_line_plot, linspace, logspace};
 use crate::plotly_support::use_plotly_chart;
 use leptos::prelude::*;
 use numerical::control::lti::{ContinuousTransferFunction, FopdtModel, SopdtModel};
@@ -67,6 +67,12 @@ pub fn ProcessModelFitPage() -> impl IntoView {
     });
     use_plotly_chart("process-fit-residual-plot", move || {
         build_process_fit_plot(demo.get(), ProcessFitPlot::Residual)
+    });
+    use_plotly_chart("process-fit-bode-mag-plot", move || {
+        build_process_fit_plot(demo.get(), ProcessFitPlot::BodeMagnitude)
+    });
+    use_plotly_chart("process-fit-bode-phase-plot", move || {
+        build_process_fit_plot(demo.get(), ProcessFitPlot::BodePhase)
     });
 
     let summary = move || process_fit_summary(demo.get());
@@ -420,6 +426,26 @@ pub fn ProcessModelFitPage() -> impl IntoView {
                             </div>
                             <div id="process-fit-residual-plot" class="plot-surface"></div>
                         </div>
+
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Bode magnitude"</h2>
+                                    <p>"Frequency-response magnitude for the true source and both fitted process models."</p>
+                                </div>
+                            </div>
+                            <div id="process-fit-bode-mag-plot" class="plot-surface"></div>
+                        </div>
+
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Bode phase"</h2>
+                                    <p>"Continuous-time phase comparison on the same source-versus-fit frequency grid."</p>
+                                </div>
+                            </div>
+                            <div id="process-fit-bode-phase-plot" class="plot-surface"></div>
+                        </div>
                     </article>
                 </div>
             </div>
@@ -431,6 +457,8 @@ pub fn ProcessModelFitPage() -> impl IntoView {
 enum ProcessFitPlot {
     Response,
     Residual,
+    BodeMagnitude,
+    BodePhase,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -516,6 +544,13 @@ struct ProcessFitDemo {
     sopdt_output: Vec<f64>,
     fopdt_residual: Vec<f64>,
     sopdt_residual: Vec<f64>,
+    bode_frequencies: Vec<f64>,
+    true_bode_magnitude_db: Vec<f64>,
+    fopdt_bode_magnitude_db: Vec<f64>,
+    sopdt_bode_magnitude_db: Vec<f64>,
+    true_bode_phase_deg: Vec<f64>,
+    fopdt_bode_phase_deg: Vec<f64>,
+    sopdt_bode_phase_deg: Vec<f64>,
     source_kind: FitSourceKind,
     fopdt_model: FopdtModel<f64>,
     sopdt_model: SopdtModel<f64>,
@@ -557,6 +592,58 @@ fn build_process_fit_plot(result: Result<ProcessFitDemo, String>, which: Process
                         .with_dash(DashType::Solid),
                     LineSeries::lines("SOPDT residual", demo.times, demo.sopdt_residual)
                         .with_dash(DashType::Dash),
+                ],
+            ),
+            ProcessFitPlot::BodeMagnitude => build_line_plot(
+                "Process-model bode magnitude",
+                "angular frequency",
+                "magnitude (dB)",
+                true,
+                vec![
+                    LineSeries::lines(
+                        "true source",
+                        demo.bode_frequencies.clone(),
+                        demo.true_bode_magnitude_db,
+                    )
+                    .with_dash(DashType::Dot),
+                    LineSeries::lines(
+                        "FOPDT fit",
+                        demo.bode_frequencies.clone(),
+                        demo.fopdt_bode_magnitude_db,
+                    )
+                    .with_dash(DashType::Solid),
+                    LineSeries::lines(
+                        "SOPDT fit",
+                        demo.bode_frequencies,
+                        demo.sopdt_bode_magnitude_db,
+                    )
+                    .with_dash(DashType::Dash),
+                ],
+            ),
+            ProcessFitPlot::BodePhase => build_line_plot(
+                "Process-model bode phase",
+                "angular frequency",
+                "phase (deg)",
+                true,
+                vec![
+                    LineSeries::lines(
+                        "true source",
+                        demo.bode_frequencies.clone(),
+                        demo.true_bode_phase_deg,
+                    )
+                    .with_dash(DashType::Dot),
+                    LineSeries::lines(
+                        "FOPDT fit",
+                        demo.bode_frequencies.clone(),
+                        demo.fopdt_bode_phase_deg,
+                    )
+                    .with_dash(DashType::Solid),
+                    LineSeries::lines(
+                        "SOPDT fit",
+                        demo.bode_frequencies,
+                        demo.sopdt_bode_phase_deg,
+                    )
+                    .with_dash(DashType::Dash),
                 ],
             ),
         },
@@ -636,6 +723,16 @@ fn run_process_fit_demo(
         .map_err(|err| err.to_string())?;
     let sopdt_fit = fit_sopdt_from_step_response_with_options(&data, fit_options)
         .map_err(|err| err.to_string())?;
+    let bode_frequencies = process_fit_frequency_grid(inputs);
+    let true_bode = true_source_bode(inputs, &bode_frequencies)?;
+    let fopdt_bode = fopdt_fit
+        .model
+        .bode_data(&bode_frequencies)
+        .map_err(|err| err.to_string())?;
+    let sopdt_bode = sopdt_fit
+        .model
+        .bode_data(&bode_frequencies)
+        .map_err(|err| err.to_string())?;
 
     let fopdt_output = times
         .iter()
@@ -675,6 +772,13 @@ fn run_process_fit_demo(
         sopdt_output,
         fopdt_residual,
         sopdt_residual,
+        bode_frequencies: true_bode.angular_frequencies,
+        true_bode_magnitude_db: true_bode.magnitude_db,
+        fopdt_bode_magnitude_db: fopdt_bode.magnitude_db,
+        sopdt_bode_magnitude_db: sopdt_bode.magnitude_db,
+        true_bode_phase_deg: true_bode.phase_deg,
+        fopdt_bode_phase_deg: fopdt_bode.phase_deg,
+        sopdt_bode_phase_deg: sopdt_bode.phase_deg,
         source_kind: inputs.source_kind,
         fopdt_model: fopdt_fit.model,
         sopdt_model: sopdt_fit.model,
@@ -684,6 +788,56 @@ fn run_process_fit_demo(
         fopdt_true_rms,
         sopdt_true_rms,
     })
+}
+
+fn process_fit_frequency_grid(inputs: ProcessFitInputs) -> Vec<f64> {
+    let max_omega = match inputs.source_kind {
+        FitSourceKind::Fopdt => (12.0 / inputs.fopdt_time_constant.max(0.1)).max(2.0),
+        FitSourceKind::Sopdt => {
+            let fastest_lag = inputs
+                .sopdt_time_constant_1
+                .min(inputs.sopdt_time_constant_2)
+                .max(0.05);
+            (12.0 / fastest_lag).max(2.0)
+        }
+        FitSourceKind::HigherOrder => {
+            let fastest_lag = inputs.higher_order_tail_lag.max(0.1);
+            (8.0 * inputs.higher_order_natural_frequency.max(0.25)).max(10.0 / fastest_lag)
+        }
+    };
+    logspace(-3.0, max_omega.log10(), 260)
+}
+
+fn true_source_bode(
+    inputs: ProcessFitInputs,
+    angular_frequencies: &[f64],
+) -> Result<numerical::control::lti::BodeData<f64>, String> {
+    match inputs.source_kind {
+        FitSourceKind::Fopdt => FopdtModel {
+            gain: inputs.fopdt_gain,
+            time_constant: inputs.fopdt_time_constant,
+            delay: inputs.fopdt_delay,
+        }
+        .bode_data(angular_frequencies)
+        .map_err(|err| err.to_string()),
+        FitSourceKind::Sopdt => SopdtModel {
+            gain: inputs.sopdt_gain,
+            time_constant_1: inputs.sopdt_time_constant_1,
+            time_constant_2: inputs.sopdt_time_constant_2,
+            delay: inputs.sopdt_delay,
+        }
+        .bode_data(angular_frequencies)
+        .map_err(|err| err.to_string()),
+        FitSourceKind::HigherOrder => higher_order_transfer_function(
+            inputs.higher_order_gain,
+            inputs.higher_order_zero_time_constant,
+            inputs.higher_order_natural_frequency,
+            inputs.higher_order_damping_ratio,
+            inputs.higher_order_tail_lag,
+        )?
+        .bode_data(angular_frequencies)
+        .map_err(|err| err.to_string()),
+    }
 }
 
 fn true_source_response(
@@ -736,18 +890,15 @@ fn higher_order_response(
     times: &[f64],
     step_time: f64,
 ) -> Result<Vec<f64>, String> {
-    let wn2 = natural_frequency * natural_frequency;
-    let numerator = vec![gain * wn2 * zero_time_constant, gain * wn2];
-    let denominator = vec![
+    let plant = higher_order_transfer_function(
+        gain,
+        zero_time_constant,
+        natural_frequency,
+        damping_ratio,
         tail_lag,
-        1.0 + 2.0 * damping_ratio * natural_frequency * tail_lag,
-        2.0 * damping_ratio * natural_frequency + wn2 * tail_lag,
-        wn2,
-    ];
-    let plant = ContinuousTransferFunction::continuous(numerator, denominator)
-        .map_err(|err| err.to_string())?
-        .to_state_space()
-        .map_err(|err| err.to_string())?;
+    )?
+    .to_state_space()
+    .map_err(|err| err.to_string())?;
     let relative_times = times
         .iter()
         .map(|&time| (time - step_time).max(0.0))
@@ -756,6 +907,24 @@ fn higher_order_response(
         .step_response(&relative_times)
         .map_err(|err| err.to_string())?;
     Ok(response.values.iter().map(|block| block[(0, 0)]).collect())
+}
+
+fn higher_order_transfer_function(
+    gain: f64,
+    zero_time_constant: f64,
+    natural_frequency: f64,
+    damping_ratio: f64,
+    tail_lag: f64,
+) -> Result<ContinuousTransferFunction<f64>, String> {
+    let wn2 = natural_frequency * natural_frequency;
+    let numerator = vec![gain * wn2 * zero_time_constant, gain * wn2];
+    let denominator = vec![
+        tail_lag,
+        1.0 + 2.0 * damping_ratio * natural_frequency * tail_lag,
+        2.0 * damping_ratio * natural_frequency + wn2 * tail_lag,
+        wn2,
+    ];
+    ContinuousTransferFunction::continuous(numerator, denominator).map_err(|err| err.to_string())
 }
 
 fn source_duration(inputs: ProcessFitInputs) -> f64 {
@@ -808,8 +977,12 @@ mod tests {
     use numerical::control::synthesis::ProcessModelFitOptions;
 
     #[test]
-    fn process_fit_demo_runs_for_matched_sources() {
-        for source in [FitSourceKind::Fopdt, FitSourceKind::Sopdt] {
+    fn process_fit_demo_runs_for_all_sources() {
+        for source in [
+            FitSourceKind::Fopdt,
+            FitSourceKind::Sopdt,
+            FitSourceKind::HigherOrder,
+        ] {
             let mut inputs = ProcessFitInputs::default();
             inputs.source_kind = source;
             let demo = run_process_fit_demo(
@@ -823,6 +996,21 @@ mod tests {
             assert_eq!(demo.times.len(), demo.true_output.len());
             assert_eq!(demo.times.len(), demo.fopdt_output.len());
             assert_eq!(demo.times.len(), demo.sopdt_output.len());
+            assert_eq!(
+                demo.bode_frequencies.len(),
+                demo.true_bode_magnitude_db.len()
+            );
+            assert_eq!(
+                demo.bode_frequencies.len(),
+                demo.fopdt_bode_magnitude_db.len()
+            );
+            assert_eq!(
+                demo.bode_frequencies.len(),
+                demo.sopdt_bode_magnitude_db.len()
+            );
+            assert_eq!(demo.bode_frequencies.len(), demo.true_bode_phase_deg.len());
+            assert_eq!(demo.bode_frequencies.len(), demo.fopdt_bode_phase_deg.len());
+            assert_eq!(demo.bode_frequencies.len(), demo.sopdt_bode_phase_deg.len());
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::plot_helpers::{
-    LineSeries, build_line_plot, build_matrix_heatmap_plot, linspace, matrix_grid_from_fn,
+    LineSeries, build_line_plot, build_matrix_heatmap_plot, linspace, logspace, matrix_grid_from_fn,
 };
 use crate::plotly_support::use_plotly_chart;
 use faer::Mat;
@@ -17,6 +17,12 @@ pub fn ReductionPage() -> impl IntoView {
 
     use_plotly_chart("reduction-step-plot", move || {
         build_reduction_plot(demo.get(), ReductionPlot::StepResponse)
+    });
+    use_plotly_chart("reduction-bode-mag-plot", move || {
+        build_reduction_plot(demo.get(), ReductionPlot::BodeMagnitude)
+    });
+    use_plotly_chart("reduction-bode-phase-plot", move || {
+        build_reduction_plot(demo.get(), ReductionPlot::BodePhase)
     });
     use_plotly_chart("reduction-hsv-plot", move || {
         build_reduction_plot(demo.get(), ReductionPlot::Hsv)
@@ -135,6 +141,26 @@ pub fn ReductionPage() -> impl IntoView {
                             </div>
                             <div id="reduction-hsv-plot" class="plot-surface"></div>
                         </div>
+
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Bode magnitude"</h2>
+                                    <p>"First-channel magnitude comparison between the full and reduced models."</p>
+                                </div>
+                            </div>
+                            <div id="reduction-bode-mag-plot" class="plot-surface"></div>
+                        </div>
+
+                        <div class="plot-subsection">
+                            <div class="plot-header">
+                                <div>
+                                    <h2>"Bode phase"</h2>
+                                    <p>"First-channel phase comparison for the same full-versus-reduced model."</p>
+                                </div>
+                            </div>
+                            <div id="reduction-bode-phase-plot" class="plot-surface"></div>
+                        </div>
                     </article>
 
                     <div class="plots-grid two-up">
@@ -168,6 +194,8 @@ pub fn ReductionPage() -> impl IntoView {
 enum ReductionPlot {
     StepResponse,
     Hsv,
+    BodeMagnitude,
+    BodePhase,
     FullStateMatrix,
     ReducedStateMatrix,
 }
@@ -179,6 +207,11 @@ struct ReductionDemo {
     reduced_step: Vec<f64>,
     hsv_indices: Vec<f64>,
     hsv_values: Vec<f64>,
+    bode_frequencies: Vec<f64>,
+    full_bode_magnitude_db: Vec<f64>,
+    reduced_bode_magnitude_db: Vec<f64>,
+    full_bode_phase_deg: Vec<f64>,
+    reduced_bode_phase_deg: Vec<f64>,
     plant_order: usize,
     requested_order: usize,
     retained_order: usize,
@@ -212,6 +245,42 @@ fn build_reduction_plot(result: Result<ReductionDemo, String>, which: ReductionP
                     demo.hsv_indices,
                     demo.hsv_values,
                 )],
+            ),
+            ReductionPlot::BodeMagnitude => build_line_plot(
+                "Balanced truncation magnitude response",
+                "angular frequency",
+                "magnitude (dB)",
+                true,
+                vec![
+                    LineSeries::lines(
+                        "full model",
+                        demo.bode_frequencies.clone(),
+                        demo.full_bode_magnitude_db,
+                    ),
+                    LineSeries::lines(
+                        "reduced model",
+                        demo.bode_frequencies,
+                        demo.reduced_bode_magnitude_db,
+                    ),
+                ],
+            ),
+            ReductionPlot::BodePhase => build_line_plot(
+                "Balanced truncation phase response",
+                "angular frequency",
+                "phase (deg)",
+                true,
+                vec![
+                    LineSeries::lines(
+                        "full model",
+                        demo.bode_frequencies.clone(),
+                        demo.full_bode_phase_deg,
+                    ),
+                    LineSeries::lines(
+                        "reduced model",
+                        demo.bode_frequencies,
+                        demo.reduced_bode_phase_deg,
+                    ),
+                ],
             ),
             ReductionPlot::FullStateMatrix => {
                 build_matrix_heatmap_plot("Full state matrix A", demo.full_a_matrix, true)
@@ -279,6 +348,15 @@ fn run_reduction_demo(plant_order: usize, retained_order: usize) -> Result<Reduc
         .reduced
         .step_response(&sample_times)
         .map_err(|err| err.to_string())?;
+    let full_bode_system = extract_continuous_siso_channel(&system, 0, 0)?;
+    let reduced_bode_system = extract_continuous_siso_channel(&result.reduced, 0, 0)?;
+    let bode_frequencies = logspace(-3.0, 1.1, 260);
+    let full_bode = full_bode_system
+        .bode_data(&bode_frequencies)
+        .map_err(|err| err.to_string())?;
+    let reduced_bode = reduced_bode_system
+        .bode_data(&bode_frequencies)
+        .map_err(|err| err.to_string())?;
 
     let full_step = full_step_response
         .values
@@ -317,6 +395,11 @@ fn run_reduction_demo(plant_order: usize, retained_order: usize) -> Result<Reduc
         reduced_step,
         hsv_indices,
         hsv_values,
+        bode_frequencies: full_bode.angular_frequencies,
+        full_bode_magnitude_db: full_bode.magnitude_db,
+        reduced_bode_magnitude_db: reduced_bode.magnitude_db,
+        full_bode_phase_deg: full_bode.phase_deg,
+        reduced_bode_phase_deg: reduced_bode.phase_deg,
         plant_order: effective_plant_order,
         requested_order: retained_order,
         retained_order: result.reduced_order,
@@ -332,6 +415,22 @@ fn run_reduction_demo(plant_order: usize, retained_order: usize) -> Result<Reduc
             |row, col| result.reduced.a()[(row, col)],
         ),
     })
+}
+
+fn extract_continuous_siso_channel(
+    system: &ContinuousStateSpace<f64>,
+    output: usize,
+    input: usize,
+) -> Result<ContinuousStateSpace<f64>, String> {
+    ContinuousStateSpace::new(
+        Mat::from_fn(system.a().nrows(), system.a().ncols(), |row, col| {
+            system.a()[(row, col)]
+        }),
+        Mat::from_fn(system.b().nrows(), 1, |row, _| system.b()[(row, input)]),
+        Mat::from_fn(1, system.c().ncols(), |_, col| system.c()[(output, col)]),
+        Mat::from_fn(1, 1, |_, _| system.d()[(output, input)]),
+    )
+    .map_err(|err| err.to_string())
 }
 
 fn planted_reduction_system(order: usize) -> Result<ContinuousStateSpace<f64>, String> {
@@ -434,5 +533,25 @@ mod tests {
             order_two.rms_step_error,
             order_five.rms_step_error,
         );
+    }
+
+    #[test]
+    fn reduction_demo_includes_frequency_response_comparison() {
+        let demo = run_reduction_demo(6, 3).expect("reduction demo should run");
+
+        assert_eq!(
+            demo.bode_frequencies.len(),
+            demo.full_bode_magnitude_db.len()
+        );
+        assert_eq!(
+            demo.bode_frequencies.len(),
+            demo.reduced_bode_magnitude_db.len()
+        );
+        assert_eq!(demo.bode_frequencies.len(), demo.full_bode_phase_deg.len());
+        assert_eq!(
+            demo.bode_frequencies.len(),
+            demo.reduced_bode_phase_deg.len()
+        );
+        assert!(!demo.bode_frequencies.is_empty(), "expected bode samples");
     }
 }
