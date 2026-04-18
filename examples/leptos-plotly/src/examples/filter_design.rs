@@ -2,7 +2,8 @@ use crate::demo_signal::step_then_tone_signal;
 use crate::plotly_support::use_plotly_chart;
 use leptos::prelude::*;
 use numerical::control::lti::{
-    DigitalFilterFamily, DigitalFilterSpec, FilterShape, design_digital_filter_sos,
+    DigitalFilterFamily, DigitalFilterSpec, FilterShape, SecondOrderSection,
+    design_digital_filter_sos,
 };
 use plotly::{
     Layout, Plot, Scatter,
@@ -37,19 +38,38 @@ pub fn FilterDesignPage() -> impl IntoView {
         build_filter_plot(design.get(), FilterPlotKind::Phase)
     });
     use_plotly_chart("filter-design-a-sweep-plot", move || {
-        build_filter_plot(design.get(), FilterPlotKind::AEntries)
+        build_filter_plot(design.get(), FilterPlotKind::Sweep0)
     });
     use_plotly_chart("filter-design-c-sweep-plot", move || {
-        build_filter_plot(design.get(), FilterPlotKind::CEntries)
+        build_filter_plot(design.get(), FilterPlotKind::Sweep1)
     });
     use_plotly_chart("filter-design-d-sweep-plot", move || {
-        build_filter_plot(design.get(), FilterPlotKind::DEntries)
+        build_filter_plot(design.get(), FilterPlotKind::Sweep2)
     });
     use_plotly_chart("filter-design-time-plot", move || {
         build_filter_plot(design.get(), FilterPlotKind::TimeResponse)
     });
 
     let design_status = move || filter_summary(design.get());
+    let sweep_card_title = move || {
+        design.with(|result| match result {
+            Ok(data) => data.sweep_card_title.clone(),
+            Err(_) => "Representation sweep vs cutoff".to_string(),
+        })
+    };
+    let sweep_card_description = move || {
+        design.with(|result| match result {
+            Ok(data) => data.sweep_card_description.clone(),
+            Err(_) => "The sweep below redesigns the same family over a log-spaced cutoff grid."
+                .to_string(),
+        })
+    };
+    let sweep_plot_0_title = move || sweep_plot_title(&design.get(), 0);
+    let sweep_plot_0_description = move || sweep_plot_description(&design.get(), 0);
+    let sweep_plot_1_title = move || sweep_plot_title(&design.get(), 1);
+    let sweep_plot_1_description = move || sweep_plot_description(&design.get(), 1);
+    let sweep_plot_2_title = move || sweep_plot_title(&design.get(), 2);
+    let sweep_plot_2_description = move || sweep_plot_description(&design.get(), 2);
 
     view! {
         <div class="page">
@@ -58,7 +78,7 @@ pub fn FilterDesignPage() -> impl IntoView {
                 <h1>"Digital Lowpass Explorer"</h1>
                 <p>
                     "This page runs the digital IIR design path directly in the browser, supports Butterworth and"
-                    " Chebyshev Type I lowpass filters, and sweeps the realized state-space matrices over cutoff."
+                    " Chebyshev Type I lowpass filters, and sweeps the selected execution representation over cutoff."
                 </p>
             </header>
 
@@ -68,7 +88,8 @@ pub fn FilterDesignPage() -> impl IntoView {
                         <h2>"Design controls"</h2>
                         <p class="section-copy">
                             "The main response plots show one designed digital lowpass filter. The matrix sweep below"
-                            " redesigns that same family over a log-spaced cutoff sweep from `1e-6 * fs` to `0.45 * fs`."
+                            " redesigns that same family over a log-spaced cutoff sweep from `1e-6 * fs` to `0.45 * fs`,"
+                            " following either SOS coefficients or state-space entries based on the selected simulation kernel."
                         </p>
 
                         <div class="control-row">
@@ -236,16 +257,16 @@ pub fn FilterDesignPage() -> impl IntoView {
                     <article class="plot-card">
                         <div class="plot-header">
                             <div>
-                                <h2>"State-space sweep vs cutoff"</h2>
-                                <p>"Nontrivial realized `A`, `C`, and `D` entries over a log-spaced cutoff sweep."</p>
+                                <h2>{sweep_card_title}</h2>
+                                <p>{sweep_card_description}</p>
                             </div>
                         </div>
 
                         <div class="plot-subsection">
                             <div class="plot-header">
                                 <div>
-                                    <h2>"A entries"</h2>
-                                    <p>"All nontrivial `A[i, j]` traces, shown without entry labels."</p>
+                                    <h2>{sweep_plot_0_title}</h2>
+                                    <p>{sweep_plot_0_description}</p>
                                 </div>
                             </div>
                             <div id="filter-design-a-sweep-plot" class="plot-surface"></div>
@@ -254,8 +275,8 @@ pub fn FilterDesignPage() -> impl IntoView {
                         <div class="plot-subsection">
                             <div class="plot-header">
                                 <div>
-                                    <h2>"C entries"</h2>
-                                    <p>"All nontrivial `C[i, j]` traces, shown without entry labels."</p>
+                                    <h2>{sweep_plot_1_title}</h2>
+                                    <p>{sweep_plot_1_description}</p>
                                 </div>
                             </div>
                             <div id="filter-design-c-sweep-plot" class="plot-surface"></div>
@@ -264,8 +285,8 @@ pub fn FilterDesignPage() -> impl IntoView {
                         <div class="plot-subsection">
                             <div class="plot-header">
                                 <div>
-                                    <h2>"D entries"</h2>
-                                    <p>"All nontrivial `D[i, j]` traces, shown without entry labels."</p>
+                                    <h2>{sweep_plot_2_title}</h2>
+                                    <p>{sweep_plot_2_description}</p>
                                 </div>
                             </div>
                             <div id="filter-design-d-sweep-plot" class="plot-surface"></div>
@@ -328,9 +349,19 @@ struct FilterDesignData {
     simulation_input: Vec<f64>,
     simulation_output: Vec<f64>,
     sweep_cutoff_over_fs: Vec<f64>,
-    a_entry_series: Vec<Vec<f64>>,
-    c_entry_series: Vec<Vec<f64>>,
-    d_entry_series: Vec<Vec<f64>>,
+    sweep_card_title: String,
+    sweep_card_description: String,
+    sweep_plots: Vec<SweepPlotData>,
+}
+
+#[derive(Clone, PartialEq)]
+struct SweepPlotData {
+    title: String,
+    description: String,
+    y_label: String,
+    log_y: bool,
+    absolute_value: bool,
+    series: Vec<Vec<f64>>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -367,9 +398,9 @@ enum FilterPlotKind {
     Magnitude,
     Phase,
     TimeResponse,
-    AEntries,
-    CEntries,
-    DEntries,
+    Sweep0,
+    Sweep1,
+    Sweep2,
 }
 
 fn build_filter_plot(result: Result<FilterDesignData, String>, kind: FilterPlotKind) -> Plot {
@@ -425,21 +456,15 @@ fn build_filter_plot(result: Result<FilterDesignData, String>, kind: FilterPlotK
                     ),
                 ],
             ),
-            FilterPlotKind::AEntries => build_unlabeled_entry_plot(
-                "A entries vs cutoff",
-                &data.sweep_cutoff_over_fs,
-                &data.a_entry_series,
-            ),
-            FilterPlotKind::CEntries => build_unlabeled_entry_plot(
-                "C entries vs cutoff",
-                &data.sweep_cutoff_over_fs,
-                &data.c_entry_series,
-            ),
-            FilterPlotKind::DEntries => build_unlabeled_entry_plot(
-                "D entries vs cutoff",
-                &data.sweep_cutoff_over_fs,
-                &data.d_entry_series,
-            ),
+            FilterPlotKind::Sweep0 => {
+                build_sweep_plot(data.sweep_plots.first(), &data.sweep_cutoff_over_fs)
+            }
+            FilterPlotKind::Sweep1 => {
+                build_sweep_plot(data.sweep_plots.get(1), &data.sweep_cutoff_over_fs)
+            }
+            FilterPlotKind::Sweep2 => {
+                build_sweep_plot(data.sweep_plots.get(2), &data.sweep_cutoff_over_fs)
+            }
         },
         Err(message) => build_empty_plot(&message, "", ""),
     }
@@ -475,13 +500,18 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
         (MAX_SWEEP_CUTOFF_FRACTION * sample_rate * core::f64::consts::TAU).log10(),
         120,
     );
-    let (a_entry_series, c_entry_series, d_entry_series) = collect_state_space_entry_sweeps(
-        inputs.family,
-        order,
-        sample_rate,
-        ripple_db,
-        &sweep_cutoffs,
-    )?;
+    let (sweep_card_title, sweep_card_description, sweep_plots) = match inputs.sim_method {
+        FilterSimMethod::Sos => {
+            collect_sos_sweeps(inputs.family, order, sample_rate, ripple_db, &sweep_cutoffs)?
+        }
+        FilterSimMethod::StateSpace => collect_state_space_sweeps(
+            inputs.family,
+            order,
+            sample_rate,
+            ripple_db,
+            &sweep_cutoffs,
+        )?,
+    };
     let (simulation_times, simulation_input) = step_then_tone_signal(sample_rate, cutoff_fraction);
     let simulation_output = match inputs.sim_method {
         FilterSimMethod::Sos => {
@@ -515,23 +545,23 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
         simulation_times,
         simulation_input,
         simulation_output,
+        sweep_card_title,
+        sweep_card_description,
         sweep_cutoff_over_fs: sweep_cutoffs
             .iter()
             .map(|cutoff| *cutoff / (sample_rate * core::f64::consts::TAU))
             .collect(),
-        a_entry_series,
-        c_entry_series,
-        d_entry_series,
+        sweep_plots,
     })
 }
 
-fn collect_state_space_entry_sweeps(
+fn collect_state_space_sweeps(
     family: FilterFamilyChoice,
     order: usize,
     sample_rate: f64,
     ripple_db: f64,
     sweep_cutoffs: &[f64],
-) -> Result<(Vec<Vec<f64>>, Vec<Vec<f64>>, Vec<Vec<f64>>), String> {
+) -> Result<(String, String, Vec<SweepPlotData>), String> {
     let first_spec = make_filter_spec(family, order, sweep_cutoffs[0], sample_rate, ripple_db)?;
     let first_filter = design_digital_filter_sos(&first_spec).map_err(|err| err.to_string())?;
     let first_ss = first_filter
@@ -582,9 +612,105 @@ fn collect_state_space_entry_sweeps(
     }
 
     Ok((
-        retain_nontrivial_series(a_series),
-        retain_nontrivial_series(c_series),
-        retain_nontrivial_series(d_series),
+        "State-space sweep vs cutoff".to_string(),
+        "Nontrivial realized `A`, `C`, and `D` entries over a log-spaced cutoff sweep.".to_string(),
+        vec![
+            SweepPlotData {
+                title: "A entries".to_string(),
+                description: "All nontrivial `A[i, j]` traces, shown without entry labels."
+                    .to_string(),
+                y_label: "|entry|".to_string(),
+                log_y: true,
+                absolute_value: true,
+                series: retain_nontrivial_series(a_series),
+            },
+            SweepPlotData {
+                title: "C entries".to_string(),
+                description: "All nontrivial `C[i, j]` traces, shown without entry labels."
+                    .to_string(),
+                y_label: "|entry|".to_string(),
+                log_y: true,
+                absolute_value: true,
+                series: retain_nontrivial_series(c_series),
+            },
+            SweepPlotData {
+                title: "D entries".to_string(),
+                description: "All nontrivial `D[i, j]` traces, shown without entry labels."
+                    .to_string(),
+                y_label: "|entry|".to_string(),
+                log_y: true,
+                absolute_value: true,
+                series: retain_nontrivial_series(d_series),
+            },
+        ],
+    ))
+}
+
+fn collect_sos_sweeps(
+    family: FilterFamilyChoice,
+    order: usize,
+    sample_rate: f64,
+    ripple_db: f64,
+    sweep_cutoffs: &[f64],
+) -> Result<(String, String, Vec<SweepPlotData>), String> {
+    let first_spec = make_filter_spec(family, order, sweep_cutoffs[0], sample_rate, ripple_db)?;
+    let first_filter = design_digital_filter_sos(&first_spec).map_err(|err| err.to_string())?;
+    let section_count = first_filter.sections().len();
+    let mut gain_series = vec![Vec::with_capacity(sweep_cutoffs.len())];
+    let mut numerator_series = vec![Vec::with_capacity(sweep_cutoffs.len()); section_count * 3];
+    let mut denominator_series = vec![Vec::with_capacity(sweep_cutoffs.len()); section_count * 3];
+
+    for &cutoff in sweep_cutoffs {
+        let spec = make_filter_spec(family, order, cutoff, sample_rate, ripple_db)?;
+        let filter = design_digital_filter_sos(&spec).map_err(|err| err.to_string())?;
+        if filter.sections().len() != section_count {
+            return Err("SOS section count changed across cutoff sweep".to_string());
+        }
+
+        gain_series[0].push(filter.gain());
+        for (section_idx, section) in filter.sections().iter().enumerate() {
+            push_section_coefficients(
+                section,
+                section_idx,
+                &mut numerator_series,
+                &mut denominator_series,
+            );
+        }
+    }
+
+    Ok((
+        "SOS coefficient sweep vs cutoff".to_string(),
+        "The selected SOS execution path is shown directly through its overall gain and per-section numerator and denominator coefficients."
+            .to_string(),
+        vec![
+            SweepPlotData {
+                title: "Overall gain".to_string(),
+                description: "The magnitude of the cascade gain applied ahead of the section sequence."
+                    .to_string(),
+                y_label: "|gain|".to_string(),
+                log_y: true,
+                absolute_value: true,
+                series: gain_series,
+            },
+            SweepPlotData {
+                title: "Numerator coefficients".to_string(),
+                description: "All nontrivial SOS numerator coefficient traces, shown without entry labels."
+                    .to_string(),
+                y_label: "|coefficient|".to_string(),
+                log_y: true,
+                absolute_value: true,
+                series: retain_nontrivial_series(numerator_series),
+            },
+            SweepPlotData {
+                title: "Denominator coefficients".to_string(),
+                description: "All nontrivial SOS denominator coefficient traces, shown without entry labels."
+                    .to_string(),
+                y_label: "|coefficient|".to_string(),
+                log_y: true,
+                absolute_value: true,
+                series: retain_nontrivial_series(denominator_series),
+            },
+        ],
     ))
 }
 
@@ -599,6 +725,20 @@ fn retain_nontrivial_series(series: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
                 > 1.0e-10
         })
         .collect()
+}
+
+fn push_section_coefficients(
+    section: &SecondOrderSection<f64>,
+    section_idx: usize,
+    numerator_series: &mut [Vec<f64>],
+    denominator_series: &mut [Vec<f64>],
+) {
+    for (coef_idx, coefficient) in section.numerator().into_iter().enumerate() {
+        numerator_series[section_idx * 3 + coef_idx].push(coefficient);
+    }
+    for (coef_idx, coefficient) in section.denominator().into_iter().enumerate() {
+        denominator_series[section_idx * 3 + coef_idx].push(coefficient);
+    }
 }
 
 fn make_filter_spec(
@@ -631,7 +771,7 @@ fn filter_summary(result: Result<FilterDesignData, String>) -> String {
                 FilterFamilyChoice::Chebyshev1 => format!(", ripple {:.2} dB", data.ripple_db),
             };
             format!(
-                "{} order-{} lowpass at cutoff {:.3e} fs ({:.4}) with fs {:.2}{} using {} simulation. Designed {} second-order sections with {} states, DC gain {:.3}, and {} / {} / {} nontrivial A/C/D sweep traces.",
+                "{} order-{} lowpass at cutoff {:.3e} fs ({:.4}) with fs {:.2}{} using {} simulation. Designed {} second-order sections with {} states, DC gain {:.3}, and {} / {} / {} sweep traces in the selected representation.",
                 data.family.label(),
                 data.order,
                 data.cutoff_fraction,
@@ -642,39 +782,73 @@ fn filter_summary(result: Result<FilterDesignData, String>) -> String {
                 data.sections,
                 data.state_order,
                 data.dc_gain,
-                data.a_entry_series.len(),
-                data.c_entry_series.len(),
-                data.d_entry_series.len(),
+                data.sweep_plots.first().map_or(0, |plot| plot.series.len()),
+                data.sweep_plots.get(1).map_or(0, |plot| plot.series.len()),
+                data.sweep_plots.get(2).map_or(0, |plot| plot.series.len()),
             )
         }
         Err(message) => format!("Design failed: {message}"),
     }
 }
 
-fn build_unlabeled_entry_plot(title: &str, x: &[f64], series: &[Vec<f64>]) -> Plot {
-    if series.is_empty() {
+fn build_sweep_plot(plot_data: Option<&SweepPlotData>, x: &[f64]) -> Plot {
+    let Some(plot_data) = plot_data else {
+        return build_empty_plot("Missing sweep plot", "cutoff / fs", "");
+    };
+    if plot_data.series.is_empty() {
         return build_empty_plot(
-            &format!("{title}: no nontrivial entries"),
+            &format!("{}: no nontrivial entries", plot_data.title),
             "cutoff / fs",
-            "|entry|",
+            &plot_data.y_label,
         );
     }
 
-    let traces = series
+    let traces = plot_data
+        .series
         .iter()
         .cloned()
         .map(|values| {
             (
                 String::new(),
                 x.to_vec(),
-                values
-                    .into_iter()
-                    .map(|value| value.abs().max(1.0e-16))
-                    .collect::<Vec<_>>(),
+                if plot_data.absolute_value {
+                    values
+                        .into_iter()
+                        .map(|value| value.abs().max(1.0e-30))
+                        .collect::<Vec<_>>()
+                } else {
+                    values
+                },
             )
         })
         .collect::<Vec<_>>();
-    build_multiline_plot(title, "cutoff / fs", "|entry|", true, true, false, traces)
+    build_multiline_plot(
+        &plot_data.title,
+        "cutoff / fs",
+        &plot_data.y_label,
+        true,
+        plot_data.log_y,
+        false,
+        traces,
+    )
+}
+
+fn sweep_plot_title(result: &Result<FilterDesignData, String>, index: usize) -> String {
+    result
+        .as_ref()
+        .ok()
+        .and_then(|data| data.sweep_plots.get(index))
+        .map(|plot| plot.title.clone())
+        .unwrap_or_else(|| format!("Sweep {}", index + 1))
+}
+
+fn sweep_plot_description(result: &Result<FilterDesignData, String>, index: usize) -> String {
+    result
+        .as_ref()
+        .ok()
+        .and_then(|data| data.sweep_plots.get(index))
+        .map(|plot| plot.description.clone())
+        .unwrap_or_default()
 }
 
 fn build_multiline_plot(
@@ -775,7 +949,8 @@ mod tests {
         })
         .unwrap();
         assert!(!butterworth.magnitude_db.is_empty());
-        assert!(!butterworth.a_entry_series.is_empty());
+        assert_eq!(butterworth.sweep_plots.len(), 3);
+        assert!(!butterworth.sweep_plots[1].series.is_empty());
         assert_eq!(
             butterworth.simulation_times.len(),
             butterworth.simulation_output.len()
@@ -791,7 +966,8 @@ mod tests {
         })
         .unwrap();
         assert!(!chebyshev.phase_deg.is_empty());
-        assert!(!chebyshev.c_entry_series.is_empty());
+        assert_eq!(chebyshev.sweep_plots.len(), 3);
+        assert!(!chebyshev.sweep_plots[0].series.is_empty());
         assert_eq!(
             chebyshev.simulation_input.len(),
             chebyshev.simulation_output.len()
