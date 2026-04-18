@@ -204,6 +204,10 @@ where
     }
 }
 
+/// Returns the steady-state gain contribution of one delta section.
+///
+/// This evaluates the section at `δ = 0`, which is the discrete-time DC point
+/// corresponding to `z = 1`.
 fn delta_section_dc_gain<R>(section: DeltaSection<R>) -> R
 where
     R: Float + Copy + RealField,
@@ -215,6 +219,11 @@ where
     }
 }
 
+/// Converts one ordinary SOS section into the equivalent delta-section form.
+///
+/// The input coefficients are first reduced to the true section order and
+/// normalized to a monic denominator. The resulting polynomial is then
+/// rewritten in the forward-delta basis used by [`DeltaSection`].
 fn delta_section_from_sos<R>(
     numerator: [R; 3],
     denominator: [R; 3],
@@ -297,6 +306,10 @@ where
     }
 }
 
+/// Reduces one stored SOS section to its true normalized polynomial pair.
+///
+/// This strips leading storage zeros, cancels the common trailing zero used by
+/// padded first-order sections, and rescales the denominator to monic form.
 fn reduced_section_polynomials<R>(
     numerator: [R; 3],
     denominator: [R; 3],

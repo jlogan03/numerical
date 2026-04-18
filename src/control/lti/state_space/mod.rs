@@ -1047,6 +1047,11 @@ fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
     })
 }
 
+/// Casts one dense matrix between scalar dtypes with explicit validation.
+///
+/// The helper validates every entry before allocating the destination matrix
+/// so callers get a named `ScalarConversionFailed` error instead of a partial
+/// conversion.
 fn cast_mat<T, U>(matrix: MatRef<'_, T>, which: &'static str) -> Result<Mat<U>, StateSpaceError>
 where
     T: CompensatedField,

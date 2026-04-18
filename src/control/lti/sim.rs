@@ -494,6 +494,10 @@ where
     }
 }
 
+/// Verifies that a retained delta-SOS runtime state matches the filter.
+///
+/// The state stores one fixed slot per section, so the only structural check
+/// needed here is the section count.
 fn validate_delta_sos_state_len<R>(
     system: &DeltaSos<R>,
     state: &DeltaSosFilterState<R>,
@@ -652,6 +656,10 @@ where
     sample
 }
 
+/// Advances a delta-SOS cascade by one sample.
+///
+/// The input sample is first scaled by the cascade gain, then propagated
+/// section-by-section through the forward-delta state update.
 fn delta_sos_step<R>(system: &DeltaSos<R>, section_state: &mut [[R; 2]], input: R) -> R
 where
     R: Float + Copy + RealField + CompensatedField,

@@ -593,6 +593,8 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
     })
 }
 
+/// Runs the low-pass demo's time-domain response with the selected execution
+/// representation and numeric precision.
 fn run_time_response(
     filter: &DiscreteSos<f64>,
     state_space: &DiscreteStateSpace<f64>,
@@ -805,6 +807,8 @@ fn collect_sos_sweeps(
     ))
 }
 
+/// Collects the delta-SOS parameter sweep shown when the delta execution
+/// kernel is selected on the low-pass page.
 fn collect_delta_sos_sweeps(
     family: FilterFamilyChoice,
     order: usize,
@@ -875,6 +879,7 @@ fn collect_delta_sos_sweeps(
     ))
 }
 
+/// Drops sweep traces that remain numerically zero across the full cutoff grid.
 fn retain_nontrivial_series(series: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
     series
         .into_iter()
@@ -902,6 +907,11 @@ fn push_section_coefficients(
     }
 }
 
+/// Appends one delta section's plotted parameters into the shared sweep-series
+/// buffers.
+///
+/// Missing coefficients for lower-order section variants are written as zeros
+/// and later removed by [`retain_nontrivial_series`].
 fn push_delta_section_coefficients(
     section: &DeltaSection<f64>,
     section_idx: usize,
