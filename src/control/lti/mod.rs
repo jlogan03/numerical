@@ -91,6 +91,7 @@
 //! | Explicit delay-aware process models | yes | limited | no | no | process-model types |
 
 mod analysis;
+mod delta_sos;
 mod error;
 mod filter_design;
 mod fir;
@@ -107,6 +108,7 @@ mod transfer_function;
 mod util;
 mod zpk;
 
+pub use delta_sos::{DeltaSection, DeltaSos};
 pub use error::LtiError;
 pub use filter_design::{
     AnalogFilterFamily, AnalogFilterSpec, AnalogOrderSelectionSpec, ButterworthOrderResult,
@@ -127,8 +129,8 @@ pub use response::{
 pub use response_metrics::{StepResponseMetricParams, StepResponseMetrics};
 pub use root_locus::{RootLocusBranch, RootLocusData};
 pub use sim::{
-    FiltFiltPadLen, FiltFiltPadMode, FiltFiltParams, FilteredSignal, SosFilterState,
-    StatefulFilteredSignal,
+    DeltaSosFilterState, FiltFiltPadLen, FiltFiltPadMode, FiltFiltParams, FilteredSignal,
+    SosFilterState, StatefulFilteredSignal,
 };
 pub use sos::{ContinuousSos, DiscreteSos, SecondOrderSection, Sos};
 pub use transfer_function::{

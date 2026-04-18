@@ -1,11 +1,13 @@
 use super::error::LtiError;
 use super::sos::Sos;
 use super::transfer_function::TransferFunction;
-use super::util::{CompositionDomain, real_poly_from_roots, validate_sample_time};
+use super::util::{
+    CompositionDomain, cast_real_scalar, real_poly_from_roots, validate_sample_time,
+};
 use super::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
 use faer::complex::Complex;
 use faer_traits::RealField;
-use num_traits::Float;
+use num_traits::{Float, NumCast};
 
 /// Real-gain SISO zero/pole/gain representation.
 #[derive(Clone, Debug, PartialEq)]
@@ -210,6 +212,39 @@ where
     pub fn to_state_space(&self) -> Result<ContinuousStateSpace<R>, LtiError> {
         self.to_transfer_function()?.to_state_space()
     }
+
+    /// Casts the continuous-time zero/pole/gain representation to another
+    /// real scalar dtype.
+    ///
+    /// Real and imaginary parts of each root are converted independently.
+    pub fn try_cast<S>(&self) -> Result<ContinuousZpk<S>, LtiError>
+    where
+        S: Float + Copy + RealField + NumCast,
+    {
+        ContinuousZpk::continuous(
+            self.zeros()
+                .iter()
+                .copied()
+                .map(|value| {
+                    Ok(Complex::new(
+                        cast_real_scalar(value.re, "zpk.zeros")?,
+                        cast_real_scalar(value.im, "zpk.zeros")?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, LtiError>>()?,
+            self.poles()
+                .iter()
+                .copied()
+                .map(|value| {
+                    Ok(Complex::new(
+                        cast_real_scalar(value.re, "zpk.poles")?,
+                        cast_real_scalar(value.im, "zpk.poles")?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, LtiError>>()?,
+            cast_real_scalar(self.gain(), "zpk.gain")?,
+        )
+    }
 }
 
 impl<R> DiscreteZpk<R>
@@ -262,6 +297,41 @@ where
     /// transfer-function layer.
     pub fn to_state_space(&self) -> Result<DiscreteStateSpace<R>, LtiError> {
         self.to_transfer_function()?.to_state_space()
+    }
+
+    /// Casts the discrete-time zero/pole/gain representation and sample time
+    /// to another real scalar dtype.
+    ///
+    /// This preserves the exact factored structure and only changes the scalar
+    /// storage type.
+    pub fn try_cast<S>(&self) -> Result<DiscreteZpk<S>, LtiError>
+    where
+        S: Float + Copy + RealField + NumCast,
+    {
+        DiscreteZpk::discrete(
+            self.zeros()
+                .iter()
+                .copied()
+                .map(|value| {
+                    Ok(Complex::new(
+                        cast_real_scalar(value.re, "zpk.zeros")?,
+                        cast_real_scalar(value.im, "zpk.zeros")?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, LtiError>>()?,
+            self.poles()
+                .iter()
+                .copied()
+                .map(|value| {
+                    Ok(Complex::new(
+                        cast_real_scalar(value.re, "zpk.poles")?,
+                        cast_real_scalar(value.im, "zpk.poles")?,
+                    ))
+                })
+                .collect::<Result<Vec<_>, LtiError>>()?,
+            cast_real_scalar(self.gain(), "zpk.gain")?,
+            cast_real_scalar(self.sample_time(), "zpk.sample_time")?,
+        )
     }
 }
 

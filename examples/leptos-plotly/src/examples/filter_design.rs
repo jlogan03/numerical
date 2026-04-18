@@ -2,8 +2,8 @@ use crate::demo_signal::step_then_tone_signal;
 use crate::plotly_support::use_plotly_chart;
 use leptos::prelude::*;
 use numerical::control::lti::{
-    DigitalFilterFamily, DigitalFilterSpec, FilterShape, SecondOrderSection,
-    design_digital_filter_sos,
+    DeltaSection, DigitalFilterFamily, DigitalFilterSpec, DiscreteSos, DiscreteStateSpace,
+    FilterShape, SecondOrderSection, design_digital_filter_sos,
 };
 use plotly::{
     Layout, Plot, Scatter,
@@ -20,6 +20,7 @@ pub fn FilterDesignPage() -> impl IntoView {
     let (sample_rate, set_sample_rate) = signal(20.0_f64);
     let (ripple_db, set_ripple_db) = signal(1.0_f64);
     let (sim_method, set_sim_method) = signal(FilterSimMethod::Sos);
+    let (sim_precision, set_sim_precision) = signal(FilterSimPrecision::F64);
 
     let inputs = move || FilterDesignInputs {
         family: family.get(),
@@ -28,6 +29,7 @@ pub fn FilterDesignPage() -> impl IntoView {
         sample_rate: sample_rate.get(),
         ripple_db: ripple_db.get(),
         sim_method: sim_method.get(),
+        sim_precision: sim_precision.get(),
     };
     let design = Memo::new(move |_| run_filter_design(inputs()));
 
@@ -204,8 +206,25 @@ pub fn FilterDesignPage() -> impl IntoView {
                                 }
                             >
                                 <option value="sos">"SOS cascade"</option>
+                                <option value="delta-sos">"Delta-SOS"</option>
                                 <option value="state-space">"State-space"</option>
                             </select>
+                        </div>
+
+                        <div class="control-row">
+                            <label for="filter-sim-f32">"Evaluate time sim in f32"</label>
+                            <input
+                                id="filter-sim-f32"
+                                type="checkbox"
+                                prop:checked=move || sim_precision.get() == FilterSimPrecision::F32
+                                on:change=move |ev| {
+                                    set_sim_precision.set(if event_target_checked(&ev) {
+                                        FilterSimPrecision::F32
+                                    } else {
+                                        FilterSimPrecision::F64
+                                    });
+                                }
+                            />
                         </div>
                     </section>
 
@@ -328,6 +347,7 @@ struct FilterDesignInputs {
     sample_rate: f64,
     ripple_db: f64,
     sim_method: FilterSimMethod,
+    sim_precision: FilterSimPrecision,
 }
 
 #[derive(Clone, PartialEq)]
@@ -342,6 +362,7 @@ struct FilterDesignData {
     state_order: usize,
     dc_gain: f64,
     sim_method: FilterSimMethod,
+    sim_precision: FilterSimPrecision,
     response_frequency_over_fs: Vec<f64>,
     magnitude_db: Vec<f64>,
     phase_deg: Vec<f64>,
@@ -367,6 +388,7 @@ struct SweepPlotData {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FilterSimMethod {
     Sos,
+    DeltaSos,
     StateSpace,
 }
 
@@ -374,12 +396,14 @@ impl FilterSimMethod {
     fn as_key(self) -> &'static str {
         match self {
             Self::Sos => "sos",
+            Self::DeltaSos => "delta-sos",
             Self::StateSpace => "state-space",
         }
     }
 
     fn from_form_value(value: &str) -> Self {
         match value {
+            "delta-sos" => Self::DeltaSos,
             "state-space" => Self::StateSpace,
             _ => Self::Sos,
         }
@@ -388,7 +412,23 @@ impl FilterSimMethod {
     fn label(self) -> &'static str {
         match self {
             Self::Sos => "SOS cascade",
+            Self::DeltaSos => "Delta-SOS",
             Self::StateSpace => "state-space",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FilterSimPrecision {
+    F64,
+    F32,
+}
+
+impl FilterSimPrecision {
+    fn label(self) -> &'static str {
+        match self {
+            Self::F64 => "f64",
+            Self::F32 => "f32",
         }
     }
 }
@@ -434,9 +474,10 @@ fn build_filter_plot(result: Result<FilterDesignData, String>, kind: FilterPlotK
             ),
             FilterPlotKind::TimeResponse => build_multiline_plot(
                 &format!(
-                    "{} time response ({})",
+                    "{} time response ({} / {})",
                     data.family.label(),
-                    data.sim_method.label()
+                    data.sim_method.label(),
+                    data.sim_precision.label(),
                 ),
                 "time (s)",
                 "signal",
@@ -504,6 +545,9 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
         FilterSimMethod::Sos => {
             collect_sos_sweeps(inputs.family, order, sample_rate, ripple_db, &sweep_cutoffs)?
         }
+        FilterSimMethod::DeltaSos => {
+            collect_delta_sos_sweeps(inputs.family, order, sample_rate, ripple_db, &sweep_cutoffs)?
+        }
         FilterSimMethod::StateSpace => collect_state_space_sweeps(
             inputs.family,
             order,
@@ -513,20 +557,13 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
         )?,
     };
     let (simulation_times, simulation_input) = step_then_tone_signal(sample_rate, cutoff_fraction);
-    let simulation_output = match inputs.sim_method {
-        FilterSimMethod::Sos => {
-            filter
-                .filter_forward(&simulation_input)
-                .map_err(|err| err.to_string())?
-                .output
-        }
-        FilterSimMethod::StateSpace => {
-            state_space
-                .filter_forward(&simulation_input)
-                .map_err(|err| err.to_string())?
-                .output
-        }
-    };
+    let simulation_output = run_time_response(
+        &filter,
+        &state_space,
+        &simulation_input,
+        inputs.sim_method,
+        inputs.sim_precision,
+    )?;
 
     Ok(FilterDesignData {
         family: inputs.family,
@@ -539,6 +576,7 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
         state_order: state_space.nstates(),
         dc_gain: filter.dc_gain().map(|value| value.re).unwrap_or(0.0),
         sim_method: inputs.sim_method,
+        sim_precision: inputs.sim_precision,
         response_frequency_over_fs,
         magnitude_db: bode.magnitude_db,
         phase_deg: bode.phase_deg,
@@ -553,6 +591,59 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
             .collect(),
         sweep_plots,
     })
+}
+
+fn run_time_response(
+    filter: &DiscreteSos<f64>,
+    state_space: &DiscreteStateSpace<f64>,
+    input: &[f64],
+    sim_method: FilterSimMethod,
+    sim_precision: FilterSimPrecision,
+) -> Result<Vec<f64>, String> {
+    match (sim_method, sim_precision) {
+        (FilterSimMethod::Sos, FilterSimPrecision::F64) => filter
+            .filter_forward(input)
+            .map(|result| result.output)
+            .map_err(|err| err.to_string()),
+        (FilterSimMethod::DeltaSos, FilterSimPrecision::F64) => filter
+            .to_delta_sos()
+            .map_err(|err| err.to_string())?
+            .filter_forward(input)
+            .map(|result| result.output)
+            .map_err(|err| err.to_string()),
+        (FilterSimMethod::StateSpace, FilterSimPrecision::F64) => state_space
+            .filter_forward(input)
+            .map(|result| result.output)
+            .map_err(|err| err.to_string()),
+        (FilterSimMethod::Sos, FilterSimPrecision::F32) => {
+            let filter = filter.try_cast::<f32>().map_err(|err| err.to_string())?;
+            let input32 = input.iter().map(|&value| value as f32).collect::<Vec<_>>();
+            filter
+                .filter_forward(&input32)
+                .map(|result| result.output.into_iter().map(f64::from).collect())
+                .map_err(|err| err.to_string())
+        }
+        (FilterSimMethod::DeltaSos, FilterSimPrecision::F32) => {
+            let filter = filter
+                .to_delta_sos()
+                .map_err(|err| err.to_string())?
+                .try_cast::<f32>()
+                .map_err(|err| err.to_string())?;
+            let input32 = input.iter().map(|&value| value as f32).collect::<Vec<_>>();
+            filter
+                .filter_forward(&input32)
+                .map(|result| result.output.into_iter().map(f64::from).collect())
+                .map_err(|err| err.to_string())
+        }
+        (FilterSimMethod::StateSpace, FilterSimPrecision::F32) => {
+            let state_space = state_space.try_cast::<f32>().map_err(|err| err.to_string())?;
+            let input32 = input.iter().map(|&value| value as f32).collect::<Vec<_>>();
+            state_space
+                .filter_forward(&input32)
+                .map(|result| result.output.into_iter().map(f64::from).collect())
+                .map_err(|err| err.to_string())
+        }
+    }
 }
 
 fn collect_state_space_sweeps(
@@ -714,6 +805,76 @@ fn collect_sos_sweeps(
     ))
 }
 
+fn collect_delta_sos_sweeps(
+    family: FilterFamilyChoice,
+    order: usize,
+    sample_rate: f64,
+    ripple_db: f64,
+    sweep_cutoffs: &[f64],
+) -> Result<(String, String, Vec<SweepPlotData>), String> {
+    let first_spec = make_filter_spec(family, order, sweep_cutoffs[0], sample_rate, ripple_db)?;
+    let first_filter = design_digital_filter_sos(&first_spec).map_err(|err| err.to_string())?;
+    let first_delta = first_filter.to_delta_sos().map_err(|err| err.to_string())?;
+    let section_count = first_delta.sections().len();
+    let mut gain_series = vec![Vec::with_capacity(sweep_cutoffs.len())];
+    let mut dynamics_series = vec![Vec::with_capacity(sweep_cutoffs.len()); section_count * 2];
+    let mut output_series = vec![Vec::with_capacity(sweep_cutoffs.len()); section_count * 4];
+
+    for &cutoff in sweep_cutoffs {
+        let spec = make_filter_spec(family, order, cutoff, sample_rate, ripple_db)?;
+        let filter = design_digital_filter_sos(&spec).map_err(|err| err.to_string())?;
+        let delta = filter.to_delta_sos().map_err(|err| err.to_string())?;
+        if delta.sections().len() != section_count {
+            return Err("delta-SOS section count changed across cutoff sweep".to_string());
+        }
+
+        gain_series[0].push(delta.gain());
+        for (section_idx, section) in delta.sections().iter().enumerate() {
+            push_delta_section_coefficients(
+                section,
+                section_idx,
+                &mut dynamics_series,
+                &mut output_series,
+            );
+        }
+    }
+
+    Ok((
+        "Delta-SOS parameter sweep vs cutoff".to_string(),
+        "The selected delta-SOS execution path is shown through its overall gain, delta-domain dynamics parameters, and output coefficients."
+            .to_string(),
+        vec![
+            SweepPlotData {
+                title: "Overall gain".to_string(),
+                description: "The magnitude of the cascade gain applied ahead of the delta-section sequence."
+                    .to_string(),
+                y_label: "|gain|".to_string(),
+                log_y: true,
+                absolute_value: true,
+                series: gain_series,
+            },
+            SweepPlotData {
+                title: "Delta dynamics parameters".to_string(),
+                description: "All nontrivial `alpha0` and `alpha1` traces from the delta sections, shown without entry labels."
+                    .to_string(),
+                y_label: "|parameter|".to_string(),
+                log_y: true,
+                absolute_value: true,
+                series: retain_nontrivial_series(dynamics_series),
+            },
+            SweepPlotData {
+                title: "Delta output coefficients".to_string(),
+                description: "All nontrivial `c*` and `d` traces from the delta sections, shown without entry labels."
+                    .to_string(),
+                y_label: "|coefficient|".to_string(),
+                log_y: true,
+                absolute_value: true,
+                series: retain_nontrivial_series(output_series),
+            },
+        ],
+    ))
+}
+
 fn retain_nontrivial_series(series: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
     series
         .into_iter()
@@ -738,6 +899,49 @@ fn push_section_coefficients(
     }
     for (coef_idx, coefficient) in section.denominator().into_iter().enumerate() {
         denominator_series[section_idx * 3 + coef_idx].push(coefficient);
+    }
+}
+
+fn push_delta_section_coefficients(
+    section: &DeltaSection<f64>,
+    section_idx: usize,
+    dynamics_series: &mut [Vec<f64>],
+    output_series: &mut [Vec<f64>],
+) {
+    let dynamics_base = section_idx * 2;
+    let output_base = section_idx * 4;
+
+    match *section {
+        DeltaSection::Direct { d } => {
+            dynamics_series[dynamics_base].push(0.0);
+            dynamics_series[dynamics_base + 1].push(0.0);
+            output_series[output_base].push(0.0);
+            output_series[output_base + 1].push(0.0);
+            output_series[output_base + 2].push(0.0);
+            output_series[output_base + 3].push(d);
+        }
+        DeltaSection::First { alpha0, c0, d } => {
+            dynamics_series[dynamics_base].push(alpha0);
+            dynamics_series[dynamics_base + 1].push(0.0);
+            output_series[output_base].push(c0);
+            output_series[output_base + 1].push(0.0);
+            output_series[output_base + 2].push(0.0);
+            output_series[output_base + 3].push(d);
+        }
+        DeltaSection::Second {
+            alpha0,
+            alpha1,
+            c1,
+            c2,
+            d,
+        } => {
+            dynamics_series[dynamics_base].push(alpha0);
+            dynamics_series[dynamics_base + 1].push(alpha1);
+            output_series[output_base].push(c1);
+            output_series[output_base + 1].push(c2);
+            output_series[output_base + 2].push(0.0);
+            output_series[output_base + 3].push(d);
+        }
     }
 }
 
@@ -771,7 +975,7 @@ fn filter_summary(result: Result<FilterDesignData, String>) -> String {
                 FilterFamilyChoice::Chebyshev1 => format!(", ripple {:.2} dB", data.ripple_db),
             };
             format!(
-                "{} order-{} lowpass at cutoff {:.3e} fs ({:.4}) with fs {:.2}{} using {} simulation. Designed {} second-order sections with {} states, DC gain {:.3}, and {} / {} / {} sweep traces in the selected representation.",
+                "{} order-{} lowpass at cutoff {:.3e} fs ({:.4}) with fs {:.2}{} using {} simulation in {}. Designed {} second-order sections with {} states, DC gain {:.3}, and {} / {} / {} sweep traces in the selected representation.",
                 data.family.label(),
                 data.order,
                 data.cutoff_fraction,
@@ -779,6 +983,7 @@ fn filter_summary(result: Result<FilterDesignData, String>) -> String {
                 data.sample_rate,
                 ripple_text,
                 data.sim_method.label(),
+                data.sim_precision.label(),
                 data.sections,
                 data.state_order,
                 data.dc_gain,
@@ -814,7 +1019,7 @@ fn build_sweep_plot(plot_data: Option<&SweepPlotData>, x: &[f64]) -> Plot {
                 if plot_data.absolute_value {
                     values
                         .into_iter()
-                        .map(|value| value.abs().max(1.0e-30))
+                        .map(|value| value.abs().max(1.0e-60))
                         .collect::<Vec<_>>()
                 } else {
                     values
@@ -935,7 +1140,10 @@ fn log10_to_cutoff_fraction(value: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{FilterDesignInputs, FilterFamilyChoice, FilterSimMethod, run_filter_design};
+    use super::{
+        FilterDesignInputs, FilterFamilyChoice, FilterSimMethod, FilterSimPrecision,
+        run_filter_design,
+    };
 
     #[test]
     fn filter_design_demo_runs_for_butterworth_and_chebyshev() {
@@ -946,6 +1154,7 @@ mod tests {
             sample_rate: 20.0,
             ripple_db: 1.0,
             sim_method: FilterSimMethod::Sos,
+            sim_precision: FilterSimPrecision::F64,
         })
         .unwrap();
         assert!(!butterworth.magnitude_db.is_empty());
@@ -962,11 +1171,13 @@ mod tests {
             cutoff_fraction: 0.4,
             sample_rate: 20.0,
             ripple_db: 1.0,
-            sim_method: FilterSimMethod::StateSpace,
+            sim_method: FilterSimMethod::DeltaSos,
+            sim_precision: FilterSimPrecision::F32,
         })
         .unwrap();
         assert!(!chebyshev.phase_deg.is_empty());
         assert_eq!(chebyshev.sweep_plots.len(), 3);
+        assert_eq!(chebyshev.sweep_card_title, "Delta-SOS parameter sweep vs cutoff");
         assert!(!chebyshev.sweep_plots[0].series.is_empty());
         assert_eq!(
             chebyshev.simulation_input.len(),
@@ -985,6 +1196,7 @@ mod tests {
             sample_rate,
             ripple_db: 1.0,
             sim_method: FilterSimMethod::Sos,
+            sim_precision: FilterSimPrecision::F64,
         })
         .unwrap();
 

@@ -92,6 +92,11 @@ pub enum LtiError {
         /// Identifies the computation that produced non-finite values.
         which: &'static str,
     },
+    /// A scalar or sample-time cast between numeric dtypes failed.
+    ScalarConversionFailed {
+        /// Identifies the representation field that could not be cast.
+        which: &'static str,
+    },
     /// A second-order-section cascade must contain at least one section.
     EmptySos,
     /// A supplied filter-runtime state object has the wrong structural length.

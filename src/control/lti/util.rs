@@ -6,7 +6,7 @@ use faer::Mat;
 use faer::complex::Complex;
 use faer_traits::RealField;
 use faer_traits::math_utils::{eps, from_f64};
-use num_traits::Float;
+use num_traits::{Float, NumCast};
 
 /// Domain metadata that can validate whether two LTI representations may be
 /// composed directly.
@@ -52,6 +52,16 @@ pub(crate) fn validate_sample_time<R: Float + RealField>(sample_time: R) -> Resu
     } else {
         Err(LtiError::InvalidSampleTime)
     }
+}
+
+/// Casts one real scalar into another and annotates failures with an LTI field
+/// name.
+pub(crate) fn cast_real_scalar<R, S>(value: R, which: &'static str) -> Result<S, LtiError>
+where
+    R: NumCast + Copy,
+    S: NumCast,
+{
+    NumCast::from(value).ok_or(LtiError::ScalarConversionFailed { which })
 }
 
 /// Validates a finite, nonnegative, monotone nondecreasing numeric grid.

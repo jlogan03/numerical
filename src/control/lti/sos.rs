@@ -1,14 +1,15 @@
 use super::error::LtiError;
 use super::transfer_function::TransferFunction;
 use super::util::{
-    CompositionDomain, identity_section, poly_mul, root_sections, validate_sample_time,
+    CompositionDomain, cast_real_scalar, identity_section, poly_mul, root_sections,
+    validate_sample_time,
 };
 use super::zpk::Zpk;
 use super::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
 use crate::scalar::complex_horner_step_real;
 use faer::complex::Complex;
 use faer_traits::RealField;
-use num_traits::Float;
+use num_traits::{Float, NumCast};
 
 /// One second-order section in descending-power coefficient form.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -56,6 +57,27 @@ where
     #[must_use]
     pub fn denominator(&self) -> [R; 3] {
         self.denominator
+    }
+
+    /// Casts the section coefficients to another real scalar dtype.
+    ///
+    /// The numerator/denominator storage layout is preserved exactly.
+    pub fn try_cast<S>(&self) -> Result<SecondOrderSection<S>, LtiError>
+    where
+        S: Float + Copy + RealField + NumCast,
+    {
+        SecondOrderSection::new(
+            [
+                cast_real_scalar(self.numerator[0], "sos.section.numerator")?,
+                cast_real_scalar(self.numerator[1], "sos.section.numerator")?,
+                cast_real_scalar(self.numerator[2], "sos.section.numerator")?,
+            ],
+            [
+                cast_real_scalar(self.denominator[0], "sos.section.denominator")?,
+                cast_real_scalar(self.denominator[1], "sos.section.denominator")?,
+                cast_real_scalar(self.denominator[2], "sos.section.denominator")?,
+            ],
+        )
     }
 
     #[must_use]
@@ -292,6 +314,23 @@ where
     pub fn to_state_space(&self) -> Result<ContinuousStateSpace<R>, LtiError> {
         self.to_transfer_function()?.to_state_space()
     }
+
+    /// Casts the continuous-time SOS cascade to another real scalar dtype.
+    ///
+    /// This preserves the existing section factorization rather than
+    /// re-synthesizing sections in the target dtype.
+    pub fn try_cast<S>(&self) -> Result<ContinuousSos<S>, LtiError>
+    where
+        S: Float + Copy + RealField + NumCast,
+    {
+        ContinuousSos::continuous(
+            self.sections()
+                .iter()
+                .map(|section| section.try_cast())
+                .collect::<Result<Vec<_>, _>>()?,
+            cast_real_scalar(self.gain(), "sos.gain")?,
+        )
+    }
 }
 
 impl<R> DiscreteSos<R>
@@ -343,5 +382,24 @@ where
     /// function and then carried into the realized state-space model.
     pub fn to_state_space(&self) -> Result<DiscreteStateSpace<R>, LtiError> {
         self.to_transfer_function()?.to_state_space()
+    }
+
+    /// Casts the discrete-time SOS cascade and sample time to another real
+    /// scalar dtype.
+    ///
+    /// The conversion keeps the same section ordering and overall gain, which
+    /// makes it suitable for direct runtime comparisons between dtypes.
+    pub fn try_cast<S>(&self) -> Result<DiscreteSos<S>, LtiError>
+    where
+        S: Float + Copy + RealField + NumCast,
+    {
+        DiscreteSos::discrete(
+            self.sections()
+                .iter()
+                .map(|section| section.try_cast())
+                .collect::<Result<Vec<_>, _>>()?,
+            cast_real_scalar(self.gain(), "sos.gain")?,
+            cast_real_scalar(self.sample_time(), "sos.sample_time")?,
+        )
     }
 }

@@ -79,7 +79,7 @@ use crate::sparse::compensated::CompensatedField;
 use faer::{Mat, MatRef};
 use faer_traits::ComplexField;
 use faer_traits::ext::ComplexFieldExt;
-use num_traits::{Float, Zero};
+use num_traits::{Float, NumCast, Zero};
 
 /// Dense linear time-invariant state-space system.
 ///
@@ -230,6 +230,30 @@ where
     pub fn with_zero_feedthrough(a: Mat<T>, b: Mat<T>, c: Mat<T>) -> Result<Self, StateSpaceError> {
         let d = Mat::zeros(c.nrows(), b.ncols());
         Self::new(a, b, c, d)
+    }
+}
+
+impl<T> ContinuousStateSpace<T>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy + NumCast,
+{
+    /// Casts the dense continuous-time state-space matrices to another scalar
+    /// dtype.
+    ///
+    /// This preserves the current realization exactly; it is not a balancing
+    /// or re-realization pass.
+    pub fn try_cast<U>(&self) -> Result<ContinuousStateSpace<U>, StateSpaceError>
+    where
+        U: CompensatedField,
+        U::Real: Float + Copy + NumCast,
+    {
+        ContinuousStateSpace::new(
+            cast_mat(self.a(), "state_space.a")?,
+            cast_mat(self.b(), "state_space.b")?,
+            cast_mat(self.c(), "state_space.c")?,
+            cast_mat(self.d(), "state_space.d")?,
+        )
     }
 }
 
@@ -434,6 +458,33 @@ where
     #[must_use]
     pub fn sample_time(&self) -> T::Real {
         self.domain.sample_time()
+    }
+}
+
+impl<T> DiscreteStateSpace<T>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy + NumCast,
+{
+    /// Casts the dense discrete-time state-space matrices and sample interval
+    /// to another scalar dtype.
+    ///
+    /// This is useful for comparing runtime sensitivity across precisions
+    /// without changing the current state coordinates.
+    pub fn try_cast<U>(&self) -> Result<DiscreteStateSpace<U>, StateSpaceError>
+    where
+        U: CompensatedField,
+        U::Real: Float + Copy + NumCast,
+    {
+        DiscreteStateSpace::new(
+            cast_mat(self.a(), "state_space.a")?,
+            cast_mat(self.b(), "state_space.b")?,
+            cast_mat(self.c(), "state_space.c")?,
+            cast_mat(self.d(), "state_space.d")?,
+            NumCast::from(self.sample_time()).ok_or(StateSpaceError::ScalarConversionFailed {
+                which: "state_space.sample_time",
+            })?,
+        )
     }
 }
 
@@ -994,6 +1045,33 @@ fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
     Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
         matrix[(row, col)]
     })
+}
+
+fn cast_mat<T, U>(matrix: MatRef<'_, T>, which: &'static str) -> Result<Mat<U>, StateSpaceError>
+where
+    T: CompensatedField,
+    U: CompensatedField,
+    T::Real: Float + Copy + NumCast,
+    U::Real: Float + Copy + NumCast,
+{
+    // Validate first so the second pass can use infallible casts while keeping
+    // the matrix construction itself allocation-only.
+    for row in 0..matrix.nrows() {
+        for col in 0..matrix.ncols() {
+            let value = matrix[(row, col)];
+            let _: U::Real = NumCast::from(value.real())
+                .ok_or(StateSpaceError::ScalarConversionFailed { which })?;
+            let _: U::Real = NumCast::from(value.imag())
+                .ok_or(StateSpaceError::ScalarConversionFailed { which })?;
+        }
+    }
+
+    Ok(Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
+        let value = matrix[(row, col)];
+        let real = NumCast::from(value.real()).expect("matrix entries validated before cast");
+        let imag = NumCast::from(value.imag()).expect("matrix entries validated before cast");
+        U::from_real_imag(real, imag)
+    }))
 }
 
 fn negated<T>(matrix: MatRef<'_, T>) -> Mat<T>
@@ -1606,6 +1684,36 @@ mod tests {
         assert_close_c64(&recovered.b, &sys.b, 1e-11);
         assert_close_c64(&recovered.c, &sys.c, 1e-11);
         assert_close_c64(&recovered.d, &sys.d, 1e-11);
+    }
+
+    #[test]
+    fn discrete_state_space_try_cast_to_f32_preserves_sample_time_and_blocks() {
+        let sys = DiscreteStateSpace::new(
+            Mat::from_fn(2, 2, |row, col| match (row, col) {
+                (0, 0) => 0.9,
+                (0, 1) => 0.2,
+                (1, 0) => -0.1,
+                _ => 0.8,
+            }),
+            Mat::from_fn(2, 1, |row, _| if row == 0 { 0.5 } else { -0.25 }),
+            Mat::from_fn(1, 2, |_, col| if col == 0 { 1.0 } else { -0.3 }),
+            Mat::from_fn(1, 1, |_, _| 0.125),
+            0.05,
+        )
+        .unwrap();
+
+        let cast = sys.try_cast::<f32>().unwrap();
+
+        assert!((cast.sample_time() - 0.05f32).abs() <= 1.0e-6);
+        assert!((cast.a()[(0, 0)] - 0.9f32).abs() <= 1.0e-6);
+        assert!((cast.a()[(0, 1)] - 0.2f32).abs() <= 1.0e-6);
+        assert!((cast.a()[(1, 0)] + 0.1f32).abs() <= 1.0e-6);
+        assert!((cast.a()[(1, 1)] - 0.8f32).abs() <= 1.0e-6);
+        assert!((cast.b()[(0, 0)] - 0.5f32).abs() <= 1.0e-6);
+        assert!((cast.b()[(1, 0)] + 0.25f32).abs() <= 1.0e-6);
+        assert!((cast.c()[(0, 0)] - 1.0f32).abs() <= 1.0e-6);
+        assert!((cast.c()[(0, 1)] + 0.3f32).abs() <= 1.0e-6);
+        assert!((cast.d()[(0, 0)] - 0.125f32).abs() <= 1.0e-6);
     }
 
     #[test]

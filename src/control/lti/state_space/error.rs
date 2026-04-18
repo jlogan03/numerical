@@ -51,6 +51,12 @@ pub enum StateSpaceError {
         /// Identifies the conversion step that produced non-finite output.
         which: &'static str,
     },
+    /// A matrix entry or sample interval could not be cast to the requested
+    /// scalar dtype.
+    ScalarConversionFailed {
+        /// Identifies the field that could not be cast.
+        which: &'static str,
+    },
     /// The requested conversion is recognized but not implemented in this
     /// first state-space pass.
     UnsupportedConversion(&'static str),

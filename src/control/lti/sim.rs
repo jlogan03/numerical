@@ -46,7 +46,7 @@
 //!   runtime simulation to avoid endorsing unstable high-order coefficient
 //!   recurrences.
 
-use super::{DiscreteSos, DiscreteStateSpace, LtiError};
+use super::{DeltaSection, DeltaSos, DiscreteSos, DiscreteStateSpace, LtiError};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum, sum2, sum3};
 use faer_traits::ComplexField;
 use faer_traits::RealField;
@@ -141,7 +141,28 @@ pub struct SosFilterState<R> {
     pub section_state: Vec<[R; 2]>,
 }
 
+/// Runtime state for a cascade of delta-operator SOS sections.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DeltaSosFilterState<R> {
+    /// Per-section state `[x1, x2]`. First-order sections use only `x1`;
+    /// direct sections use neither slot.
+    pub section_state: Vec<[R; 2]>,
+}
+
 impl<R> SosFilterState<R>
+where
+    R: Float + Copy,
+{
+    /// Creates a zero-initialized state for a given number of sections.
+    #[must_use]
+    pub fn zeros(n_sections: usize) -> Self {
+        Self {
+            section_state: vec![[R::zero(), R::zero()]; n_sections],
+        }
+    }
+}
+
+impl<R> DeltaSosFilterState<R>
 where
     R: Float + Copy,
 {
@@ -236,6 +257,85 @@ where
     }
 }
 
+impl<R> DeltaSos<R>
+where
+    R: Float + Copy + RealField + CompensatedField,
+{
+    /// Filters one input slice causally with zero initial delta-section state.
+    ///
+    /// This uses the delta-state recurrence defined by
+    /// [`DeltaSection`](super::DeltaSection), not the ordinary DF2T SOS
+    /// recurrence. It is intended for the same transfer map expressed in a
+    /// better-conditioned runtime basis near `z = 1`.
+    pub fn filter_forward(&self, input: &[R]) -> Result<FilteredSignal<R>, LtiError> {
+        let mut state = DeltaSosFilterState::zeros(self.sections().len());
+        self.filter_forward_stateful(&mut state, input)
+    }
+
+    /// Filters one input slice causally while updating caller-supplied
+    /// delta-section state.
+    ///
+    /// As in the ordinary SOS path, this is the chunk-preserving execution
+    /// entry point for streaming use.
+    pub fn filter_forward_stateful(
+        &self,
+        state: &mut DeltaSosFilterState<R>,
+        input: &[R],
+    ) -> Result<FilteredSignal<R>, LtiError> {
+        validate_delta_sos_state_len(self, state)?;
+        let mut output = Vec::with_capacity(input.len());
+        for &sample in input {
+            output.push(delta_sos_step(self, &mut state.section_state, sample));
+        }
+        Ok(FilteredSignal { output })
+    }
+
+    /// Runs forward-backward zero-phase filtering with the default padding
+    /// policy.
+    pub fn filtfilt(&self, input: &[R]) -> Result<FilteredSignal<R>, LtiError> {
+        self.filtfilt_with_params(input, &FiltFiltParams::default())
+    }
+
+    /// Runs forward-backward zero-phase filtering with explicit padding
+    /// control.
+    ///
+    /// The forward and backward passes both use zero initial delta state and
+    /// rely on endpoint padding to suppress startup transients, mirroring the
+    /// ordinary SOS implementation.
+    pub fn filtfilt_with_params(
+        &self,
+        input: &[R],
+        params: &FiltFiltParams,
+    ) -> Result<FilteredSignal<R>, LtiError> {
+        if input.is_empty() {
+            return Ok(FilteredSignal { output: Vec::new() });
+        }
+
+        let pad_len = resolve_pad_len(input.len(), params, 6 * self.sections().len());
+        let total_len = input.len() + 2 * pad_len;
+
+        let mut first_pass = Vec::with_capacity(total_len);
+        let mut state = DeltaSosFilterState::zeros(self.sections().len());
+        for idx in 0..total_len {
+            let sample = padded_sample(input, params.mode, pad_len, idx);
+            first_pass.push(delta_sos_step(self, &mut state.section_state, sample));
+        }
+
+        first_pass.reverse();
+
+        let mut second_pass = Vec::with_capacity(total_len);
+        let mut state = DeltaSosFilterState::zeros(self.sections().len());
+        for &sample in &first_pass {
+            second_pass.push(delta_sos_step(self, &mut state.section_state, sample));
+        }
+
+        second_pass.reverse();
+        Ok(FilteredSignal {
+            output: second_pass[pad_len..(pad_len + input.len())].to_vec(),
+        })
+    }
+}
+
 impl<R> SosFilterState<R>
 where
     R: Float + Copy + RealField + CompensatedField,
@@ -246,6 +346,18 @@ where
     /// vector manually.
     #[must_use]
     pub fn for_filter(filter: &DiscreteSos<R>) -> Self {
+        Self::zeros(filter.sections().len())
+    }
+}
+
+impl<R> DeltaSosFilterState<R>
+where
+    R: Float + Copy + RealField + CompensatedField,
+{
+    /// Creates a zero-initialized state sized for a particular delta-SOS
+    /// filter.
+    #[must_use]
+    pub fn for_filter(filter: &DeltaSos<R>) -> Self {
         Self::zeros(filter.sections().len())
     }
 }
@@ -376,6 +488,24 @@ where
     } else {
         Err(LtiError::InvalidFilterStateLength {
             which: "sos_filter_state",
+            expected: system.sections().len(),
+            actual: state.section_state.len(),
+        })
+    }
+}
+
+fn validate_delta_sos_state_len<R>(
+    system: &DeltaSos<R>,
+    state: &DeltaSosFilterState<R>,
+) -> Result<(), LtiError>
+where
+    R: Float + Copy + RealField,
+{
+    if state.section_state.len() == system.sections().len() {
+        Ok(())
+    } else {
+        Err(LtiError::InvalidFilterStateLength {
+            which: "delta_sos_filter_state",
             expected: system.sections().len(),
             actual: state.section_state.len(),
         })
@@ -522,6 +652,59 @@ where
     sample
 }
 
+fn delta_sos_step<R>(system: &DeltaSos<R>, section_state: &mut [[R; 2]], input: R) -> R
+where
+    R: Float + Copy + RealField + CompensatedField,
+{
+    let dt = system.sample_time();
+    let mut sample = input * system.gain();
+    for (section, state) in system.sections().iter().zip(section_state.iter_mut()) {
+        match *section {
+            DeltaSection::Direct { d } => {
+                sample = d * sample;
+            }
+            DeltaSection::First { alpha0, c0, d } => {
+                // Forward-delta first-order update:
+                //   δ x = -alpha0 x + u
+                //   y   = c0 x + d u
+                // with `δ x = (x[k+1] - x[k]) / dt`.
+                let x = state[0];
+                let y = sum2(c0 * x, d * sample);
+                let next_x = sum3(x, -(dt * alpha0 * x), dt * sample);
+                state[0] = next_x;
+                state[1] = R::zero();
+                sample = y;
+            }
+            DeltaSection::Second {
+                alpha0,
+                alpha1,
+                c1,
+                c2,
+                d,
+            } => {
+                let x1 = state[0];
+                let x2 = state[1];
+                let mut y_acc = CompensatedSum::<R>::default();
+                y_acc.add(c1 * x1);
+                y_acc.add(c2 * x2);
+                y_acc.add(d * sample);
+                let y = y_acc.finish();
+
+                // Forward-delta second-order update:
+                //   δ x1 = x2
+                //   δ x2 = -alpha0 x1 - alpha1 x2 + u
+                let next_x1 = sum2(x1, dt * x2);
+                let forcing = sum3(-(alpha0 * x1), -(alpha1 * x2), sample);
+                let next_x2 = sum2(x2, dt * forcing);
+                state[0] = next_x1;
+                state[1] = next_x2;
+                sample = y;
+            }
+        }
+    }
+    sample
+}
+
 fn section_df2t_coeffs<R>(numerator: [R; 3], denominator: [R; 3]) -> ([R; 3], [R; 3])
 where
     R: Float + Copy + RealField,
@@ -553,9 +736,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{FiltFiltPadLen, FiltFiltPadMode, FiltFiltParams, SosFilterState, clamp_pad_len};
+    use super::{
+        DeltaSosFilterState, FiltFiltPadLen, FiltFiltPadMode, FiltFiltParams, SosFilterState,
+        clamp_pad_len,
+    };
     use crate::control::lti::{
-        DigitalFilterFamily, DigitalFilterSpec, DiscreteSos, DiscreteStateSpace,
+        DeltaSos, DigitalFilterFamily, DigitalFilterSpec, DiscreteSos, DiscreteStateSpace,
         DiscreteTransferFunction, FilterShape, LtiError, SecondOrderSection,
         design_digital_filter_sos,
     };
@@ -582,6 +768,10 @@ mod tests {
             .unwrap()
             .to_state_space()
             .unwrap()
+    }
+
+    fn first_order_delta_sos() -> DeltaSos<f64> {
+        first_order_sos().to_delta_sos().unwrap()
     }
 
     #[test]
@@ -612,6 +802,17 @@ mod tests {
         assert_vec_close(&lhs.output, &rhs.output, 1.0e-12);
     }
 
+    #[test]
+    fn delta_sos_forward_matches_equivalent_first_order_sos() {
+        let sos = first_order_sos();
+        let delta = first_order_delta_sos();
+        let input = [1.0, -0.5, 2.0, 0.25, -1.0];
+
+        let lhs = sos.filter_forward(&input).unwrap();
+        let rhs = delta.filter_forward(&input).unwrap();
+        assert_vec_close(&lhs.output, &rhs.output, 1.0e-12);
+    }
+
     fn designed_butterworth_sos(order: usize) -> DiscreteSos<f64> {
         let sample_rate = 20.0;
         let cutoff = 0.125 * sample_rate * core::f64::consts::TAU;
@@ -637,6 +838,17 @@ mod tests {
     }
 
     #[test]
+    fn even_order_designed_delta_sos_forward_matches_ordinary_sos() {
+        let sos = designed_butterworth_sos(4);
+        let delta = sos.to_delta_sos().unwrap();
+        let input = vec![1.0; 32];
+
+        let lhs = sos.filter_forward(&input).unwrap();
+        let rhs = delta.filter_forward(&input).unwrap();
+        assert_vec_close(&lhs.output, &rhs.output, 1.0e-10);
+    }
+
+    #[test]
     fn odd_order_designed_sos_forward_matches_equivalent_state_space() {
         let sos = designed_butterworth_sos(5);
         let state_space = sos.to_state_space().unwrap();
@@ -648,12 +860,53 @@ mod tests {
     }
 
     #[test]
+    fn odd_order_designed_delta_sos_forward_matches_ordinary_sos() {
+        let sos = designed_butterworth_sos(5);
+        let delta = sos.to_delta_sos().unwrap();
+        let input = vec![1.0; 32];
+
+        let lhs = sos.filter_forward(&input).unwrap();
+        let rhs = delta.filter_forward(&input).unwrap();
+        assert_vec_close(&lhs.output, &rhs.output, 1.0e-10);
+    }
+
+    #[test]
+    fn delta_sos_dc_gain_matches_source_sos() {
+        let sos = designed_butterworth_sos(5);
+        let delta = sos.to_delta_sos().unwrap();
+
+        let lhs = sos.dc_gain().unwrap();
+        let rhs = delta.dc_gain().unwrap();
+        assert_close(lhs.re, rhs.re, 1.0e-10);
+        assert_close(lhs.im, rhs.im, 1.0e-10);
+    }
+
+    #[test]
     fn sos_stateful_chunked_processing_matches_one_shot() {
         let sos = first_order_sos();
         let input = [1.0, -0.5, 2.0, 0.25, -1.0];
 
         let one_shot = sos.filter_forward(&input).unwrap();
         let mut state = SosFilterState::for_filter(&sos);
+        let first = sos
+            .filter_forward_stateful(&mut state, &input[..2])
+            .unwrap();
+        let second = sos
+            .filter_forward_stateful(&mut state, &input[2..])
+            .unwrap();
+
+        let mut combined = first.output;
+        combined.extend(second.output);
+        assert_vec_close(&combined, &one_shot.output, 1.0e-12);
+    }
+
+    #[test]
+    fn delta_sos_stateful_chunked_processing_matches_one_shot() {
+        let sos = first_order_delta_sos();
+        let input = [1.0, -0.5, 2.0, 0.25, -1.0];
+
+        let one_shot = sos.filter_forward(&input).unwrap();
+        let mut state = DeltaSosFilterState::for_filter(&sos);
         let first = sos
             .filter_forward_stateful(&mut state, &input[..2])
             .unwrap();

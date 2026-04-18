@@ -1,8 +1,9 @@
 use super::error::LtiError;
 use super::sos::Sos;
 use super::util::{
-    CompositionDomain, is_zero_polynomial, normalize_ratio, poly_add_aligned, poly_eval, poly_mul,
-    poly_roots, poly_sub_aligned, real_poly_from_roots, trim_leading_zeros, validate_sample_time,
+    CompositionDomain, cast_real_scalar, is_zero_polynomial, normalize_ratio, poly_add_aligned,
+    poly_eval, poly_mul, poly_roots, poly_sub_aligned, real_poly_from_roots, trim_leading_zeros,
+    validate_sample_time,
 };
 use super::zpk::Zpk;
 use super::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
@@ -12,7 +13,7 @@ use faer::prelude::Solve;
 use faer::{Mat, MatRef};
 use faer_traits::RealField;
 use faer_traits::math_utils::{eps, from_f64};
-use num_traits::Float;
+use num_traits::{Float, NumCast};
 
 /// Real-coefficient single-input single-output transfer function.
 ///
@@ -244,6 +245,30 @@ where
         let (a, b, c, d) = companion_realization(self.numerator(), self.denominator())?;
         Ok(ContinuousStateSpace::new(a, b, c, d)?)
     }
+
+    /// Casts the continuous-time transfer function coefficients to another
+    /// real scalar dtype.
+    ///
+    /// This is a structural cast only. It preserves the same coefficient-form
+    /// model and reports [`LtiError::ScalarConversionFailed`] if any entry
+    /// cannot be represented in the requested dtype.
+    pub fn try_cast<S>(&self) -> Result<ContinuousTransferFunction<S>, LtiError>
+    where
+        S: Float + Copy + RealField + NumCast,
+    {
+        ContinuousTransferFunction::continuous(
+            self.numerator()
+                .iter()
+                .copied()
+                .map(|value| cast_real_scalar(value, "transfer_function.numerator"))
+                .collect::<Result<Vec<_>, _>>()?,
+            self.denominator()
+                .iter()
+                .copied()
+                .map(|value| cast_real_scalar(value, "transfer_function.denominator"))
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+    }
 }
 
 impl<R> DiscreteTransferFunction<R>
@@ -303,6 +328,30 @@ where
     pub fn to_state_space(&self) -> Result<DiscreteStateSpace<R>, LtiError> {
         let (a, b, c, d) = companion_realization(self.numerator(), self.denominator())?;
         Ok(DiscreteStateSpace::new(a, b, c, d, self.sample_time())?)
+    }
+
+    /// Casts the discrete-time transfer function coefficients and sample time
+    /// to another real scalar dtype.
+    ///
+    /// This is mainly intended for runtime precision comparisons after a
+    /// design has already been computed in a higher-precision dtype.
+    pub fn try_cast<S>(&self) -> Result<DiscreteTransferFunction<S>, LtiError>
+    where
+        S: Float + Copy + RealField + NumCast,
+    {
+        DiscreteTransferFunction::discrete(
+            self.numerator()
+                .iter()
+                .copied()
+                .map(|value| cast_real_scalar(value, "transfer_function.numerator"))
+                .collect::<Result<Vec<_>, _>>()?,
+            self.denominator()
+                .iter()
+                .copied()
+                .map(|value| cast_real_scalar(value, "transfer_function.denominator"))
+                .collect::<Result<Vec<_>, _>>()?,
+            cast_real_scalar(self.sample_time(), "transfer_function.sample_time")?,
+        )
     }
 }
 
@@ -867,6 +916,40 @@ mod tests {
         assert_coeffs_close(back.numerator(), tf.numerator(), 1.0e-10);
         assert_coeffs_close(back.denominator(), tf.denominator(), 1.0e-10);
         assert_eq!(back.sample_time(), 0.2);
+    }
+
+    #[test]
+    fn lti_representations_try_cast_to_f32_preserve_sample_time_and_response() {
+        let tf = DiscreteTransferFunction::discrete(
+            vec![1.0, -0.25, 0.0625],
+            vec![1.0, -1.2, 0.45],
+            0.2,
+        )
+        .unwrap();
+        let zpk = tf.to_zpk().unwrap();
+        let sos = tf.to_sos().unwrap();
+        let point64 = Complex::new(0.6f64, 0.2);
+        let point32 = Complex::new(point64.re as f32, point64.im as f32);
+
+        let tf32 = tf.try_cast::<f32>().unwrap();
+        let zpk32 = zpk.try_cast::<f32>().unwrap();
+        let sos32 = sos.try_cast::<f32>().unwrap();
+
+        assert!((tf32.sample_time() - 0.2f32).abs() <= 1.0e-6);
+        assert!((zpk32.sample_time() - 0.2f32).abs() <= 1.0e-6);
+        assert!((sos32.sample_time() - 0.2f32).abs() <= 1.0e-6);
+
+        let tf_eval = tf.evaluate(point64);
+        let tf32_eval = tf32.evaluate(point32);
+        let zpk32_eval = zpk32.evaluate(point32);
+        let sos32_eval = sos32.evaluate(point32);
+
+        assert!((f64::from(tf32_eval.re) - tf_eval.re).abs() <= 5.0e-5);
+        assert!((f64::from(tf32_eval.im) - tf_eval.im).abs() <= 5.0e-5);
+        assert!((f64::from(zpk32_eval.re) - tf_eval.re).abs() <= 5.0e-5);
+        assert!((f64::from(zpk32_eval.im) - tf_eval.im).abs() <= 5.0e-5);
+        assert!((f64::from(sos32_eval.re) - tf_eval.re).abs() <= 5.0e-5);
+        assert!((f64::from(sos32_eval.im) - tf_eval.im).abs() <= 5.0e-5);
     }
 
     #[test]
