@@ -243,6 +243,18 @@ mod tests {
     }
 
     #[test]
+    fn analog_even_order_chebyshev_lowpass_has_unity_dc_gain() {
+        let spec = AnalogFilterSpec::new(
+            4,
+            AnalogFilterFamily::Chebyshev1 { ripple_db: 1.0 },
+            FilterShape::Lowpass { cutoff: 2.0 },
+        )
+        .unwrap();
+        let zpk = design_analog_filter_zpk(&spec).unwrap();
+        assert_close(zpk.evaluate(Complex::new(0.0, 0.0)).norm(), 1.0, 1.0e-10);
+    }
+
+    #[test]
     fn analog_bessel_designs_and_converts_consistently() {
         let spec = AnalogFilterSpec::new(
             3,

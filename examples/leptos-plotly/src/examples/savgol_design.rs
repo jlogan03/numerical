@@ -314,7 +314,7 @@ fn run_savgol_design(inputs: SavGolInputs) -> Result<SavGolData, String> {
     let angular_frequencies = logspace(
         (1.0e-6 * sample_rate * core::f64::consts::TAU).log10(),
         (0.49 * sample_rate * core::f64::consts::TAU).log10(),
-        260,
+        520,
     );
     let savgol_bode = savgol
         .bode_data(&angular_frequencies)

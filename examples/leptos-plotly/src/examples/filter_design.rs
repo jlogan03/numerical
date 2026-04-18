@@ -484,7 +484,7 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
     let response_frequencies = logspace(
         (MIN_CUTOFF_FRACTION * sample_rate * core::f64::consts::TAU).log10(),
         (MAX_CUTOFF_FRACTION * sample_rate * core::f64::consts::TAU).log10(),
-        260,
+        520,
     );
     let bode = filter
         .bode_data(&response_frequencies)
@@ -498,7 +498,7 @@ fn run_filter_design(inputs: FilterDesignInputs) -> Result<FilterDesignData, Str
     let sweep_cutoffs = logspace(
         (MIN_CUTOFF_FRACTION * sample_rate * core::f64::consts::TAU).log10(),
         (MAX_SWEEP_CUTOFF_FRACTION * sample_rate * core::f64::consts::TAU).log10(),
-        120,
+        240,
     );
     let (sweep_card_title, sweep_card_description, sweep_plots) = match inputs.sim_method {
         FilterSimMethod::Sos => {

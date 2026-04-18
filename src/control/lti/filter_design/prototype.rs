@@ -56,6 +56,11 @@ where
     let n = R::from(order).unwrap();
     // Type-I Chebyshev prototypes are parameterized by passband ripple via the
     // standard epsilon / asinh transform of the Butterworth pole angles.
+    //
+    // This implementation intentionally normalizes the lowpass prototype for
+    // unity DC gain for both odd and even orders. Some literature instead uses
+    // the equiripple passband convention in which even-order Type-I filters
+    // have DC gain `1 / sqrt(1 + epsilon^2)`.
     let epsilon = (R::from(10.0)
         .unwrap()
         .powf(ripple_db / R::from(10.0).unwrap())
@@ -73,12 +78,7 @@ where
         let im = cosh_mu * theta.cos();
         poles.push(Complex::new(re, im));
     }
-    let dc_target = if order % 2 == 0 {
-        R::one() / (R::one() + epsilon * epsilon).sqrt()
-    } else {
-        R::one()
-    };
-    let gain = gain_for_dc_target::<R>(&[], &poles, dc_target)?;
+    let gain = gain_for_dc_target::<R>(&[], &poles, R::one())?;
     ContinuousZpk::new(Vec::new(), poles, gain, ContinuousTime).map_err(Into::into)
 }
 
