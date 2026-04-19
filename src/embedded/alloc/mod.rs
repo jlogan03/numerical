@@ -3,4 +3,4 @@
 pub mod estimation;
 mod matrix;
 
-pub use matrix::Matrix;
+pub use matrix::{Matrix, Vector};

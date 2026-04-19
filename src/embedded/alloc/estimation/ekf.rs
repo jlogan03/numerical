@@ -1,10 +1,12 @@
 //! Simplified dynamic-size discrete-time extended Kalman filtering.
 
 use crate::embedded::EmbeddedError;
-use crate::embedded::alloc::Matrix;
-use crate::embedded::alloc::matrix::{quadratic_form, vec_add, vec_norm, vec_sub};
-use alloc::vec;
-use alloc::vec::Vec;
+use crate::embedded::alloc::matrix::{
+    identity_matrix, invert_matrix, mat_add, mat_mul, mat_mul_vec, mat_sub, quadratic_form,
+    transpose, vec_add, vec_as_slice, vec_as_slice_mut, vec_norm, vec_sub, vector_from_slice,
+    zero_matrix, zero_vector,
+};
+use crate::embedded::alloc::{Matrix, Vector};
 use num_traits::Float;
 
 /// Dynamic nonlinear discrete-time model.
@@ -33,18 +35,18 @@ pub trait DiscreteExtendedKalmanModel<T>: DiscreteNonlinearModel<T> {
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExtendedKalmanPrediction<T> {
     /// Predicted state estimate.
-    pub state: Vec<T>,
+    pub state: Vector<T>,
     /// Predicted covariance.
     pub covariance: Matrix<T>,
     /// Predicted output.
-    pub output: Vec<T>,
+    pub output: Vector<T>,
 }
 
 /// One EKF update stage.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExtendedKalmanUpdate<T> {
     /// Innovation `y - h(x^-, u)`.
-    pub innovation: Vec<T>,
+    pub innovation: Vector<T>,
     /// Euclidean innovation norm.
     pub innovation_norm: T,
     /// Innovation covariance.
@@ -54,11 +56,11 @@ pub struct ExtendedKalmanUpdate<T> {
     /// Kalman gain.
     pub gain: Matrix<T>,
     /// Posterior state estimate.
-    pub state: Vec<T>,
+    pub state: Vector<T>,
     /// Posterior covariance.
     pub covariance: Matrix<T>,
     /// Posterior output estimate.
-    pub output: Vec<T>,
+    pub output: Vector<T>,
 }
 
 /// Dynamic-size extended Kalman filter runtime.
@@ -71,7 +73,7 @@ pub struct ExtendedKalmanFilter<T, M> {
     /// Measurement-noise covariance.
     pub v: Matrix<T>,
     /// Current posterior state estimate.
-    pub x_hat: Vec<T>,
+    pub x_hat: Vector<T>,
     /// Current posterior covariance.
     pub p: Matrix<T>,
 }
@@ -86,16 +88,16 @@ where
         model: M,
         w: Matrix<T>,
         v: Matrix<T>,
-        x_hat: Vec<T>,
+        x_hat: Vector<T>,
         p: Matrix<T>,
     ) -> Result<Self, EmbeddedError> {
         let nx = model.state_dim();
         let ny = model.output_dim();
-        if x_hat.len() != nx {
+        if x_hat.nrows() != nx {
             return Err(EmbeddedError::LengthMismatch {
                 which: "embedded.alloc.ekf.x_hat",
                 expected: nx,
-                actual: x_hat.len(),
+                actual: x_hat.nrows(),
             });
         }
         if w.nrows() != nx || w.ncols() != nx {
@@ -137,7 +139,7 @@ where
 
     /// Returns the current posterior state estimate.
     #[must_use]
-    pub fn state_estimate(&self) -> &[T] {
+    pub fn state_estimate(&self) -> &Vector<T> {
         &self.x_hat
     }
 
@@ -152,15 +154,21 @@ where
         validate_input_dim(&self.model, input)?;
 
         let nx = self.model.state_dim();
-        let mut f = Matrix::zeros(nx, nx);
-        self.model.transition_jacobian(&self.x_hat, input, &mut f);
+        let mut f = zero_matrix(nx, nx);
+        self.model
+            .transition_jacobian(vec_as_slice(&self.x_hat), input, &mut f);
 
-        let mut state = vec![T::zero(); nx];
-        self.model.transition(&self.x_hat, input, &mut state);
+        let mut state = zero_vector(nx);
+        self.model.transition(
+            vec_as_slice(&self.x_hat),
+            input,
+            vec_as_slice_mut(&mut state),
+        );
 
-        let covariance = f.mul(&self.p)?.mul(&f.transpose())?.add(&self.w)?;
-        let mut output = vec![T::zero(); self.model.output_dim()];
-        self.model.output(&state, input, &mut output);
+        let covariance = mat_add(&mat_mul(&mat_mul(&f, &self.p)?, &transpose(&f))?, &self.w)?;
+        let mut output = zero_vector(self.model.output_dim());
+        self.model
+            .output(vec_as_slice(&state), input, vec_as_slice_mut(&mut output));
 
         Ok(ExtendedKalmanPrediction {
             state,
@@ -180,30 +188,37 @@ where
         validate_output_dim(&self.model, measurement)?;
 
         let ny = self.model.output_dim();
-        let mut h = Matrix::zeros(ny, self.model.state_dim());
-        self.model.output_jacobian(&prediction.state, input, &mut h);
+        let mut h = zero_matrix(ny, self.model.state_dim());
+        self.model
+            .output_jacobian(vec_as_slice(&prediction.state), input, &mut h);
 
-        let innovation = vec_sub(measurement, &prediction.output)?;
-        let innovation_covariance = h
-            .mul(&prediction.covariance)?
-            .mul(&h.transpose())?
-            .add(&self.v)?;
-        let innovation_covariance_inv =
-            innovation_covariance.inverse("embedded.alloc.ekf.innovation_covariance")?;
-        let gain = prediction
-            .covariance
-            .mul(&h.transpose())?
-            .mul(&innovation_covariance_inv)?;
-        let state = vec_add(&prediction.state, &gain.mul_vec(&innovation)?)?;
-        let identity = Matrix::identity(self.model.state_dim());
-        let covariance = identity
-            .sub(&gain.mul(&h)?)?
-            .mul(&prediction.covariance)?
-            .mul(&identity.sub(&gain.mul(&h)?)?.transpose())?
-            .add(&gain.mul(&self.v)?.mul(&gain.transpose())?)?;
+        let innovation = vec_sub(&vector_from_slice(measurement), &prediction.output)?;
+        let innovation_covariance = mat_add(
+            &mat_mul(&mat_mul(&h, &prediction.covariance)?, &transpose(&h))?,
+            &self.v,
+        )?;
+        let innovation_covariance_inv = invert_matrix(
+            &innovation_covariance,
+            "embedded.alloc.ekf.innovation_covariance",
+        )?;
+        let gain = mat_mul(
+            &mat_mul(&prediction.covariance, &transpose(&h))?,
+            &innovation_covariance_inv,
+        )?;
+        let state = vec_add(&prediction.state, &mat_mul_vec(&gain, &innovation)?)?;
+        let identity = identity_matrix(self.model.state_dim());
+        let residual = mat_sub(&identity, &mat_mul(&gain, &h)?)?;
+        let covariance = mat_add(
+            &mat_mul(
+                &mat_mul(&residual, &prediction.covariance)?,
+                &transpose(&residual),
+            )?,
+            &mat_mul(&mat_mul(&gain, &self.v)?, &transpose(&gain))?,
+        )?;
 
-        let mut output = vec![T::zero(); ny];
-        self.model.output(&state, input, &mut output);
+        let mut output = zero_vector(ny);
+        self.model
+            .output(vec_as_slice(&state), input, vec_as_slice_mut(&mut output));
 
         Ok(ExtendedKalmanUpdate {
             innovation_norm: vec_norm(&innovation),
@@ -268,6 +283,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::embedded::alloc::matrix::{identity_matrix, scale_matrix, vector_from_slice};
 
     #[derive(Clone, Debug, PartialEq)]
     struct QuadraticSensor;
@@ -308,10 +324,10 @@ mod tests {
     fn alloc_ekf_step_runs() {
         let mut filter = ExtendedKalmanFilter::new(
             QuadraticSensor,
-            Matrix::identity(1).scale(1.0e-3),
-            Matrix::identity(1).scale(1.0e-2),
-            vec![0.5],
-            Matrix::identity(1),
+            scale_matrix(&identity_matrix(1), 1.0e-3),
+            scale_matrix(&identity_matrix(1), 1.0e-2),
+            vector_from_slice(&[0.5]),
+            identity_matrix(1),
         )
         .unwrap();
 

@@ -2,9 +2,12 @@
 
 use super::ekf::DiscreteNonlinearModel;
 use crate::embedded::EmbeddedError;
-use crate::embedded::alloc::Matrix;
-use crate::embedded::alloc::matrix::{outer_product, quadratic_form, vec_add, vec_norm, vec_sub};
-use alloc::vec;
+use crate::embedded::alloc::matrix::{
+    cholesky_lower, invert_matrix, mat_add, mat_mul, mat_mul_vec, mat_sub, outer_product,
+    quadratic_form, scale_matrix, transpose, vec_add, vec_as_slice, vec_as_slice_mut, vec_norm,
+    vec_sub, vector_from_slice, zero_matrix, zero_vector,
+};
+use crate::embedded::alloc::{Matrix, Vector};
 use alloc::vec::Vec;
 use num_traits::Float;
 
@@ -12,18 +15,18 @@ use num_traits::Float;
 #[derive(Clone, Debug, PartialEq)]
 pub struct UnscentedKalmanPrediction<T> {
     /// Predicted state estimate.
-    pub state: Vec<T>,
+    pub state: Vector<T>,
     /// Predicted covariance.
     pub covariance: Matrix<T>,
     /// Propagated state sigma points.
-    pub sigma_points: Vec<Vec<T>>,
+    pub sigma_points: Vec<Vector<T>>,
 }
 
 /// One UKF update stage.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UnscentedKalmanUpdate<T> {
     /// Innovation `y - y^-`.
-    pub innovation: Vec<T>,
+    pub innovation: Vector<T>,
     /// Euclidean innovation norm.
     pub innovation_norm: T,
     /// Innovation covariance.
@@ -33,11 +36,11 @@ pub struct UnscentedKalmanUpdate<T> {
     /// Kalman gain.
     pub gain: Matrix<T>,
     /// Posterior state estimate.
-    pub state: Vec<T>,
+    pub state: Vector<T>,
     /// Posterior covariance.
     pub covariance: Matrix<T>,
     /// Predicted measurement.
-    pub predicted_output: Vec<T>,
+    pub predicted_output: Vector<T>,
 }
 
 /// Simplified SPD-only unscented Kalman filter runtime.
@@ -50,7 +53,7 @@ pub struct UnscentedKalmanFilter<T, M> {
     /// Measurement-noise covariance.
     pub v: Matrix<T>,
     /// Current posterior state estimate.
-    pub x_hat: Vec<T>,
+    pub x_hat: Vector<T>,
     /// Current posterior covariance.
     pub p: Matrix<T>,
     /// Spread parameter.
@@ -71,16 +74,16 @@ where
         model: M,
         w: Matrix<T>,
         v: Matrix<T>,
-        x_hat: Vec<T>,
+        x_hat: Vector<T>,
         p: Matrix<T>,
     ) -> Result<Self, EmbeddedError> {
         let nx = model.state_dim();
         let ny = model.output_dim();
-        if x_hat.len() != nx {
+        if x_hat.nrows() != nx {
             return Err(EmbeddedError::LengthMismatch {
                 which: "embedded.alloc.ukf.x_hat",
                 expected: nx,
-                actual: x_hat.len(),
+                actual: x_hat.nrows(),
             });
         }
         if w.nrows() != nx || w.ncols() != nx {
@@ -153,7 +156,7 @@ where
 
     /// Returns the current posterior estimate.
     #[must_use]
-    pub fn state_estimate(&self) -> &[T] {
+    pub fn state_estimate(&self) -> &Vector<T> {
         &self.x_hat
     }
 
@@ -172,16 +175,21 @@ where
         let mut propagated = Vec::with_capacity(sigma_points.len());
         let mut idx = 0usize;
         while idx < sigma_points.len() {
-            let mut next_state = vec![T::zero(); self.model.state_dim()];
-            self.model
-                .transition(&sigma_points[idx], input, &mut next_state);
+            let mut next_state = zero_vector(self.model.state_dim());
+            self.model.transition(
+                vec_as_slice(&sigma_points[idx]),
+                input,
+                vec_as_slice_mut(&mut next_state),
+            );
             propagated.push(next_state);
             idx += 1;
         }
 
         let state = weighted_mean(&propagated, &weights.mean);
-        let covariance =
-            weighted_covariance(&propagated, &state, &weights.covariance)?.add(&self.w)?;
+        let covariance = mat_add(
+            &weighted_covariance(&propagated, &state, &weights.covariance)?,
+            &self.w,
+        )?;
 
         Ok(UnscentedKalmanPrediction {
             state,
@@ -204,20 +212,26 @@ where
         let mut measurement_points = Vec::with_capacity(prediction.sigma_points.len());
         let mut idx = 0usize;
         while idx < prediction.sigma_points.len() {
-            let mut output = vec![T::zero(); self.model.output_dim()];
-            self.model
-                .output(&prediction.sigma_points[idx], input, &mut output);
+            let mut output = zero_vector(self.model.output_dim());
+            self.model.output(
+                vec_as_slice(&prediction.sigma_points[idx]),
+                input,
+                vec_as_slice_mut(&mut output),
+            );
             measurement_points.push(output);
             idx += 1;
         }
 
         let predicted_output = weighted_mean(&measurement_points, &weights.mean);
-        let innovation = vec_sub(measurement, &predicted_output)?;
-        let innovation_covariance =
-            weighted_covariance(&measurement_points, &predicted_output, &weights.covariance)?
-                .add(&self.v)?;
-        let innovation_covariance_inv =
-            innovation_covariance.inverse("embedded.alloc.ukf.innovation_covariance")?;
+        let innovation = vec_sub(&vector_from_slice(measurement), &predicted_output)?;
+        let innovation_covariance = mat_add(
+            &weighted_covariance(&measurement_points, &predicted_output, &weights.covariance)?,
+            &self.v,
+        )?;
+        let innovation_covariance_inv = invert_matrix(
+            &innovation_covariance,
+            "embedded.alloc.ukf.innovation_covariance",
+        )?;
         let cross_covariance = cross_covariance(
             &prediction.sigma_points,
             &prediction.state,
@@ -225,11 +239,12 @@ where
             &predicted_output,
             &weights.covariance,
         )?;
-        let gain = cross_covariance.mul(&innovation_covariance_inv)?;
-        let state = vec_add(&prediction.state, &gain.mul_vec(&innovation)?)?;
-        let covariance = prediction
-            .covariance
-            .sub(&gain.mul(&innovation_covariance)?.mul(&gain.transpose())?)?;
+        let gain = mat_mul(&cross_covariance, &innovation_covariance_inv)?;
+        let state = vec_add(&prediction.state, &mat_mul_vec(&gain, &innovation)?)?;
+        let covariance = mat_sub(
+            &prediction.covariance,
+            &mat_mul(&mat_mul(&gain, &innovation_covariance)?, &transpose(&gain))?,
+        )?;
 
         Ok(UnscentedKalmanUpdate {
             innovation_norm: vec_norm(&innovation),
@@ -261,8 +276,8 @@ where
 
 /// Weight vectors used by the standard scaled unscented transform.
 struct SigmaWeights<T> {
-    mean: Vec<T>,
-    covariance: Vec<T>,
+    mean: Vector<T>,
+    covariance: Vector<T>,
 }
 
 /// Computes the standard scaled unscented weights.
@@ -281,8 +296,15 @@ where
         });
     }
     let count = 2 * n + 1;
-    let mut mean = vec![T::one() / ((T::one() + T::one()) * scale); count];
-    let mut covariance = mean.clone();
+    let mut mean = zero_vector(count);
+    let mut covariance = zero_vector(count);
+    let repeated = T::one() / ((T::one() + T::one()) * scale);
+    let mut idx = 0usize;
+    while idx < count {
+        mean[idx] = repeated;
+        covariance[idx] = repeated;
+        idx += 1;
+    }
     mean[0] = lambda / scale;
     covariance[0] = mean[0] + (T::one() - alpha * alpha + beta);
     Ok(SigmaWeights { mean, covariance })
@@ -290,30 +312,31 @@ where
 
 /// Builds the sigma points around the current state estimate.
 fn sigma_points<T>(
-    state: &[T],
+    state: &Vector<T>,
     covariance: &Matrix<T>,
     alpha: T,
     kappa: T,
-) -> Result<Vec<Vec<T>>, EmbeddedError>
+) -> Result<Vec<Vector<T>>, EmbeddedError>
 where
     T: Float + Copy,
 {
-    let n = state.len();
+    let n = state.nrows();
     let n_t = T::from(n).ok_or(EmbeddedError::InvalidParameter {
         which: "embedded.alloc.ukf.state_dim",
     })?;
     let lambda = alpha * alpha * (n_t + kappa) - n_t;
     let scale = n_t + lambda;
-    let factor = covariance
-        .scale(scale)
-        .cholesky_lower("embedded.alloc.ukf.cholesky")?;
+    let factor = cholesky_lower(
+        &scale_matrix(covariance, scale),
+        "embedded.alloc.ukf.cholesky",
+    )?;
 
     let mut points = Vec::with_capacity(2 * n + 1);
-    points.push(state.to_vec());
+    points.push(state.clone());
     let mut col = 0usize;
     while col < n {
-        let mut plus = state.to_vec();
-        let mut minus = state.to_vec();
+        let mut plus = state.clone();
+        let mut minus = state.clone();
         let mut row = 0usize;
         while row < n {
             plus[row] = plus[row] + factor[(row, col)];
@@ -328,12 +351,12 @@ where
 }
 
 /// Computes the weighted sigma-point mean.
-fn weighted_mean<T>(points: &[Vec<T>], weights: &[T]) -> Vec<T>
+fn weighted_mean<T>(points: &[Vector<T>], weights: &Vector<T>) -> Vector<T>
 where
     T: Float + Copy,
 {
-    let dim = points.first().map_or(0, Vec::len);
-    let mut mean = vec![T::zero(); dim];
+    let dim = points.first().map_or(0, Vector::nrows);
+    let mut mean = zero_vector(dim);
     let mut idx = 0usize;
     while idx < points.len() {
         let mut j = 0usize;
@@ -348,19 +371,22 @@ where
 
 /// Computes the weighted covariance of one sigma-point cloud.
 fn weighted_covariance<T>(
-    points: &[Vec<T>],
-    mean: &[T],
-    weights: &[T],
+    points: &[Vector<T>],
+    mean: &Vector<T>,
+    weights: &Vector<T>,
 ) -> Result<Matrix<T>, EmbeddedError>
 where
     T: Float + Copy,
 {
-    let dim = mean.len();
-    let mut covariance = Matrix::zeros(dim, dim);
+    let dim = mean.nrows();
+    let mut covariance = zero_matrix(dim, dim);
     let mut idx = 0usize;
     while idx < points.len() {
         let delta = vec_sub(&points[idx], mean)?;
-        covariance = covariance.add(&outer_product(&delta, &delta).scale(weights[idx]))?;
+        covariance = mat_add(
+            &covariance,
+            &scale_matrix(&outer_product(&delta, &delta), weights[idx]),
+        )?;
         idx += 1;
     }
     Ok(covariance)
@@ -368,21 +394,24 @@ where
 
 /// Computes the weighted state/measurement cross covariance.
 fn cross_covariance<T>(
-    state_points: &[Vec<T>],
-    state_mean: &[T],
-    measurement_points: &[Vec<T>],
-    measurement_mean: &[T],
-    weights: &[T],
+    state_points: &[Vector<T>],
+    state_mean: &Vector<T>,
+    measurement_points: &[Vector<T>],
+    measurement_mean: &Vector<T>,
+    weights: &Vector<T>,
 ) -> Result<Matrix<T>, EmbeddedError>
 where
     T: Float + Copy,
 {
-    let mut covariance = Matrix::zeros(state_mean.len(), measurement_mean.len());
+    let mut covariance = zero_matrix(state_mean.nrows(), measurement_mean.nrows());
     let mut idx = 0usize;
     while idx < state_points.len() {
         let dx = vec_sub(&state_points[idx], state_mean)?;
         let dz = vec_sub(&measurement_points[idx], measurement_mean)?;
-        covariance = covariance.add(&outer_product(&dx, &dz).scale(weights[idx]))?;
+        covariance = mat_add(
+            &covariance,
+            &scale_matrix(&outer_product(&dx, &dz), weights[idx]),
+        )?;
         idx += 1;
     }
     Ok(covariance)
@@ -423,6 +452,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::embedded::alloc::matrix::{identity_matrix, scale_matrix, vector_from_slice};
 
     #[derive(Clone, Debug, PartialEq)]
     struct QuadraticSensor;
@@ -453,10 +483,10 @@ mod tests {
     fn alloc_ukf_step_runs() {
         let mut filter = UnscentedKalmanFilter::new(
             QuadraticSensor,
-            Matrix::identity(1).scale(1.0e-3),
-            Matrix::identity(1).scale(1.0e-2),
-            vec![0.5],
-            Matrix::identity(1),
+            scale_matrix(&identity_matrix(1), 1.0e-3),
+            scale_matrix(&identity_matrix(1), 1.0e-2),
+            vector_from_slice(&[0.5]),
+            identity_matrix(1),
         )
         .unwrap();
 
