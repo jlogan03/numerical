@@ -199,8 +199,7 @@ where
             windup_error: [T::zero(); LANES],
         };
 
-        let mut lane = 0usize;
-        while lane < LANES {
+        for lane in 0..LANES {
             let error = setpoint[lane] - measurement[lane];
             let proportional = self.kp * error;
             let derivative = match self.effective_derivative_filter() {
@@ -243,7 +242,6 @@ where
             output.integral[lane] = integral;
             output.derivative[lane] = derivative;
             output.windup_error[lane] = windup_error;
-            lane += 1;
         }
 
         Ok(output)

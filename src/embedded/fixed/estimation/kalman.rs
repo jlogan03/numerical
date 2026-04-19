@@ -2,7 +2,7 @@
 
 use crate::embedded::error::EmbeddedError;
 use crate::embedded::fixed::linalg::{
-    Matrix, Vector, identity_matrix, invert_matrix, mat_add, mat_mul, mat_sub, mat_vec_mul,
+    Matrix, Vector, identity_matrix, mat_add, mat_mul, mat_sub, mat_vec_mul, solve_linear_system,
     transpose, vec_add, vec_norm, vec_sub,
 };
 use crate::embedded::fixed::lti::DiscreteStateSpace;
@@ -171,12 +171,17 @@ where
             ),
             &self.v,
         );
-        let innovation_covariance_inv =
-            invert_matrix(&innovation_covariance, "kalman.innovation_covariance")?;
-        let gain = mat_mul(
-            &mat_mul(&prediction.covariance, &transpose(self.system.c())),
-            &innovation_covariance_inv,
-        );
+        let cross_covariance = mat_mul(&prediction.covariance, &transpose(self.system.c()));
+        let gain = transpose(&solve_linear_system(
+            &innovation_covariance,
+            &transpose(&cross_covariance),
+            "kalman.innovation_covariance",
+        )?);
+        let whitened_innovation = solve_linear_system(
+            &innovation_covariance,
+            &column_matrix(&innovation),
+            "kalman.innovation_covariance",
+        )?;
         let state = vec_add(&prediction.state, &mat_vec_mul(&gain, &innovation));
         let covariance = updated_covariance(
             self.covariance_update,
@@ -189,7 +194,7 @@ where
         let output = self.system.output(&state, &input);
         let innovation_norm = vec_norm(&innovation);
         let normalized_innovation_norm =
-            normalized_innovation_norm(&innovation, &innovation_covariance_inv).sqrt();
+            normalized_innovation_norm(&innovation, &whitened_innovation).sqrt();
 
         Ok(KalmanUpdate {
             innovation,
@@ -272,6 +277,18 @@ where
     }
 }
 
+/// Packs one fixed-size vector into a single-column right-hand side block.
+fn column_matrix<T, const N: usize>(vector: &Vector<T, N>) -> Matrix<T, N, 1>
+where
+    T: Float + Copy,
+{
+    let mut out = [[T::zero(); 1]; N];
+    for idx in 0..N {
+        out[idx][0] = vector[idx];
+    }
+    out
+}
+
 /// Applies the configured covariance update law.
 fn updated_covariance<T, const NX: usize, const NY: usize>(
     covariance_update: CovarianceUpdate,
@@ -303,20 +320,17 @@ where
     }
 }
 
-/// Computes the normalized innovation energy `r^T S^-1 r`.
+/// Computes the normalized innovation energy `r^T z` after solving `S z = r`.
 fn normalized_innovation_norm<T, const NY: usize>(
     innovation: &Vector<T, NY>,
-    innovation_covariance_inv: &Matrix<T, NY, NY>,
+    whitened_innovation: &Matrix<T, NY, 1>,
 ) -> T
 where
     T: Float + Copy,
 {
-    let weighted = mat_vec_mul(innovation_covariance_inv, innovation);
     let mut acc = T::zero();
-    let mut idx = 0usize;
-    while idx < NY {
-        acc = acc + innovation[idx] * weighted[idx];
-        idx += 1;
+    for idx in 0..NY {
+        acc = acc + innovation[idx] * whitened_innovation[idx][0];
     }
     acc.max(T::zero())
 }

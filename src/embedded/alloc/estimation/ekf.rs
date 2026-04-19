@@ -2,11 +2,12 @@
 
 use crate::embedded::EmbeddedError;
 use crate::embedded::alloc::matrix::{
-    identity_matrix, invert_matrix, mat_add, mat_mul, mat_mul_vec, mat_sub, quadratic_form,
-    transpose, vec_add, vec_as_slice, vec_as_slice_mut, vec_norm, vec_sub, vector_from_slice,
-    zero_matrix, zero_vector,
+    identity_matrix, llt_solve, llt_solve_vector, mat_add, mat_mul, mat_mul_vec, mat_sub,
+    transpose, vec_add, vec_as_slice, vec_as_slice_mut, vec_dot, vec_norm, vec_sub,
+    vector_from_slice, zero_matrix, zero_vector,
 };
 use crate::embedded::alloc::{Matrix, Vector};
+use faer_traits::ComplexField;
 use num_traits::Float;
 
 /// Dynamic nonlinear discrete-time model.
@@ -80,7 +81,7 @@ pub struct ExtendedKalmanFilter<T, M> {
 
 impl<T, M> ExtendedKalmanFilter<T, M>
 where
-    T: Float + Copy,
+    T: ComplexField<Real = T> + Float + Copy,
     M: DiscreteExtendedKalmanModel<T>,
 {
     /// Creates a validated dynamic-size EKF runtime.
@@ -197,13 +198,16 @@ where
             &mat_mul(&mat_mul(&h, &prediction.covariance)?, &transpose(&h))?,
             &self.v,
         )?;
-        let innovation_covariance_inv = invert_matrix(
+        let cross_covariance = mat_mul(&prediction.covariance, &transpose(&h))?;
+        let gain = transpose(&llt_solve(
             &innovation_covariance,
+            &transpose(&cross_covariance),
             "embedded.alloc.ekf.innovation_covariance",
-        )?;
-        let gain = mat_mul(
-            &mat_mul(&prediction.covariance, &transpose(&h))?,
-            &innovation_covariance_inv,
+        )?);
+        let whitened_innovation = llt_solve_vector(
+            &innovation_covariance,
+            &innovation,
+            "embedded.alloc.ekf.innovation_covariance",
         )?;
         let state = vec_add(&prediction.state, &mat_mul_vec(&gain, &innovation)?)?;
         let identity = identity_matrix(self.model.state_dim());
@@ -222,7 +226,7 @@ where
 
         Ok(ExtendedKalmanUpdate {
             innovation_norm: vec_norm(&innovation),
-            normalized_innovation_norm: quadratic_form(&innovation_covariance_inv, &innovation)?
+            normalized_innovation_norm: vec_dot(&innovation, &whitened_innovation)?
                 .max(T::zero())
                 .sqrt(),
             innovation,

@@ -116,17 +116,13 @@ where
         let mut output = input;
         let dt = self.sample_time;
 
-        let mut lane = 0usize;
-        while lane < LANES {
+        for lane in 0..LANES {
             output[lane] = output[lane] * self.gain;
-            lane += 1;
         }
 
-        let mut section_idx = 0usize;
-        while section_idx < SECTIONS {
+        for section_idx in 0..SECTIONS {
             let section = self.sections[section_idx];
-            let mut lane = 0usize;
-            while lane < LANES {
+            for lane in 0..LANES {
                 let sample = output[lane];
                 let state_lane = &mut state.section_state[section_idx][lane];
                 output[lane] = match section {
@@ -153,9 +149,7 @@ where
                         y
                     }
                 };
-                lane += 1;
             }
-            section_idx += 1;
         }
 
         output
@@ -176,10 +170,8 @@ where
             });
         }
 
-        let mut idx = 0usize;
-        while idx < input.len() {
+        for idx in 0..input.len() {
             output[idx] = self.step(state, input[idx]);
-            idx += 1;
         }
         Ok(())
     }
@@ -187,15 +179,13 @@ where
     /// Returns the scalar DC gain of the full cascade.
     pub fn dc_gain(&self) -> Result<T, EmbeddedError> {
         let mut gain = self.gain;
-        let mut idx = 0usize;
-        while idx < SECTIONS {
+        for idx in 0..SECTIONS {
             gain = gain
                 * match self.sections[idx] {
                     DeltaSection::Direct { d } => d,
                     DeltaSection::First { alpha0, c0, d } => d + c0 / alpha0,
                     DeltaSection::Second { alpha0, c1, d, .. } => d + c1 / alpha0,
                 };
-            idx += 1;
         }
         ensure_finite(gain, "delta_sos.dc_gain")
     }
@@ -248,10 +238,8 @@ where
         });
 
         let mut cast_sections = [DeltaSection::Direct { d: S::zero() }; SECTIONS];
-        let mut idx = 0usize;
-        while idx < SECTIONS {
+        for idx in 0..SECTIONS {
             cast_sections[idx] = sections[idx]?;
-            idx += 1;
         }
 
         DeltaSos::new(
@@ -285,8 +273,7 @@ where
         }
 
         let mut sections = [DeltaSection::Direct { d: T::zero() }; SECTIONS];
-        let mut idx = 0usize;
-        while idx < SECTIONS {
+        for idx in 0..SECTIONS {
             sections[idx] = match value.sections()[idx] {
                 crate::control::lti::DeltaSection::Direct { d } => DeltaSection::Direct { d },
                 crate::control::lti::DeltaSection::First { alpha0, c0, d } => {
@@ -306,7 +293,6 @@ where
                     d,
                 },
             };
-            idx += 1;
         }
 
         Self::new(sections, value.gain(), value.sample_time())

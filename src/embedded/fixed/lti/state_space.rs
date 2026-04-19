@@ -2,8 +2,7 @@
 
 use crate::embedded::error::EmbeddedError;
 use crate::embedded::fixed::linalg::{
-    Matrix as MatrixStorage, Vector as VectorStorage, identity_matrix, invert_matrix, mat_add,
-    mat_mul, mat_sub, mat_vec_mul, vec_add,
+    Matrix as MatrixStorage, Vector as VectorStorage, mat_vec_mul, vec_add,
 };
 use num_traits::Float;
 
@@ -95,13 +94,36 @@ where
         *x = self.next_state(x, &u);
         y
     }
+}
 
+#[cfg(feature = "alloc")]
+impl<T, const NX: usize, const NU: usize, const NY: usize> DiscreteStateSpace<T, NX, NU, NY>
+where
+    T: Float + Copy + faer_traits::RealField,
+{
     /// Returns the steady-state gain `G(1) = C (I - A)^-1 B + D`.
     pub fn dc_gain(&self) -> Result<Matrix<T, NY, NU>, EmbeddedError> {
-        let lhs = mat_sub(&identity_matrix::<T, NX>(), &self.a);
-        let solve = invert_matrix(&lhs, "state_space.dc_gain")?;
-        Ok(mat_add(
-            &mat_mul(&mat_mul(&self.c, &solve), &self.b),
+        use faer::Mat;
+        use faer::linalg::solvers::Solve;
+
+        let lhs = Mat::from_fn(NX, NX, |row, col| {
+            if row == col {
+                T::one() - self.a[row][col]
+            } else {
+                -self.a[row][col]
+            }
+        });
+        let rhs = Mat::from_fn(NX, NU, |row, col| self.b[row][col]);
+        let solved = lhs.as_ref().partial_piv_lu().solve(rhs.as_ref());
+        let state_gain = core::array::from_fn(|row| {
+            core::array::from_fn(|col| {
+                let value = solved[(row, col)];
+                if value.is_nan() { T::zero() } else { value }
+            })
+        });
+
+        Ok(crate::embedded::fixed::linalg::mat_add(
+            &crate::embedded::fixed::linalg::mat_mul(&self.c, &state_gain),
             &self.d,
         ))
     }
@@ -151,33 +173,21 @@ where
         let mut c = [[T::zero(); NX]; NY];
         let mut d = [[T::zero(); NU]; NY];
 
-        let mut i = 0usize;
-        while i < NX {
-            let mut j = 0usize;
-            while j < NX {
+        for i in 0..NX {
+            for j in 0..NX {
                 a[i][j] = value.a()[(i, j)];
-                j += 1;
             }
-            let mut j = 0usize;
-            while j < NU {
+            for j in 0..NU {
                 b[i][j] = value.b()[(i, j)];
-                j += 1;
             }
-            i += 1;
         }
-        let mut i = 0usize;
-        while i < NY {
-            let mut j = 0usize;
-            while j < NX {
+        for i in 0..NY {
+            for j in 0..NX {
                 c[i][j] = value.c()[(i, j)];
-                j += 1;
             }
-            let mut j = 0usize;
-            while j < NU {
+            for j in 0..NU {
                 d[i][j] = value.d()[(i, j)];
-                j += 1;
             }
-            i += 1;
         }
 
         Self::new(a, b, c, d, value.sample_time())

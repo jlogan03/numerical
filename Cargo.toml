@@ -15,14 +15,14 @@ readme = "README.md"
 crunchy = "^0.2.4"
 num-traits = { version = "^0.2.19", default-features = false, features = ["libm"] }
 faer = { version = "^0.24.0", default-features = false, optional = true }
-faer-traits = { version = "^0.24.0", default-features = false, features = ["std"], optional = true }
+faer-traits = { version = "^0.24.0", default-features = false, optional = true }
 levenberg-marquardt = { version = "0.15.0", optional = true }
 nalgebra = { version = "0.34", default-features = false, features = ["std"], optional = true }
 
 [features]
 default = ["std"]
-std = ["alloc", "dep:faer-traits", "dep:levenberg-marquardt", "dep:nalgebra", "faer/std", "faer/sparse-linalg", "faer-traits/std"]
-alloc = ["dep:faer"]
+std = ["alloc", "dep:levenberg-marquardt", "dep:nalgebra", "faer/std", "faer/sparse-linalg", "faer-traits/std"]
+alloc = ["dep:faer", "dep:faer-traits"]
 fma = []
 
 [lints.rust]

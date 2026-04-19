@@ -2,7 +2,9 @@
 
 use crate::embedded::error::EmbeddedError;
 use crate::embedded::math::ensure_finite;
-use faer::{Col, Mat, Unbind};
+use faer::linalg::solvers::Solve;
+use faer::{Col, Mat, Side, Unbind};
+use faer_traits::ComplexField;
 use num_traits::Float;
 
 /// Heap-backed dense matrix used by the `embedded::alloc` estimators.
@@ -116,10 +118,8 @@ where
 
     Ok(Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
         let mut acc = T::zero();
-        let mut idx = 0usize;
-        while idx < lhs.ncols() {
+        for idx in 0..lhs.ncols() {
             acc = acc + lhs[(row, idx)] * rhs[(idx, col)];
-            idx += 1;
         }
         acc
     }))
@@ -140,23 +140,21 @@ where
 
     Ok(Col::from_fn(matrix.nrows(), |row| {
         let mut acc = T::zero();
-        let mut col = 0usize;
-        while col < matrix.ncols() {
+        for col in 0..matrix.ncols() {
             acc = acc + matrix[(row.unbound(), col)] * vector[col];
-            col += 1;
         }
         acc
     }))
 }
 
-/// Solves `matrix * X = rhs`.
-pub fn solve_linear_system<T>(
+/// Solves `matrix * X = rhs` using faer's dense `LL^T` factorization.
+pub fn llt_solve<T>(
     matrix: &Matrix<T>,
     rhs: &Matrix<T>,
     which: &'static str,
 ) -> Result<Matrix<T>, EmbeddedError>
 where
-    T: Float + Copy,
+    T: ComplexField<Real = T> + Float + Copy,
 {
     if matrix.nrows() != matrix.ncols() {
         return Err(EmbeddedError::DimensionMismatch {
@@ -177,91 +175,54 @@ where
         });
     }
 
-    let n = matrix.nrows();
-    let m = rhs.ncols();
-    let mut a = matrix.clone();
-    let mut b = rhs.clone();
-    let epsilon = T::epsilon().sqrt();
-
-    let mut k = 0usize;
-    while k < n {
-        let mut pivot_row = k;
-        let mut pivot_abs = a[(k, k)].abs();
-        let mut row = k + 1;
-        while row < n {
-            let candidate = a[(row, k)].abs();
-            if candidate > pivot_abs {
-                pivot_abs = candidate;
-                pivot_row = row;
-            }
-            row += 1;
+    let factor = matrix
+        .as_ref()
+        .llt(Side::Lower)
+        .map_err(|_| EmbeddedError::NonPositiveDefinite { which })?;
+    let mut solution = factor.solve(rhs.as_ref());
+    for row in 0..solution.nrows() {
+        for col in 0..solution.ncols() {
+            solution[(row, col)] = ensure_finite(solution[(row, col)], which)?;
         }
-
-        if pivot_abs <= epsilon {
-            return Err(EmbeddedError::SingularMatrix { which });
-        }
-
-        if pivot_row != k {
-            swap_rows(&mut a, k, pivot_row);
-            swap_rows(&mut b, k, pivot_row);
-        }
-
-        let diag = a[(k, k)];
-        let mut col = k;
-        while col < n {
-            a[(k, col)] = a[(k, col)] / diag;
-            col += 1;
-        }
-        let mut col = 0usize;
-        while col < m {
-            b[(k, col)] = b[(k, col)] / diag;
-            col += 1;
-        }
-
-        let mut row = 0usize;
-        while row < n {
-            if row != k {
-                let factor = a[(row, k)];
-                if factor != T::zero() {
-                    let mut col = k;
-                    while col < n {
-                        a[(row, col)] = a[(row, col)] - factor * a[(k, col)];
-                        col += 1;
-                    }
-                    let mut col = 0usize;
-                    while col < m {
-                        b[(row, col)] = b[(row, col)] - factor * b[(k, col)];
-                        col += 1;
-                    }
-                }
-                row += 1;
-            } else {
-                row += 1;
-            }
-        }
-
-        k += 1;
     }
-
-    let mut row = 0usize;
-    while row < b.nrows() {
-        let mut col = 0usize;
-        while col < b.ncols() {
-            b[(row, col)] = ensure_finite(b[(row, col)], which)?;
-            col += 1;
-        }
-        row += 1;
-    }
-
-    Ok(b)
+    Ok(solution)
 }
 
-/// Returns the inverse of one dense square matrix.
-pub fn invert_matrix<T>(matrix: &Matrix<T>, which: &'static str) -> Result<Matrix<T>, EmbeddedError>
+/// Solves `matrix * x = rhs` for one dense vector using faer's dense `LL^T` factorization.
+pub fn llt_solve_vector<T>(
+    matrix: &Matrix<T>,
+    rhs: &Vector<T>,
+    which: &'static str,
+) -> Result<Vector<T>, EmbeddedError>
 where
-    T: Float + Copy,
+    T: ComplexField<Real = T> + Float + Copy,
 {
-    solve_linear_system(matrix, &identity_matrix(matrix.nrows()), which)
+    if matrix.nrows() != matrix.ncols() {
+        return Err(EmbeddedError::DimensionMismatch {
+            which,
+            expected_rows: matrix.nrows(),
+            expected_cols: matrix.nrows(),
+            actual_rows: matrix.nrows(),
+            actual_cols: matrix.ncols(),
+        });
+    }
+    if rhs.nrows() != matrix.nrows() {
+        return Err(EmbeddedError::LengthMismatch {
+            which,
+            expected: matrix.nrows(),
+            actual: rhs.nrows(),
+        });
+    }
+
+    let factor = matrix
+        .as_ref()
+        .llt(Side::Lower)
+        .map_err(|_| EmbeddedError::NonPositiveDefinite { which })?;
+    let mut solution = factor.solve(rhs.as_ref());
+    for idx in 0..solution.nrows() {
+        solution[idx] = ensure_finite(solution[idx], which)?;
+    }
+    Ok(solution)
 }
 
 /// Returns the lower-triangular Cholesky factor `L` such that `A = L L^T`.
@@ -284,15 +245,11 @@ where
 
     let n = matrix.nrows();
     let mut out = zero_matrix(n, n);
-    let mut i = 0usize;
-    while i < n {
-        let mut j = 0usize;
-        while j <= i {
+    for i in 0..n {
+        for j in 0..=i {
             let mut sum = matrix[(i, j)];
-            let mut k = 0usize;
-            while k < j {
+            for k in 0..j {
                 sum = sum - out[(i, k)] * out[(j, k)];
-                k += 1;
             }
 
             if i == j {
@@ -303,9 +260,7 @@ where
             } else {
                 out[(i, j)] = sum / out[(j, j)];
             }
-            j += 1;
         }
-        i += 1;
     }
     Ok(out)
 }
@@ -324,25 +279,21 @@ where
     T: Float + Copy,
 {
     let mut sum = T::zero();
-    let mut idx = 0usize;
-    while idx < vector.nrows() {
+    for idx in 0..vector.nrows() {
         sum = sum + vector[idx] * vector[idx];
-        idx += 1;
     }
     sum.sqrt()
 }
 
-/// Returns the quadratic form `x^T A x`.
-pub fn quadratic_form<T>(matrix: &Matrix<T>, vector: &Vector<T>) -> Result<T, EmbeddedError>
+/// Returns the dot product `lhs^T rhs`.
+pub fn vec_dot<T>(lhs: &Vector<T>, rhs: &Vector<T>) -> Result<T, EmbeddedError>
 where
     T: Float + Copy,
 {
-    let weighted = mat_mul_vec(matrix, vector)?;
+    validate_same_len(lhs, rhs, "embedded.alloc.vec_dot")?;
     let mut acc = T::zero();
-    let mut idx = 0usize;
-    while idx < vector.nrows() {
-        acc = acc + vector[idx] * weighted[idx];
-        idx += 1;
+    for idx in 0..lhs.nrows() {
+        acc = acc + lhs[idx] * rhs[idx];
     }
     Ok(acc)
 }
@@ -402,22 +353,5 @@ fn validate_same_len<T>(
             expected: lhs.nrows(),
             actual: rhs.nrows(),
         })
-    }
-}
-
-/// Swaps two rows in one dense matrix.
-fn swap_rows<T>(matrix: &mut Matrix<T>, lhs: usize, rhs: usize)
-where
-    T: Float + Copy,
-{
-    if lhs == rhs {
-        return;
-    }
-    let mut col = 0usize;
-    while col < matrix.ncols() {
-        let tmp = matrix[(lhs, col)];
-        matrix[(lhs, col)] = matrix[(rhs, col)];
-        matrix[(rhs, col)] = tmp;
-        col += 1;
     }
 }

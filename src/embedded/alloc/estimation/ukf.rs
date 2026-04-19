@@ -3,12 +3,13 @@
 use super::ekf::DiscreteNonlinearModel;
 use crate::embedded::EmbeddedError;
 use crate::embedded::alloc::matrix::{
-    cholesky_lower, invert_matrix, mat_add, mat_mul, mat_mul_vec, mat_sub, outer_product,
-    quadratic_form, scale_matrix, transpose, vec_add, vec_as_slice, vec_as_slice_mut, vec_norm,
-    vec_sub, vector_from_slice, zero_matrix, zero_vector,
+    cholesky_lower, llt_solve, llt_solve_vector, mat_add, mat_mul, mat_mul_vec, mat_sub,
+    outer_product, scale_matrix, transpose, vec_add, vec_as_slice, vec_as_slice_mut, vec_dot,
+    vec_norm, vec_sub, vector_from_slice, zero_matrix, zero_vector,
 };
 use crate::embedded::alloc::{Matrix, Vector};
 use alloc::vec::Vec;
+use faer_traits::ComplexField;
 use num_traits::Float;
 
 /// One UKF prediction stage.
@@ -66,7 +67,7 @@ pub struct UnscentedKalmanFilter<T, M> {
 
 impl<T, M> UnscentedKalmanFilter<T, M>
 where
-    T: Float + Copy,
+    T: ComplexField<Real = T> + Float + Copy,
     M: DiscreteNonlinearModel<T>,
 {
     /// Creates a validated SPD-only UKF runtime.
@@ -173,16 +174,14 @@ where
         let sigma_points = sigma_points(&self.x_hat, &self.p, self.alpha, self.kappa)?;
 
         let mut propagated = Vec::with_capacity(sigma_points.len());
-        let mut idx = 0usize;
-        while idx < sigma_points.len() {
+        for sigma_point in &sigma_points {
             let mut next_state = zero_vector(self.model.state_dim());
             self.model.transition(
-                vec_as_slice(&sigma_points[idx]),
+                vec_as_slice(sigma_point),
                 input,
                 vec_as_slice_mut(&mut next_state),
             );
             propagated.push(next_state);
-            idx += 1;
         }
 
         let state = weighted_mean(&propagated, &weights.mean);
@@ -210,16 +209,14 @@ where
 
         let weights = sigma_weights(self.model.state_dim(), self.alpha, self.beta, self.kappa)?;
         let mut measurement_points = Vec::with_capacity(prediction.sigma_points.len());
-        let mut idx = 0usize;
-        while idx < prediction.sigma_points.len() {
+        for sigma_point in &prediction.sigma_points {
             let mut output = zero_vector(self.model.output_dim());
             self.model.output(
-                vec_as_slice(&prediction.sigma_points[idx]),
+                vec_as_slice(sigma_point),
                 input,
                 vec_as_slice_mut(&mut output),
             );
             measurement_points.push(output);
-            idx += 1;
         }
 
         let predicted_output = weighted_mean(&measurement_points, &weights.mean);
@@ -228,10 +225,6 @@ where
             &weighted_covariance(&measurement_points, &predicted_output, &weights.covariance)?,
             &self.v,
         )?;
-        let innovation_covariance_inv = invert_matrix(
-            &innovation_covariance,
-            "embedded.alloc.ukf.innovation_covariance",
-        )?;
         let cross_covariance = cross_covariance(
             &prediction.sigma_points,
             &prediction.state,
@@ -239,7 +232,16 @@ where
             &predicted_output,
             &weights.covariance,
         )?;
-        let gain = mat_mul(&cross_covariance, &innovation_covariance_inv)?;
+        let gain = transpose(&llt_solve(
+            &innovation_covariance,
+            &transpose(&cross_covariance),
+            "embedded.alloc.ukf.innovation_covariance",
+        )?);
+        let whitened_innovation = llt_solve_vector(
+            &innovation_covariance,
+            &innovation,
+            "embedded.alloc.ukf.innovation_covariance",
+        )?;
         let state = vec_add(&prediction.state, &mat_mul_vec(&gain, &innovation)?)?;
         let covariance = mat_sub(
             &prediction.covariance,
@@ -248,7 +250,7 @@ where
 
         Ok(UnscentedKalmanUpdate {
             innovation_norm: vec_norm(&innovation),
-            normalized_innovation_norm: quadratic_form(&innovation_covariance_inv, &innovation)?
+            normalized_innovation_norm: vec_dot(&innovation, &whitened_innovation)?
                 .max(T::zero())
                 .sqrt(),
             innovation,
@@ -299,11 +301,9 @@ where
     let mut mean = zero_vector(count);
     let mut covariance = zero_vector(count);
     let repeated = T::one() / ((T::one() + T::one()) * scale);
-    let mut idx = 0usize;
-    while idx < count {
+    for idx in 0..count {
         mean[idx] = repeated;
         covariance[idx] = repeated;
-        idx += 1;
     }
     mean[0] = lambda / scale;
     covariance[0] = mean[0] + (T::one() - alpha * alpha + beta);
@@ -333,19 +333,15 @@ where
 
     let mut points = Vec::with_capacity(2 * n + 1);
     points.push(state.clone());
-    let mut col = 0usize;
-    while col < n {
+    for col in 0..n {
         let mut plus = state.clone();
         let mut minus = state.clone();
-        let mut row = 0usize;
-        while row < n {
+        for row in 0..n {
             plus[row] = plus[row] + factor[(row, col)];
             minus[row] = minus[row] - factor[(row, col)];
-            row += 1;
         }
         points.push(plus);
         points.push(minus);
-        col += 1;
     }
     Ok(points)
 }
@@ -357,14 +353,10 @@ where
 {
     let dim = points.first().map_or(0, Vector::nrows);
     let mut mean = zero_vector(dim);
-    let mut idx = 0usize;
-    while idx < points.len() {
-        let mut j = 0usize;
-        while j < dim {
-            mean[j] = mean[j] + weights[idx] * points[idx][j];
-            j += 1;
+    for (idx, point) in points.iter().enumerate() {
+        for j in 0..dim {
+            mean[j] = mean[j] + weights[idx] * point[j];
         }
-        idx += 1;
     }
     mean
 }
@@ -380,14 +372,12 @@ where
 {
     let dim = mean.nrows();
     let mut covariance = zero_matrix(dim, dim);
-    let mut idx = 0usize;
-    while idx < points.len() {
-        let delta = vec_sub(&points[idx], mean)?;
+    for (idx, point) in points.iter().enumerate() {
+        let delta = vec_sub(point, mean)?;
         covariance = mat_add(
             &covariance,
             &scale_matrix(&outer_product(&delta, &delta), weights[idx]),
         )?;
-        idx += 1;
     }
     Ok(covariance)
 }
@@ -404,15 +394,13 @@ where
     T: Float + Copy,
 {
     let mut covariance = zero_matrix(state_mean.nrows(), measurement_mean.nrows());
-    let mut idx = 0usize;
-    while idx < state_points.len() {
+    for idx in 0..state_points.len() {
         let dx = vec_sub(&state_points[idx], state_mean)?;
         let dz = vec_sub(&measurement_points[idx], measurement_mean)?;
         covariance = mat_add(
             &covariance,
             &scale_matrix(&outer_product(&dx, &dz), weights[idx]),
         )?;
-        idx += 1;
     }
     Ok(covariance)
 }

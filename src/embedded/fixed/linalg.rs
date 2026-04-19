@@ -32,10 +32,8 @@ where
     T: Float + Copy,
 {
     let mut out = zero_matrix::<T, N, N>();
-    let mut i = 0usize;
-    while i < N {
+    for i in 0..N {
         out[i][i] = T::one();
-        i += 1;
     }
     out
 }
@@ -49,16 +47,12 @@ where
     T: Float + Copy,
 {
     let mut out = zero_vector::<T, R>();
-    let mut i = 0usize;
-    while i < R {
+    for i in 0..R {
         let mut acc = T::zero();
-        let mut j = 0usize;
-        while j < C {
+        for j in 0..C {
             acc = acc + a[i][j] * x[j];
-            j += 1;
         }
         out[i] = acc;
-        i += 1;
     }
     out
 }
@@ -72,20 +66,14 @@ where
     T: Float + Copy,
 {
     let mut out = zero_matrix::<T, R, C>();
-    let mut i = 0usize;
-    while i < R {
-        let mut j = 0usize;
-        while j < C {
+    for i in 0..R {
+        for j in 0..C {
             let mut acc = T::zero();
-            let mut k = 0usize;
-            while k < K {
+            for k in 0..K {
                 acc = acc + a[i][k] * b[k][j];
-                k += 1;
             }
             out[i][j] = acc;
-            j += 1;
         }
-        i += 1;
     }
     out
 }
@@ -96,14 +84,10 @@ where
     T: Float + Copy,
 {
     let mut out = zero_matrix::<T, C, R>();
-    let mut i = 0usize;
-    while i < R {
-        let mut j = 0usize;
-        while j < C {
+    for i in 0..R {
+        for j in 0..C {
             out[j][i] = a[i][j];
-            j += 1;
         }
-        i += 1;
     }
     out
 }
@@ -117,14 +101,10 @@ where
     T: Float + Copy,
 {
     let mut out = zero_matrix::<T, R, C>();
-    let mut i = 0usize;
-    while i < R {
-        let mut j = 0usize;
-        while j < C {
+    for i in 0..R {
+        for j in 0..C {
             out[i][j] = a[i][j] + b[i][j];
-            j += 1;
         }
-        i += 1;
     }
     out
 }
@@ -138,14 +118,10 @@ where
     T: Float + Copy,
 {
     let mut out = zero_matrix::<T, R, C>();
-    let mut i = 0usize;
-    while i < R {
-        let mut j = 0usize;
-        while j < C {
+    for i in 0..R {
+        for j in 0..C {
             out[i][j] = a[i][j] - b[i][j];
-            j += 1;
         }
-        i += 1;
     }
     out
 }
@@ -156,10 +132,8 @@ where
     T: Float + Copy,
 {
     let mut out = zero_vector::<T, N>();
-    let mut i = 0usize;
-    while i < N {
+    for i in 0..N {
         out[i] = a[i] + b[i];
-        i += 1;
     }
     out
 }
@@ -170,10 +144,8 @@ where
     T: Float + Copy,
 {
     let mut out = zero_vector::<T, N>();
-    let mut i = 0usize;
-    while i < N {
+    for i in 0..N {
         out[i] = a[i] - b[i];
-        i += 1;
     }
     out
 }
@@ -184,10 +156,8 @@ where
     T: Float + Copy,
 {
     let mut sum = T::zero();
-    let mut i = 0usize;
-    while i < N {
+    for i in 0..N {
         sum = sum + x[i] * x[i];
-        i += 1;
     }
     sum.sqrt()
 }
@@ -205,18 +175,15 @@ where
     let mut b = *b;
     let epsilon = T::epsilon().sqrt();
 
-    let mut k = 0usize;
-    while k < N {
+    for k in 0..N {
         let mut pivot_row = k;
         let mut pivot_abs = a[k][k].abs();
-        let mut row = k + 1;
-        while row < N {
+        for row in (k + 1)..N {
             let candidate = a[row][k].abs();
             if candidate > pivot_abs {
                 pivot_abs = candidate;
                 pivot_row = row;
             }
-            row += 1;
         }
 
         if pivot_abs <= epsilon {
@@ -229,60 +196,33 @@ where
         }
 
         let diag = a[k][k];
-        let mut j = k;
-        while j < N {
+        for j in k..N {
             a[k][j] = a[k][j] / diag;
-            j += 1;
         }
-        let mut rhs_col = 0usize;
-        while rhs_col < M {
+        for rhs_col in 0..M {
             b[k][rhs_col] = b[k][rhs_col] / diag;
-            rhs_col += 1;
         }
 
-        let mut i = 0usize;
-        while i < N {
+        for i in 0..N {
             if i != k {
                 let factor = a[i][k];
                 if factor != T::zero() {
-                    let mut j = k;
-                    while j < N {
+                    for j in k..N {
                         a[i][j] = a[i][j] - factor * a[k][j];
-                        j += 1;
                     }
-                    let mut rhs_col = 0usize;
-                    while rhs_col < M {
+                    for rhs_col in 0..M {
                         b[i][rhs_col] = b[i][rhs_col] - factor * b[k][rhs_col];
-                        rhs_col += 1;
                     }
                 }
             }
-            i += 1;
         }
-
-        k += 1;
     }
 
-    let mut row = 0usize;
-    while row < N {
-        let mut col = 0usize;
-        while col < M {
+    for row in 0..N {
+        for col in 0..M {
             b[row][col] = ensure_finite(b[row][col], which)?;
-            col += 1;
         }
-        row += 1;
     }
 
     Ok(b)
-}
-
-/// Inverts one fixed-size square matrix.
-pub(crate) fn invert_matrix<T, const N: usize>(
-    a: &Matrix<T, N, N>,
-    which: &'static str,
-) -> Result<Matrix<T, N, N>, EmbeddedError>
-where
-    T: Float + Copy,
-{
-    solve_linear_system(a, &identity_matrix::<T, N>(), which)
 }
