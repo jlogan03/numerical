@@ -21,7 +21,8 @@ nalgebra = { version = "0.34", default-features = false, features = ["std"], opt
 
 [features]
 default = ["std"]
-std = ["dep:faer", "dep:faer-traits", "dep:levenberg-marquardt", "dep:nalgebra"]
+std = ["alloc", "dep:faer", "dep:faer-traits", "dep:levenberg-marquardt", "dep:nalgebra"]
+alloc = []
 fma = []
 
 [lints.rust]
