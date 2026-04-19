@@ -10,7 +10,6 @@ use crate::control::lti::{ContinuousTime, ContinuousZpk, DiscreteTime, DiscreteZ
 use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer_traits::RealField;
-use faer_traits::ext::ComplexFieldExt;
 use num_traits::Float;
 
 pub(super) fn analog_shape_transform<R>(
@@ -167,7 +166,9 @@ where
     for &zero in prototype.zeros() {
         // Each lowpass root lifts to two bandpass roots.
         let root = zero * half_bw_c;
-        let radical = (root * root - Complex::new(w0 * w0, R::zero())).sqrt();
+        let radical = faer_traits::ext::ComplexFieldExt::sqrt(
+            &(root * root - Complex::new(w0 * w0, R::zero())),
+        );
         zeros.push(root + radical);
         zeros.push(root - radical);
     }
@@ -176,7 +177,9 @@ where
     let mut poles = Vec::with_capacity(prototype.poles().len() * 2);
     for &pole in prototype.poles() {
         let root = pole * half_bw_c;
-        let radical = (root * root - Complex::new(w0 * w0, R::zero())).sqrt();
+        let radical = faer_traits::ext::ComplexFieldExt::sqrt(
+            &(root * root - Complex::new(w0 * w0, R::zero())),
+        );
         poles.push(root + radical);
         poles.push(root - radical);
     }
@@ -207,7 +210,9 @@ where
         // Each lowpass root lifts to two bandstop roots; missing numerator
         // degree is supplied by zeros at +/- j*w0.
         let root = Complex::new(half_bw, R::zero()) / zero;
-        let radical = (root * root - Complex::new(w0 * w0, R::zero())).sqrt();
+        let radical = faer_traits::ext::ComplexFieldExt::sqrt(
+            &(root * root - Complex::new(w0 * w0, R::zero())),
+        );
         zeros.push(root + radical);
         zeros.push(root - radical);
     }
@@ -216,7 +221,9 @@ where
     let mut poles = Vec::with_capacity(prototype.poles().len() * 2);
     for &pole in prototype.poles() {
         let root = Complex::new(half_bw, R::zero()) / pole;
-        let radical = (root * root - Complex::new(w0 * w0, R::zero())).sqrt();
+        let radical = faer_traits::ext::ComplexFieldExt::sqrt(
+            &(root * root - Complex::new(w0 * w0, R::zero())),
+        );
         poles.push(root + radical);
         poles.push(root - radical);
     }
