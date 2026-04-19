@@ -17,4 +17,4 @@ pub(crate) mod scalar;
 /// Sparse direct solvers, iterative solvers, and preconditioners.
 pub mod sparse;
 /// Accurate floating-point summation utilities.
-pub mod sum;
+pub mod twosum;

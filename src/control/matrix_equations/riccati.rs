@@ -66,7 +66,7 @@ use crate::decomp::{
 };
 use crate::sparse::col::col_slice;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
-use crate::sum::twosum::TwoSum;
+use crate::twosum::TwoSum;
 use core::fmt;
 use faer::complex::Complex;
 use faer::linalg::evd::EvdError;

@@ -1,4 +1,4 @@
-use crate::sum::twosum::TwoSum;
+use crate::twosum::TwoSum;
 use faer::complex::Complex;
 use faer_traits::ComplexField;
 use faer_traits::RealField;

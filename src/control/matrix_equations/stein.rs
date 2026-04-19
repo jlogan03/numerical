@@ -53,7 +53,7 @@ use super::lyapunov::{LowRankLyapunovSolve, LyapunovParams, ShiftStrategy};
 use crate::sparse::SparseLuError;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use crate::sparse::lu::SparseLu;
-use crate::sum::twosum::TwoSum;
+use crate::twosum::TwoSum;
 use core::fmt;
 use faer::Index;
 use faer::linalg::lu::partial_pivoting::factor::PartialPivLuParams;

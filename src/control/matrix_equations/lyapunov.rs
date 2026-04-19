@@ -63,7 +63,7 @@
 
 use crate::sparse::compensated::{CompensatedField, CompensatedSum, sum2};
 use crate::sparse::{SparseLu, SparseLuError};
-use crate::sum::twosum::TwoSum;
+use crate::twosum::TwoSum;
 use core::fmt;
 use faer::linalg::lu::partial_pivoting::factor::PartialPivLuParams;
 use faer::linalg::solvers::Solve;

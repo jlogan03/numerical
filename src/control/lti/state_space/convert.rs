@@ -8,7 +8,7 @@ use super::domain::{ContinuousTime, DiscreteTime};
 use super::error::StateSpaceError;
 use super::{ContinuousStateSpace, DiscreteStateSpace, StateSpace};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
-use crate::sum::twosum::TwoSum;
+use crate::twosum::TwoSum;
 use faer::linalg::solvers::Solve;
 use faer::{Mat, MatRef};
 use faer_traits::ComplexField;
