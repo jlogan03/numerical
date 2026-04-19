@@ -55,6 +55,7 @@
 use super::CovarianceUpdate;
 use crate::decomp::{DenseDecompParams, dense_self_adjoint_eigen};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use alloc::{boxed::Box, vec::Vec};
 use core::fmt;
 use faer::prelude::Solve;
 use faer::{Mat, MatRef};
@@ -312,7 +313,7 @@ impl fmt::Display for NonlinearEstimatorError {
     }
 }
 
-impl std::error::Error for NonlinearEstimatorError {}
+impl core::error::Error for NonlinearEstimatorError {}
 
 /// Discrete-time extended Kalman filter.
 #[derive(Debug)]

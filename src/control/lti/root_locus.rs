@@ -47,8 +47,10 @@ use super::{
     ContinuousSos, ContinuousStateSpace, ContinuousTransferFunction, ContinuousZpk, DiscreteSos,
     DiscreteStateSpace, DiscreteTransferFunction, DiscreteZpk, LtiError,
 };
+use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer_traits::RealField;
+use faer_traits::ext::ComplexFieldExt;
 use num_traits::Float;
 
 /// One tracked root-locus branch across a sampled gain grid.
@@ -230,8 +232,8 @@ where
     // Keep the per-gain spectrum deterministic before the branch tracker does
     // its nearest-neighbor assignment.
     roots.sort_by(|lhs, rhs| {
-        rhs.norm()
-            .partial_cmp(&lhs.norm())
+        rhs.abs()
+            .partial_cmp(&lhs.abs())
             .unwrap_or(core::cmp::Ordering::Equal)
             .then_with(|| {
                 rhs.re
@@ -270,7 +272,7 @@ where
             // This is intentionally heuristic: branch continuity comes from the
             // supplied gain grid, not from an exact eigenvalue-continuation
             // solve.
-            let dist = (root - prev).norm();
+            let dist = (root - prev).abs();
             if dist < best_dist {
                 best_dist = dist;
                 best_idx = Some(idx);
@@ -302,6 +304,7 @@ where
 mod tests {
     use super::RootLocusData;
     use crate::control::lti::ContinuousTransferFunction;
+    use nalgebra::ComplexField;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
         let err = (lhs - rhs).abs();
@@ -314,7 +317,7 @@ mod tests {
         for (lhs_roots, rhs_roots) in lhs.poles.iter().zip(rhs.poles.iter()) {
             assert_eq!(lhs_roots.len(), rhs_roots.len());
             for (&lhs_root, &rhs_root) in lhs_roots.iter().zip(rhs_roots.iter()) {
-                assert!((lhs_root - rhs_root).norm() <= tol);
+                assert!((lhs_root - rhs_root).abs() <= tol);
             }
         }
         assert_eq!(lhs.branches.len(), rhs.branches.len());
@@ -323,7 +326,7 @@ mod tests {
             for (lhs_pole, rhs_pole) in lhs_branch.poles.iter().zip(rhs_branch.poles.iter()) {
                 match (lhs_pole, rhs_pole) {
                     (Some(lhs_pole), Some(rhs_pole)) => {
-                        assert!((*lhs_pole - *rhs_pole).norm() <= tol);
+                        assert!((*lhs_pole - *rhs_pole).abs() <= tol);
                     }
                     (None, None) => {}
                     _ => panic!("root-locus branch occupancy mismatch"),

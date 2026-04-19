@@ -79,13 +79,14 @@ pub use svd::{dense_svd, sparse_svd, sparse_svd_scratch_req, sparse_svd_with_scr
 
 use crate::sparse::col::{col_slice, col_slice_mut};
 use crate::sparse::compensated::{CompensatedField, dotc, norm2};
+use alloc::vec::Vec;
+use core::cmp::Ordering;
+use core::fmt;
 use faer::matrix_free::eigen::PartialEigenParams;
 use faer::{Col, ColRef, Mat, MatRef, Unbind};
 use faer_traits::ComplexField;
 use faer_traits::ext::ComplexFieldExt;
 use num_traits::Float;
-use std::cmp::Ordering;
-use std::fmt;
 
 /// Quality and convergence diagnostics returned alongside a decomposition.
 ///
@@ -398,7 +399,7 @@ impl fmt::Display for DecompError {
     }
 }
 
-impl std::error::Error for DecompError {}
+impl core::error::Error for DecompError {}
 
 impl From<faer::linalg::solvers::SvdError> for DecompError {
     fn from(value: faer::linalg::solvers::SvdError) -> Self {

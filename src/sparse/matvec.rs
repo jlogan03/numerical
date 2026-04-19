@@ -1,11 +1,11 @@
 use super::compensated::{CompensatedField, CompensatedSum};
+use core::fmt::Debug;
 use faer::sparse::{SparseColMatRef, SparseRowMatRef};
 use faer::{Index, Unbind};
 use faer_traits::ComplexField;
 use faer_traits::Conjugate;
 use faer_traits::math_utils::zero;
 use num_traits::Float;
-use std::fmt::Debug;
 
 /// Sparse matrix-vector product interface used by iterative solvers.
 pub trait SparseMatVec<T: ComplexField + Copy>: Copy + Debug {

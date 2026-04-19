@@ -117,8 +117,7 @@ impl fmt::Display for BiCGSTABError {
     }
 }
 
-#[cfg(feature = "std")]
-impl std::error::Error for BiCGSTABError {}
+impl core::error::Error for BiCGSTABError {}
 
 /// Errors returned by the one-shot [`BiCGSTAB::solve`] helpers.
 #[derive(Debug)]
@@ -146,8 +145,7 @@ impl<T: ComplexField + Copy, A: SparseMatVec<T>, P: Precond<T>> fmt::Display
     }
 }
 
-#[cfg(feature = "std")]
-impl<T, A, P> std::error::Error for BiCGSTABSolveError<T, A, P>
+impl<T, A, P> core::error::Error for BiCGSTABSolveError<T, A, P>
 where
     T: ComplexField + Copy,
     A: SparseMatVec<T> + fmt::Debug,
@@ -606,22 +604,13 @@ where
 }
 
 #[cfg(test)]
-#[cfg(not(feature = "std"))]
-mod test {
-    #[test]
-    fn require_std_for_tests() {
-        panic!("`std` feature is required for tests")
-    }
-}
-
-#[cfg(feature = "std")]
-#[cfg(test)]
 mod test {
     use super::{BiCGSTAB, BiCGSTABError, BiCGSTABSolveError};
     use crate::sparse::col::{col_slice, col_slice_mut};
     use crate::sparse::compensated::{CompensatedField, norm2};
     use crate::sparse::matvec::SparseMatVec;
     use crate::sparse::{DiagonalPrecond, IdentityPrecond};
+    use alloc::vec::Vec;
     use faer::dyn_stack::{MemBuffer, MemStack};
     use faer::mat::AsMatRef;
     use faer::matrix_free::InitialGuessStatus;
@@ -630,6 +619,7 @@ mod test {
     use faer::{Col, Mat, Par, c32, c64};
     use faer_traits::ComplexField;
     use num_traits::Float;
+    use std::println;
     use std::time::Instant;
 
     fn apply_to_col<T, A>(a: A, x: &[T]) -> Col<T>

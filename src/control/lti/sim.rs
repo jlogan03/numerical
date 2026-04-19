@@ -48,6 +48,7 @@
 
 use super::{DeltaSection, DeltaSos, DiscreteSos, DiscreteStateSpace, LtiError};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum, sum2, sum3};
+use alloc::vec::Vec;
 use faer_traits::ComplexField;
 use faer_traits::RealField;
 use num_traits::Float;
@@ -753,6 +754,7 @@ mod tests {
         DiscreteTransferFunction, FilterShape, LtiError, SecondOrderSection,
         design_digital_filter_sos,
     };
+    use alloc::vec::Vec;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
         let err = (lhs - rhs).abs();

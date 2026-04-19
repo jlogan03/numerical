@@ -51,6 +51,7 @@ use super::col::{col_from_slice, col_slice, col_slice_mut, copy_col, zero_col};
 use super::compensated::{CompensatedField, norm2, sum2};
 use super::matvec::SparseMatVec;
 use super::precond::Precond;
+use alloc::vec::Vec;
 use core::fmt;
 use faer::dyn_stack::{MemBuffer, MemStack};
 use faer::linalg::lu::partial_pivoting::factor::PartialPivLuParams;
@@ -149,7 +150,7 @@ impl fmt::Display for SparseLuError {
     }
 }
 
-impl std::error::Error for SparseLuError {}
+impl core::error::Error for SparseLuError {}
 
 impl From<FaerError> for SparseLuError {
     fn from(value: FaerError) -> Self {
@@ -652,6 +653,7 @@ mod test {
     use crate::sparse::col::{col_slice, col_slice_mut, zero_col};
     use crate::sparse::compensated::{CompensatedField, norm2};
     use crate::sparse::matvec::SparseMatVec;
+    use alloc::vec::Vec;
     use faer::Col;
     use faer::sparse::linalg::lu::LuSymbolicParams;
     use faer::sparse::{SparseColMat, Triplet};

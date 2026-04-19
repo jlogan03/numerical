@@ -54,6 +54,7 @@ use crate::sparse::SparseLuError;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use crate::sparse::lu::SparseLu;
 use crate::twosum::TwoSum;
+use alloc::vec::Vec;
 use core::fmt;
 use faer::Index;
 use faer::linalg::lu::partial_pivoting::factor::PartialPivLuParams;
@@ -136,7 +137,7 @@ impl fmt::Display for SteinError {
     }
 }
 
-impl std::error::Error for SteinError {}
+impl core::error::Error for SteinError {}
 
 impl From<CreationError> for SteinError {
     fn from(value: CreationError) -> Self {

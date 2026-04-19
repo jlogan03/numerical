@@ -14,6 +14,7 @@
 use super::error::LtiError;
 use super::util::{cast_real_scalar, trim_leading_zeros, validate_sample_time};
 use super::{DiscreteSos, DiscreteTime};
+use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer_traits::RealField;
 use num_traits::{Float, NumCast};

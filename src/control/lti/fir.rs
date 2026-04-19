@@ -43,6 +43,7 @@ use super::{
 };
 use crate::scalar::real_complex_mul_add;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use alloc::vec::Vec;
 use faer::Mat;
 use faer::complex::Complex;
 use faer::prelude::Solve;
@@ -486,6 +487,7 @@ where
 mod tests {
     use super::{Fir, FirFilterState, SavGolSpec, design_savgol};
     use crate::control::lti::{FiltFiltPadLen, FiltFiltParams, LtiError};
+    use alloc::vec::Vec;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
         let err = (lhs - rhs).abs();

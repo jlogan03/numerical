@@ -135,7 +135,7 @@ impl fmt::Display for LtiError {
     }
 }
 
-impl std::error::Error for LtiError {}
+impl core::error::Error for LtiError {}
 
 impl From<EvdError> for LtiError {
     fn from(value: EvdError) -> Self {

@@ -8,10 +8,12 @@ use super::util::{
 use super::zpk::Zpk;
 use super::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
 use crate::decomp::dense_eigenvalues;
+use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer::prelude::Solve;
 use faer::{Mat, MatRef};
 use faer_traits::RealField;
+use faer_traits::ext::ComplexFieldExt;
 use faer_traits::math_utils::{eps, from_f64};
 use num_traits::{Float, NumCast};
 
@@ -641,7 +643,7 @@ where
             _ if k % 2 == 1 => R::from((k + 1) / 2).unwrap_or_else(R::one),
             _ => -R::from(k / 2).unwrap_or_else(R::one),
         };
-        let value = poly_eval(denominator, Complex::new(candidate, R::zero())).norm();
+        let value = poly_eval(denominator, Complex::new(candidate, R::zero())).abs();
         let threshold = from_f64::<R>(256.0) * eps::<R>();
         if value > threshold {
             points.push(candidate);
@@ -741,6 +743,7 @@ mod tests {
     use crate::control::lti::{DiscreteSos, DiscreteZpk, LtiError, Sos};
     use faer::Mat;
     use faer::complex::Complex;
+    use nalgebra::ComplexField;
 
     fn assert_coeffs_close(lhs: &[f64], rhs: &[f64], tol: f64) {
         assert_eq!(lhs.len(), rhs.len());
@@ -828,7 +831,7 @@ mod tests {
         let tf = ContinuousTransferFunction::continuous(vec![2.0], vec![1.0, 3.0]).unwrap();
         let point = Complex::new(1.0, 2.0);
         let expected = Complex::new(2.0, 0.0) / (point + Complex::new(3.0, 0.0));
-        assert!((tf.evaluate(point) - expected).norm() <= 1.0e-12);
+        assert!((tf.evaluate(point) - expected).abs() <= 1.0e-12);
     }
 
     #[test]
@@ -853,9 +856,9 @@ mod tests {
         assert_eq!(tf.sample_time(), 0.1);
         assert_eq!(zpk.sample_time(), 0.1);
         assert_eq!(sos.sample_time(), 0.1);
-        assert!((tf.evaluate(point) - expected).norm() <= 1.0e-12);
-        assert!((zpk.evaluate(point) - expected).norm() <= 1.0e-12);
-        assert!((sos.evaluate(point) - expected).norm() <= 1.0e-12);
+        assert!((tf.evaluate(point) - expected).abs() <= 1.0e-12);
+        assert!((zpk.evaluate(point) - expected).abs() <= 1.0e-12);
+        assert!((sos.evaluate(point) - expected).abs() <= 1.0e-12);
         assert_coeffs_close(
             zpk.to_transfer_function().unwrap().denominator(),
             tf.denominator(),
@@ -877,9 +880,9 @@ mod tests {
 
         assert_eq!(tf.numerator(), &[1.0]);
         assert_eq!(tf.denominator(), &[1.0]);
-        assert!((tf.evaluate(point) - Complex::new(1.0, 0.0)).norm() <= 1.0e-12);
-        assert!((zpk.evaluate(point) - Complex::new(1.0, 0.0)).norm() <= 1.0e-12);
-        assert!((sos.evaluate(point) - Complex::new(1.0, 0.0)).norm() <= 1.0e-12);
+        assert!((tf.evaluate(point) - Complex::new(1.0, 0.0)).abs() <= 1.0e-12);
+        assert!((zpk.evaluate(point) - Complex::new(1.0, 0.0)).abs() <= 1.0e-12);
+        assert!((sos.evaluate(point) - Complex::new(1.0, 0.0)).abs() <= 1.0e-12);
     }
 
     #[test]
@@ -966,10 +969,10 @@ mod tests {
         let disc_zpk_gain = disc.to_zpk().unwrap().dc_gain().unwrap();
         let disc_sos_gain = disc.to_sos().unwrap().dc_gain().unwrap();
 
-        assert!((cont_gain - cont_zpk_gain).norm() <= 1.0e-12);
-        assert!((cont_gain - cont_sos_gain).norm() <= 1.0e-12);
-        assert!((disc_gain - disc_zpk_gain).norm() <= 1.0e-12);
-        assert!((disc_gain - disc_sos_gain).norm() <= 1.0e-12);
+        assert!((cont_gain - cont_zpk_gain).abs() <= 1.0e-12);
+        assert!((cont_gain - cont_sos_gain).abs() <= 1.0e-12);
+        assert!((disc_gain - disc_zpk_gain).abs() <= 1.0e-12);
+        assert!((disc_gain - disc_sos_gain).abs() <= 1.0e-12);
     }
 
     #[test]

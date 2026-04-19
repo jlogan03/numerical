@@ -13,8 +13,10 @@ use super::{
     DiscreteStateSpace, DiscreteTransferFunction, DiscreteZpk, LtiError,
     util::{unwrap_phase_deg, validate_nonnegative_monotone_grid},
 };
+use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer_traits::RealField;
+use faer_traits::ext::ComplexFieldExt;
 use num_traits::Float;
 
 /// Bode-plot data evaluated on a monotone nondecreasing angular-frequency
@@ -252,7 +254,7 @@ where
     let mut phase_deg_wrapped = Vec::with_capacity(angular_frequencies.len());
     for &omega in angular_frequencies {
         let value = evaluate(omega)?;
-        magnitude_db.push(R::from(20.0).unwrap() * value.norm().log10());
+        magnitude_db.push(R::from(20.0).unwrap() * value.abs().log10());
         phase_deg_wrapped.push(value.im.atan2(value.re).to_degrees());
     }
     Ok(BodeData {
@@ -267,6 +269,7 @@ mod tests {
     use super::{ContinuousTransferFunction, DiscreteTransferFunction};
     use crate::control::lti::LtiError;
     use faer::complex::Complex;
+    use nalgebra::ComplexField;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
         let err = (lhs - rhs).abs();
@@ -279,7 +282,7 @@ mod tests {
         let omega = 2.0;
         let bode = tf.bode_data(&[omega]).unwrap();
         let value = tf.evaluate(Complex::new(0.0, omega));
-        assert_close(bode.magnitude_db[0], 20.0 * value.norm().log10(), 1.0e-12);
+        assert_close(bode.magnitude_db[0], 20.0 * value.abs().log10(), 1.0e-12);
         assert_close(
             bode.phase_deg[0],
             value.im.atan2(value.re).to_degrees(),
@@ -330,6 +333,6 @@ mod tests {
         let bode = tf.bode_data(&[omega]).unwrap();
         let phase: f64 = omega * 0.1;
         let value = tf.evaluate(Complex::new(phase.cos(), phase.sin()));
-        assert_close(bode.magnitude_db[0], 20.0 * value.norm().log10(), 1.0e-12);
+        assert_close(bode.magnitude_db[0], 20.0 * value.abs().log10(), 1.0e-12);
     }
 }

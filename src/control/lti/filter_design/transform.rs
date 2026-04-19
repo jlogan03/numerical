@@ -7,8 +7,10 @@
 use super::error::FilterDesignError;
 use super::spec::FilterShape;
 use crate::control::lti::{ContinuousTime, ContinuousZpk, DiscreteTime, DiscreteZpk};
+use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer_traits::RealField;
+use faer_traits::ext::ComplexFieldExt;
 use num_traits::Float;
 
 pub(super) fn analog_shape_transform<R>(

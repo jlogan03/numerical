@@ -42,11 +42,12 @@
 
 use crate::decomp::{DecompError, DenseDecompParams, dense_self_adjoint_eigen, dense_svd};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use alloc::vec::Vec;
+use core::fmt;
 use faer::{Col, Mat, MatRef};
 use faer_traits::ComplexField;
 use faer_traits::ext::ComplexFieldExt;
 use num_traits::{Float, One, Zero};
-use std::fmt;
 
 /// Controls how much internal HSVD data is retained in the result.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -236,7 +237,7 @@ impl<R: fmt::Debug> fmt::Display for HsvdError<R> {
     }
 }
 
-impl<R: fmt::Debug> std::error::Error for HsvdError<R> {}
+impl<R: fmt::Debug> core::error::Error for HsvdError<R> {}
 
 impl<R> From<DecompError> for HsvdError<R> {
     fn from(value: DecompError) -> Self {

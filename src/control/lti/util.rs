@@ -2,9 +2,11 @@ use super::error::LtiError;
 use super::{ContinuousTime, DiscreteTime};
 use crate::decomp::dense_eigenvalues;
 use crate::scalar::{complex_horner_step_real, mul_add};
+use alloc::vec::Vec;
 use faer::Mat;
 use faer::complex::Complex;
 use faer_traits::RealField;
+use faer_traits::ext::ComplexFieldExt;
 use faer_traits::math_utils::{eps, from_f64};
 use num_traits::{Float, NumCast};
 
@@ -335,7 +337,7 @@ pub(crate) fn root_sections<R: Float + Copy + RealField>(
         let conj = Complex::new(root.re, -root.im);
         let mut partner = None;
         for j in (i + 1)..roots.len() {
-            if !used[j] && (roots[j] - conj).norm() <= tol {
+            if !used[j] && (roots[j] - conj).abs() <= tol {
                 partner = Some(j);
                 break;
             }
@@ -386,7 +388,7 @@ fn complex_coeffs_to_real<R: Float + Copy + RealField>(
 fn root_tol<R: Float + Copy + RealField>(roots: &[Complex<R>]) -> R {
     let scale = roots
         .iter()
-        .fold(R::one(), |acc: R, root: &Complex<R>| acc.max(root.norm()));
+        .fold(R::one(), |acc: R, root: &Complex<R>| acc.max(root.abs()));
     scale * from_f64::<R>(128.0) * eps::<R>()
 }
 
@@ -395,7 +397,7 @@ fn root_tol<R: Float + Copy + RealField>(roots: &[Complex<R>]) -> R {
 fn coeff_tol<R: Float + Copy + RealField>(coeffs: &[Complex<R>]) -> R {
     let scale = coeffs
         .iter()
-        .fold(R::one(), |acc: R, coeff: &Complex<R>| acc.max(coeff.norm()));
+        .fold(R::one(), |acc: R, coeff: &Complex<R>| acc.max(coeff.abs()));
     scale * from_f64::<R>(128.0) * eps::<R>()
 }
 
@@ -409,8 +411,8 @@ fn compare_roots<R: Float + Copy + RealField>(
     lhs: &Complex<R>,
     rhs: &Complex<R>,
 ) -> core::cmp::Ordering {
-    rhs.norm()
-        .partial_cmp(&lhs.norm())
+    rhs.abs()
+        .partial_cmp(&lhs.abs())
         .unwrap_or(core::cmp::Ordering::Equal)
         .then_with(|| {
             rhs.re

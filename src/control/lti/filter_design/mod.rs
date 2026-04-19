@@ -192,7 +192,9 @@ mod tests {
         design_analog_filter_sos, design_analog_filter_tf, design_analog_filter_zpk,
         design_digital_filter_sos, design_digital_filter_tf, design_digital_filter_zpk,
     };
+    use alloc::vec::Vec;
     use faer::complex::Complex;
+    use nalgebra::Normed;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
         let err = (lhs - rhs).abs();
@@ -282,7 +284,7 @@ mod tests {
         )
         .unwrap();
         let tf = design_analog_filter_tf(&spec).unwrap();
-        let cutoff_gain = tf.evaluate(Complex::new(0.0, 1.0)).norm();
+        let cutoff_gain: f64 = tf.evaluate(Complex::new(0.0, 1.0)).norm();
         let expected = 1.0f64 / 2.0f64.sqrt();
         assert!((cutoff_gain - expected).abs() <= 1.0e-6);
     }

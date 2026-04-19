@@ -46,6 +46,7 @@ use super::{
 };
 use crate::sparse::col::{col_slice, col_slice_mut, zero_col};
 use crate::sparse::compensated::{CompensatedField, norm2, sum2};
+use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer::dyn_stack::{MemBuffer, MemStack, StackReq};
 use faer::get_global_parallelism;
@@ -305,7 +306,8 @@ fn generalized_eigenvalue_abs<R: Float + Copy>(alpha: Complex<R>, beta: Complex<
     if beta.re == R::zero() && beta.im == R::zero() {
         R::infinity()
     } else {
-        (alpha / beta).norm()
+        let value = alpha / beta;
+        (value.re * value.re + value.im * value.im).sqrt()
     }
 }
 
@@ -907,9 +909,11 @@ mod tests {
     };
     use crate::decomp::operator::CompensatedLinOp;
     use crate::decomp::{DenseDecompParams, SparseDecompParams};
+    use alloc::vec::Vec;
     use faer::complex::Complex;
     use faer::sparse::{SparseColMat, Triplet};
     use faer::{Col, Mat, Unbind};
+    use nalgebra::ComplexField;
 
     #[test]
     fn dense_self_adjoint_eigen_orders_by_magnitude() {
@@ -967,9 +971,9 @@ mod tests {
 
         let eig = dense_eigen(a.as_ref(), &DenseDecompParams::<f64>::new()).unwrap();
         assert_eq!(eig.values.nrows(), 3);
-        assert!((eig.values[0] - Complex::<f64>::new(3.0, 0.0)).norm() < 1e-10);
-        assert!((eig.values[1] - Complex::<f64>::new(-2.0, 0.0)).norm() < 1e-10);
-        assert!((eig.values[2] - Complex::<f64>::new(0.5, 0.0)).norm() < 1e-10);
+        assert!((eig.values[0] - Complex::<f64>::new(3.0, 0.0)).abs() < 1e-10);
+        assert!((eig.values[1] - Complex::<f64>::new(-2.0, 0.0)).abs() < 1e-10);
+        assert!((eig.values[2] - Complex::<f64>::new(0.5, 0.0)).abs() < 1e-10);
         assert!(eig.info.max_residual_norm < 1e-10);
     }
 
@@ -1041,9 +1045,9 @@ mod tests {
         )
         .unwrap();
         assert_eq!(eig.values.nrows(), 4);
-        assert!(eig.values[0].norm() >= eig.values[1].norm());
-        assert!(eig.values[1].norm() >= eig.values[2].norm());
-        assert!(eig.values[2].norm() >= eig.values[3].norm());
+        assert!(eig.values[0].abs() >= eig.values[1].abs());
+        assert!(eig.values[1].abs() >= eig.values[2].abs());
+        assert!(eig.values[2].abs() >= eig.values[3].abs());
         assert!(eig.info.n_converged <= 4);
         assert!(eig.values.iter().all(|value| value.im.abs() < 1e-10));
     }

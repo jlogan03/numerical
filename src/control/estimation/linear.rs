@@ -234,7 +234,7 @@ impl fmt::Display for EstimatorError {
     }
 }
 
-impl std::error::Error for EstimatorError {}
+impl core::error::Error for EstimatorError {}
 
 impl From<RiccatiError> for EstimatorError {
     fn from(value: RiccatiError) -> Self {

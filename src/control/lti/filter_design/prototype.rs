@@ -9,8 +9,10 @@ use super::spec::AnalogFilterFamily;
 use crate::control::lti::util::poly_roots;
 use crate::control::lti::zpk::ContinuousZpk;
 use crate::control::lti::{ContinuousTime, LtiError};
+use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer_traits::RealField;
+use faer_traits::ext::ComplexFieldExt;
 use num_traits::Float;
 
 pub(super) fn analog_lowpass_prototype_zpk<R>(
@@ -166,7 +168,7 @@ where
             acc * (s - pole)
         });
     let value = Complex::new(gain, R::zero()) / denominator;
-    let magnitude = value.norm();
+    let magnitude = value.abs();
     if magnitude.is_finite() {
         Ok(magnitude)
     } else {

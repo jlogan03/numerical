@@ -5,6 +5,7 @@ use super::util::{
     CompositionDomain, cast_real_scalar, real_poly_from_roots, validate_sample_time,
 };
 use super::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
+use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer_traits::RealField;
 use num_traits::{Float, NumCast};
@@ -338,6 +339,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::ContinuousZpk;
+    use alloc::vec::Vec;
     use faer::complex::Complex;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {

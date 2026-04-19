@@ -7,6 +7,7 @@ use super::util::{
 use super::zpk::Zpk;
 use super::{ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime};
 use crate::scalar::complex_horner_step_real;
+use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer_traits::RealField;
 use num_traits::{Float, NumCast};

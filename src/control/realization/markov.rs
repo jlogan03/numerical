@@ -29,6 +29,7 @@ use super::error::RealizationError;
 use super::hankel::{BlockHankel, ShiftedBlockHankelPair};
 use crate::control::lti::{DiscreteStateSpace, SparseDiscreteStateSpace};
 use crate::sparse::compensated::CompensatedField;
+use alloc::vec::Vec;
 use faer::{Mat, MatRef};
 use faer_traits::RealField;
 use num_traits::Float;

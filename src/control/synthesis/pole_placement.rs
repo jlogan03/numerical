@@ -52,11 +52,13 @@ use crate::decomp::{
     DecompError, DenseDecompParams, dense_eigenvalues, dense_self_adjoint_eigen, dense_svd,
 };
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use alloc::vec::Vec;
 use core::fmt;
 use faer::complex::Complex;
 use faer::prelude::Solve;
 use faer::{Mat, MatRef};
 use faer_traits::RealField;
+use faer_traits::ext::ComplexFieldExt;
 use faer_traits::math_utils::{eps, from_f64};
 use num_traits::Float;
 
@@ -139,7 +141,7 @@ impl fmt::Display for PolePlacementError {
     }
 }
 
-impl std::error::Error for PolePlacementError {}
+impl core::error::Error for PolePlacementError {}
 
 impl From<DecompError> for PolePlacementError {
     fn from(value: DecompError) -> Self {
@@ -666,7 +668,7 @@ where
 
     let scale = coeffs
         .iter()
-        .map(|coeff| coeff.norm())
+        .map(|coeff| coeff.abs())
         .fold(T::Real::one(), |acc, value| acc.max(value));
     let tol = scale * from_f64::<T::Real>(128.0) * eps::<T::Real>().sqrt();
     if coeffs.iter().any(|coeff| coeff.im.abs() > tol) {
@@ -734,14 +736,16 @@ where
         .iter()
         .zip(requested.iter())
         .fold(T::Real::zero(), |acc, (lhs, rhs)| {
-            acc.max((*lhs - *rhs).norm())
+            acc.max((*lhs - *rhs).abs())
         });
     Ok((achieved, residual))
 }
 
 fn compare_poles<R: Float + Copy>(lhs: Complex<R>, rhs: Complex<R>) -> core::cmp::Ordering {
-    rhs.norm()
-        .partial_cmp(&lhs.norm())
+    let rhs_abs2 = rhs.re * rhs.re + rhs.im * rhs.im;
+    let lhs_abs2 = lhs.re * lhs.re + lhs.im * lhs.im;
+    rhs_abs2
+        .partial_cmp(&lhs_abs2)
         .unwrap_or(core::cmp::Ordering::Equal)
         .then_with(|| {
             rhs.re
@@ -885,6 +889,7 @@ mod tests {
     use crate::control::lti::{ContinuousStateSpace, DiscreteStateSpace};
     use faer::Mat;
     use faer::complex::Complex;
+    use nalgebra::ComplexField;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
         let err = (lhs - rhs).abs();
@@ -894,7 +899,7 @@ mod tests {
     fn assert_poles_close(lhs: &[Complex<f64>], rhs: &[Complex<f64>], tol: f64) {
         assert_eq!(lhs.len(), rhs.len());
         for (idx, (&lhs, &rhs)) in lhs.iter().zip(rhs.iter()).enumerate() {
-            let err = (lhs - rhs).norm();
+            let err = (lhs - rhs).abs();
             assert!(
                 err <= tol,
                 "pole {idx} mismatch: lhs={lhs:?}, rhs={rhs:?}, err={err}, tol={tol}"

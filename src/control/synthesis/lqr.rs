@@ -80,7 +80,7 @@ impl fmt::Display for LqrError {
     }
 }
 
-impl std::error::Error for LqrError {}
+impl core::error::Error for LqrError {}
 
 impl From<RiccatiError> for LqrError {
     fn from(value: RiccatiError) -> Self {

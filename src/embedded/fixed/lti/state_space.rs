@@ -129,7 +129,7 @@ where
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<T, const NX: usize, const NU: usize, const NY: usize>
     TryFrom<&crate::control::lti::DiscreteStateSpace<T>> for DiscreteStateSpace<T, NX, NU, NY>
 where

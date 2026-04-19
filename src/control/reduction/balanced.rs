@@ -74,12 +74,12 @@ use crate::control::matrix_equations::stein::{
     observability_gramian_discrete_dense, observability_gramian_discrete_low_rank,
 };
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use core::fmt;
 use faer::sparse::SparseColMatRef;
 use faer::{Col, Index, Mat, MatRef, Unbind};
 use faer_traits::Conjugate;
 use faer_traits::ext::ComplexFieldExt;
 use num_traits::{Float, Zero};
-use std::fmt;
 
 /// Alias of the shared HSVD internal-detail policy used by balanced
 /// truncation.
@@ -157,7 +157,7 @@ impl<R: fmt::Debug> fmt::Display for BalancedError<R> {
     }
 }
 
-impl<R: fmt::Debug> std::error::Error for BalancedError<R> {}
+impl<R: fmt::Debug> core::error::Error for BalancedError<R> {}
 
 impl<R> From<LyapunovError> for BalancedError<R> {
     fn from(value: LyapunovError) -> Self {

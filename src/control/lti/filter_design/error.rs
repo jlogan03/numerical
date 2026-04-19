@@ -33,7 +33,7 @@ impl fmt::Display for FilterDesignError {
     }
 }
 
-impl std::error::Error for FilterDesignError {}
+impl core::error::Error for FilterDesignError {}
 
 impl From<LtiError> for FilterDesignError {
     fn from(value: LtiError) -> Self {

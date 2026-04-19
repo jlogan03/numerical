@@ -310,6 +310,7 @@ where
 mod tests {
     use super::{SparseContinuousStateSpace, SparseDiscreteStateSpace};
     use crate::control::lti::state_space::StateSpaceError;
+    use alloc::vec::Vec;
     use faer::Mat;
     use faer::sparse::{SparseColMat, Triplet};
 

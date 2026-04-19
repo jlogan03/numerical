@@ -307,7 +307,7 @@ where
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<T, const LANES: usize> Pid<T, LANES>
 where
     T: Float + Copy + faer_traits::RealField,

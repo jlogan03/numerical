@@ -44,6 +44,7 @@
 
 use super::col::col_from_slice;
 use super::precond::Precond;
+use alloc::vec::Vec;
 use core::fmt;
 use faer::dyn_stack::{MemBuffer, MemStack};
 use faer::linalg::cholesky::ldlt::factor::{LdltError, LdltParams, LdltRegularization};
@@ -96,7 +97,7 @@ impl fmt::Display for SparseLltError {
     }
 }
 
-impl std::error::Error for SparseLltError {}
+impl core::error::Error for SparseLltError {}
 
 impl From<FaerError> for SparseLltError {
     fn from(value: FaerError) -> Self {
@@ -145,7 +146,7 @@ impl fmt::Display for SparseLdltError {
     }
 }
 
-impl std::error::Error for SparseLdltError {}
+impl core::error::Error for SparseLdltError {}
 
 impl From<FaerError> for SparseLdltError {
     fn from(value: FaerError) -> Self {

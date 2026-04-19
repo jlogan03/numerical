@@ -56,10 +56,12 @@ use crate::control::identification::{
 use crate::control::lti::state_space::{ContinuousStateSpace, DiscreteStateSpace, StateSpaceError};
 use crate::control::lti::{ContinuousTransferFunction, DiscreteTransferFunction, LtiError};
 use crate::control::realization::recommended_square_era_block_dim;
+use alloc::vec::Vec;
 use core::fmt;
 use faer::Mat;
 use faer::complex::Complex;
 use faer_traits::RealField;
+use faer_traits::ext::ComplexFieldExt;
 use levenberg_marquardt::{LeastSquaresProblem, LevenbergMarquardt, differentiate_numerically};
 use nalgebra::storage::Owned;
 use nalgebra::{Dyn, OMatrix, OVector, U1, U2, U3, U4, VecStorage, Vector2, Vector3, Vector4};
@@ -115,7 +117,7 @@ impl fmt::Display for PidDesignError {
     }
 }
 
-impl std::error::Error for PidDesignError {}
+impl core::error::Error for PidDesignError {}
 
 impl From<PidError> for PidDesignError {
     fn from(value: PidError) -> Self {
@@ -902,7 +904,7 @@ fn design_frequency_pid(
 ) -> Result<FrequencyPidDesign<f64>, PidDesignError> {
     let floor = positive_floor(1.0 / params.crossover_frequency.max(1.0));
     let plant_value = plant.evaluate_at_omega(params.crossover_frequency);
-    let mag_seed = (1.0 / plant_value.norm().max(1.0e-6)).max(floor);
+    let mag_seed = (1.0 / plant_value.abs().max(1.0e-6)).max(floor);
     let ti_seed = (1.0 / params.crossover_frequency).max(floor);
 
     let kp_scales = [0.25, 1.0, 4.0];
@@ -963,7 +965,7 @@ fn design_step_optimized_pid(
 ) -> Result<StepOptimizationPidDesign<f64>, PidDesignError> {
     let floor = positive_floor(params.lambda);
     let dc_gain = plant.evaluate(Complex::new(1.0, 0.0));
-    let kp_seed_mag = (1.0 / dc_gain.norm().max(1.0e-6)).max(floor);
+    let kp_seed_mag = (1.0 / dc_gain.abs().max(1.0e-6)).max(floor);
     let ti_seed = params.lambda.max(floor);
     let predicted_sign = if dc_gain.re.abs() > 1.0e-9 {
         dc_gain.re.signum()
@@ -1117,7 +1119,8 @@ fn step_objective(residuals: &OVector<f64, Dyn>) -> f64 {
 
 fn wrap_to_pi(angle: f64) -> f64 {
     let two_pi = core::f64::consts::TAU;
-    let wrapped = (angle + core::f64::consts::PI).rem_euclid(two_pi) - core::f64::consts::PI;
+    let shifted = (angle + core::f64::consts::PI) / two_pi;
+    let wrapped = angle + core::f64::consts::PI - two_pi * shifted.floor() - core::f64::consts::PI;
     if wrapped == -core::f64::consts::PI {
         core::f64::consts::PI
     } else {
@@ -1201,7 +1204,7 @@ impl FrequencyPidLmProblem<'_> {
                     let desired_phase =
                         -core::f64::consts::PI + self.params.phase_margin_deg.to_radians();
                     vec![
-                        loop_value.norm().ln(),
+                        loop_value.abs().ln(),
                         wrap_to_pi(loop_value.im.atan2(loop_value.re) - desired_phase),
                     ]
                 }
@@ -1941,7 +1944,9 @@ mod tests {
     };
     use crate::control::identification::{EraParams, OkidParams};
     use crate::control::lti::{ContinuousTransferFunction, DiscreteTransferFunction};
+    use alloc::vec::Vec;
     use faer::Mat;
+    use nalgebra::ComplexField;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
         let err = (lhs - rhs).abs();
@@ -2091,7 +2096,7 @@ mod tests {
         )
         .unwrap();
         let design = design_pid_from_continuous_tf_frequency(&plant, params).unwrap();
-        assert_close(design.loop_value.norm(), 1.0, 1.0e-8);
+        assert_close(design.loop_value.abs(), 1.0, 1.0e-8);
         assert_close(design.achieved_phase_margin_deg, 60.0, 1.0e-6);
 
         let plant_ss = plant.to_state_space().unwrap();

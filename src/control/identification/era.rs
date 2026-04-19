@@ -35,10 +35,10 @@ use crate::control::lti::state_space::{DiscreteStateSpace, StateSpaceError};
 use crate::control::realization::{MarkovSequence, RealizationError, ShiftedBlockHankelPair};
 use crate::decomp::{DecompError, DenseDecompParams, dense_svd};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use core::fmt;
 use faer::{Col, ColRef, Mat, MatRef};
 use faer_traits::ext::ComplexFieldExt;
 use num_traits::Float;
-use std::fmt;
 
 /// Controls how much internal ERA data is retained in the returned result.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -196,7 +196,7 @@ impl fmt::Display for EraError {
     }
 }
 
-impl std::error::Error for EraError {}
+impl core::error::Error for EraError {}
 
 impl From<RealizationError> for EraError {
     fn from(value: RealizationError) -> Self {

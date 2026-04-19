@@ -55,6 +55,7 @@
 //! - The same scales can be applied consistently to matrices, vectors, and
 //!   solution recovery.
 
+use alloc::vec::Vec;
 use faer::sparse::{
     SparseColMat, SparseColMatRef, SparseRowMat, SparseRowMatRef, SymbolicSparseColMatRef,
     SymbolicSparseRowMatRef,
@@ -618,6 +619,7 @@ mod test {
     use crate::sparse::compensated::norm2;
     use crate::sparse::matvec::SparseMatVec;
     use crate::sparse::{BiCGSTAB, BiCGSTABSolveError};
+    use alloc::vec::Vec;
     use faer::Unbind;
     use faer::sparse::{SparseColMat, SparseRowMat, Triplet};
     use faer_traits::IndexCore;

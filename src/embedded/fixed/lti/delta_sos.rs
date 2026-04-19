@@ -254,7 +254,7 @@ where
     }
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<T, const SECTIONS: usize, const LANES: usize> TryFrom<&crate::control::lti::DeltaSos<T>>
     for DeltaSos<T, SECTIONS, LANES>
 where

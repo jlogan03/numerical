@@ -136,20 +136,6 @@ impl<T: Float, const NLANES: usize> TwoSum<T, NLANES> {
     }
 }
 
-/// `std` is required for tests, but is not a default feature.
-/// To allow the library to compile with default features,
-/// tests that require `std` are feature-gated.
-/// This test makes sure we do not skip the real tests.
-#[cfg(test)]
-#[cfg(not(feature = "std"))]
-mod test {
-    #[test]
-    fn require_std_for_tests() {
-        panic!("`std` feature is required for tests")
-    }
-}
-
-#[cfg(feature = "std")]
 #[cfg(test)]
 mod test {
     use super::{TwoSum, sum, twosum};

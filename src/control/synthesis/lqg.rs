@@ -113,7 +113,7 @@ impl fmt::Display for LqgError {
     }
 }
 
-impl std::error::Error for LqgError {}
+impl core::error::Error for LqgError {}
 
 impl From<LqrError> for LqgError {
     fn from(value: LqrError) -> Self {

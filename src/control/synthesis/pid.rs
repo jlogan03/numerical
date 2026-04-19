@@ -156,7 +156,7 @@ impl fmt::Display for PidError {
     }
 }
 
-impl std::error::Error for PidError {}
+impl core::error::Error for PidError {}
 
 impl From<LtiError> for PidError {
     fn from(value: LtiError) -> Self {

@@ -34,11 +34,12 @@
 use crate::control::realization::MarkovSequence;
 use crate::decomp::{DecompError, DenseDecompParams, PartialSvd, dense_svd};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use alloc::vec::Vec;
+use core::fmt;
 use faer::{Col, Mat, MatRef};
 use faer_traits::ComplexField;
 use faer_traits::ext::ComplexFieldExt;
 use num_traits::{Float, Zero};
-use std::fmt;
 
 /// Builder-style parameters for OKID.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -152,7 +153,7 @@ impl fmt::Display for OkidError {
     }
 }
 
-impl std::error::Error for OkidError {}
+impl core::error::Error for OkidError {}
 
 impl From<DecompError> for OkidError {
     fn from(value: DecompError) -> Self {

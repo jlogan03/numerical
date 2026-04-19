@@ -68,4 +68,4 @@ impl fmt::Display for StateSpaceError {
     }
 }
 
-impl std::error::Error for StateSpaceError {}
+impl core::error::Error for StateSpaceError {}

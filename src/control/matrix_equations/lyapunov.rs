@@ -64,6 +64,7 @@
 use crate::sparse::compensated::{CompensatedField, CompensatedSum, sum2};
 use crate::sparse::{SparseLu, SparseLuError};
 use crate::twosum::TwoSum;
+use alloc::vec::Vec;
 use core::fmt;
 use faer::linalg::lu::partial_pivoting::factor::PartialPivLuParams;
 use faer::linalg::solvers::Solve;
@@ -229,7 +230,7 @@ impl fmt::Display for LyapunovError {
     }
 }
 
-impl std::error::Error for LyapunovError {}
+impl core::error::Error for LyapunovError {}
 
 impl From<CreationError> for LyapunovError {
     fn from(value: CreationError) -> Self {

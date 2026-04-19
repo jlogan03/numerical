@@ -42,6 +42,7 @@ use super::{
 };
 use crate::scalar::mul_add;
 use crate::sparse::compensated::CompensatedField;
+use alloc::vec::Vec;
 use faer_traits::RealField;
 use faer_traits::math_utils::from_f64;
 use num_traits::Float;
@@ -466,6 +467,7 @@ where
 mod tests {
     use super::{StepResponseMetricParams, StepResponseMetrics};
     use crate::control::lti::{ContinuousTransferFunction, DiscreteTransferFunction};
+    use alloc::vec::Vec;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
         let err = (lhs - rhs).abs();

@@ -335,7 +335,7 @@ where
     acc.max(T::zero())
 }
 
-#[cfg(feature = "std")]
+#[cfg(feature = "alloc")]
 impl<T, const NX: usize, const NU: usize, const NY: usize> DiscreteKalmanFilter<T, NX, NU, NY>
 where
     T: Float + Copy + faer_traits::RealField,

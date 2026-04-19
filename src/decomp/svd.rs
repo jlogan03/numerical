@@ -394,6 +394,7 @@ mod tests {
     use super::{dense_svd, sparse_svd};
     use crate::decomp::operator::CompensatedBiLinOp;
     use crate::decomp::{DenseDecompParams, SparseDecompParams};
+    use alloc::vec::Vec;
     use faer::sparse::{SparseColMat, Triplet};
     use faer::{Mat, Unbind};
 

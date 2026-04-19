@@ -42,8 +42,10 @@
 
 use super::{BodeData, LtiError, NicholsData, NyquistData, util::unwrap_phase_deg};
 use crate::scalar::{mul_add, neg_mul_add, real_complex_mul_add};
+use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer_traits::RealField;
+use faer_traits::ext::ComplexFieldExt;
 use num_traits::Float;
 
 /// First-order-plus-dead-time process model.
@@ -82,7 +84,7 @@ where
     pub fn evaluate(&self, s: Complex<R>) -> Complex<R> {
         // Keep the transport delay exact in frequency-domain evaluation rather
         // than approximating it through a rational surrogate.
-        let delay_factor = (-s * self.delay).exp();
+        let delay_factor = complex_exp(-s * self.delay);
         Complex::new(self.gain, R::zero()) * delay_factor
             / real_complex_mul_add(self.time_constant, s, Complex::new(R::one(), R::zero()))
     }
@@ -199,7 +201,7 @@ where
             .collect::<Vec<_>>();
         let magnitude_db = values
             .iter()
-            .map(|value| R::from(20.0).unwrap() * value.norm().log10())
+            .map(|value| R::from(20.0).unwrap() * value.abs().log10())
             .collect::<Vec<_>>();
         let phase_deg = unwrap_phase_deg(
             &values
@@ -257,7 +259,7 @@ where
     pub fn evaluate(&self, s: Complex<R>) -> Complex<R> {
         // As in the FOPDT path, preserve the explicit transport delay exactly
         // in frequency-domain evaluation.
-        let delay_factor = (-s * self.delay).exp();
+        let delay_factor = complex_exp(-s * self.delay);
         let d1 = real_complex_mul_add(self.time_constant_1, s, Complex::new(R::one(), R::zero()));
         let d2 = real_complex_mul_add(self.time_constant_2, s, Complex::new(R::one(), R::zero()));
         Complex::new(self.gain, R::zero()) * delay_factor / (d1 * d2)
@@ -370,7 +372,7 @@ where
             .collect::<Vec<_>>();
         let magnitude_db = values
             .iter()
-            .map(|value| R::from(20.0).unwrap() * value.norm().log10())
+            .map(|value| R::from(20.0).unwrap() * value.abs().log10())
             .collect::<Vec<_>>();
         let phase_deg = unwrap_phase_deg(
             &values
@@ -466,6 +468,14 @@ where
         let d_theta = (e1 - e2) / denominator;
         (lag, d_tau1, d_tau2, d_theta)
     }
+}
+
+fn complex_exp<R>(value: Complex<R>) -> Complex<R>
+where
+    R: Float + Copy + RealField,
+{
+    let scale = value.re.exp();
+    Complex::new(scale * value.im.cos(), scale * value.im.sin())
 }
 
 #[cfg(test)]

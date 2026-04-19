@@ -5,6 +5,7 @@ use super::state_space::{
 };
 use crate::decomp::dense_eigenvalues;
 use crate::sparse::lu::SparseLu;
+use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer::linalg::lu::partial_pivoting::factor::PartialPivLuParams;
 use faer::prelude::Solve;
@@ -232,7 +233,7 @@ where
         Ok(self
             .poles()?
             .into_iter()
-            .all(|pole: Complex<T::Real>| pole.norm() < <T::Real as One>::one() - tol))
+            .all(|pole: Complex<T::Real>| pole.abs() < <T::Real as One>::one() - tol))
     }
 
     /// Returns the DC gain `G(1)`.
@@ -273,8 +274,10 @@ where
 }
 
 fn compare_poles<R: Float + Copy>(lhs: Complex<R>, rhs: Complex<R>) -> core::cmp::Ordering {
-    rhs.norm()
-        .partial_cmp(&lhs.norm())
+    let rhs_abs2 = rhs.re * rhs.re + rhs.im * rhs.im;
+    let lhs_abs2 = lhs.re * lhs.re + lhs.im * lhs.im;
+    rhs_abs2
+        .partial_cmp(&lhs_abs2)
         .unwrap_or(core::cmp::Ordering::Equal)
         .then_with(|| {
             rhs.re
@@ -538,6 +541,7 @@ mod tests {
     use faer::Mat;
     use faer::complex::Complex;
     use faer::sparse::{SparseColMat, Triplet};
+    use nalgebra::ComplexField;
 
     fn assert_close_complex(
         lhs: MatRef<'_, Complex<f64>>,
@@ -548,7 +552,7 @@ mod tests {
         assert_eq!(lhs.ncols(), rhs.ncols());
         for col in 0..lhs.ncols() {
             for row in 0..lhs.nrows() {
-                let err = (lhs[(row, col)] - rhs[(row, col)]).norm();
+                let err = (lhs[(row, col)] - rhs[(row, col)]).abs();
                 assert!(
                     err <= tol,
                     "entry ({row}, {col}) differs: lhs={:?}, rhs={:?}, err={err}, tol={tol}",
@@ -574,7 +578,7 @@ mod tests {
 
         let poles = sys.poles().unwrap();
         assert_eq!(poles.len(), 2);
-        assert!(poles[0].norm() >= poles[1].norm());
+        assert!(poles[0].abs() >= poles[1].abs());
         assert!(sys.is_asymptotically_stable().unwrap());
     }
 

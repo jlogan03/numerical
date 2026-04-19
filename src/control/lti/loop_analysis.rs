@@ -57,8 +57,10 @@ use super::{
     util::{unwrap_phase_deg, validate_nonnegative_monotone_grid},
 };
 use crate::scalar::mul_add;
+use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer_traits::RealField;
+use faer_traits::ext::ComplexFieldExt;
 use faer_traits::math_utils::{eps, from_f64};
 use num_traits::Float;
 
@@ -918,7 +920,7 @@ where
         if !value.re.is_finite() || !value.im.is_finite() {
             return Err(LtiError::NonFiniteResult { which });
         }
-        let magnitude = value.norm();
+        let magnitude = value.abs();
         values.push(value);
         magnitude_abs.push(magnitude);
         magnitude_db.push(from_f64::<R>(20.0) * magnitude.log10());
@@ -1192,6 +1194,8 @@ where
 mod tests {
     use super::{ContinuousTransferFunction, DiscreteTransferFunction};
     use crate::control::lti::LtiError;
+    use alloc::vec::Vec;
+    use nalgebra::ComplexField;
 
     fn assert_close(lhs: f64, rhs: f64, tol: f64) {
         let err = (lhs - rhs).abs();
@@ -1206,7 +1210,7 @@ mod tests {
         let t = loop_tf.complementary_sensitivity().unwrap();
         let point = faer::complex::Complex::new(0.0, 1.5);
         let sum = s.evaluate(point) + t.evaluate(point);
-        assert!((sum - faer::complex::Complex::new(1.0, 0.0)).norm() <= 1.0e-12);
+        assert!((sum - faer::complex::Complex::new(1.0, 0.0)).abs() <= 1.0e-12);
     }
 
     #[test]
@@ -1261,9 +1265,9 @@ mod tests {
         let sos_nyquist = loop_sos.nyquist_data(&grid).unwrap();
         let ss_nyquist = loop_ss.nyquist_data(&grid).unwrap();
         for idx in 0..grid.len() {
-            assert!((tf_nyquist.values[idx] - zpk_nyquist.values[idx]).norm() <= 1.0e-10);
-            assert!((tf_nyquist.values[idx] - sos_nyquist.values[idx]).norm() <= 1.0e-10);
-            assert!((tf_nyquist.values[idx] - ss_nyquist.values[idx]).norm() <= 1.0e-10);
+            assert!((tf_nyquist.values[idx] - zpk_nyquist.values[idx]).abs() <= 1.0e-10);
+            assert!((tf_nyquist.values[idx] - sos_nyquist.values[idx]).abs() <= 1.0e-10);
+            assert!((tf_nyquist.values[idx] - ss_nyquist.values[idx]).abs() <= 1.0e-10);
         }
 
         let tf_nichols = loop_tf.nichols_data(&grid).unwrap();
@@ -1343,12 +1347,12 @@ mod tests {
         let expected_ks = controller.feedback(&plant).unwrap();
         let point = faer::complex::Complex::new(0.0, 2.5);
 
-        assert!((ps.evaluate(point) - expected_ps.evaluate(point)).norm() <= 1.0e-12);
-        assert!((ks.evaluate(point) - expected_ks.evaluate(point)).norm() <= 1.0e-12);
+        assert!((ps.evaluate(point) - expected_ps.evaluate(point)).abs() <= 1.0e-12);
+        assert!((ks.evaluate(point) - expected_ks.evaluate(point)).abs() <= 1.0e-12);
         let lhs = ks.evaluate(point);
         let rhs = controller.evaluate(point)
             / (faer::complex::Complex::new(1.0, 0.0) + loop_tf.evaluate(point));
-        assert!((lhs - rhs).norm() <= 1.0e-12);
+        assert!((lhs - rhs).abs() <= 1.0e-12);
     }
 
     #[test]

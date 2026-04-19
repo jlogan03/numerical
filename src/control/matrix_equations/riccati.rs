@@ -67,6 +67,7 @@ use crate::decomp::{
 use crate::sparse::col::col_slice;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use crate::twosum::TwoSum;
+use alloc::vec::Vec;
 use core::fmt;
 use faer::complex::Complex;
 use faer::linalg::evd::EvdError;
@@ -156,7 +157,7 @@ impl fmt::Display for RiccatiError {
     }
 }
 
-impl std::error::Error for RiccatiError {}
+impl core::error::Error for RiccatiError {}
 
 impl From<EvdError> for RiccatiError {
     fn from(value: EvdError) -> Self {
@@ -559,11 +560,11 @@ where
         .zip(beta.iter())
         .enumerate()
         .filter_map(|(index, (&alpha, &beta))| {
-            if beta.norm() <= tol {
+            if beta.abs() <= tol {
                 return None;
             }
             let lambda = alpha / beta;
-            (lambda.norm() < <R as One>::one() - tol).then_some(index)
+            (lambda.abs() < <R as One>::one() - tol).then_some(index)
         })
         .collect()
 }
@@ -744,7 +745,7 @@ where
         .to_vec();
     Ok(poles
         .into_iter()
-        .all(|pole| pole.norm() < <T::Real as One>::one() - tol))
+        .all(|pole| pole.abs() < <T::Real as One>::one() - tol))
 }
 
 fn to_complex_mat<T>(matrix: MatRef<'_, T>) -> Mat<Complex<T::Real>>

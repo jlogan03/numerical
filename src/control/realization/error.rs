@@ -46,4 +46,4 @@ impl fmt::Display for RealizationError {
     }
 }
 
-impl std::error::Error for RealizationError {}
+impl core::error::Error for RealizationError {}
