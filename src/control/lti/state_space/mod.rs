@@ -307,8 +307,8 @@ where
         validate_state_feedback_gain(self, k)?;
         let bk = dense_mul(self.b(), k)?;
         let dk = dense_mul(self.d(), k)?;
-        let a = dense_sub(self.a(), bk.as_ref())?;
-        let c = dense_sub(self.c(), dk.as_ref())?;
+        let a = self.a().to_owned() - bk.as_ref();
+        let c = self.c().to_owned() - dk.as_ref();
         Self::new(a, self.b().to_owned(), c, self.d().to_owned())
     }
 
@@ -608,8 +608,8 @@ where
         validate_state_feedback_gain(self, k)?;
         let bk = dense_mul(self.b(), k)?;
         let dk = dense_mul(self.d(), k)?;
-        let a = dense_sub(self.a(), bk.as_ref())?;
-        let c = dense_sub(self.c(), dk.as_ref())?;
+        let a = self.a().to_owned() - bk.as_ref();
+        let c = self.c().to_owned() - dk.as_ref();
         Self::new(
             a,
             self.b().to_owned(),
@@ -801,7 +801,7 @@ where
     // state vectors. The output map is then the horizontal concatenation of
     // the two output maps, with the right side optionally negated.
     let c = hcat(lhs.c(), rhs_c.as_ref())?;
-    let d = dense_add(lhs.d(), rhs_d.as_ref())?;
+    let d = lhs.d().to_owned() + rhs_d.as_ref();
     Ok((a, b, c, d))
 }
 
@@ -864,8 +864,8 @@ where
     validate_output_injection_gain(system, l)?;
     let lc = dense_mul(l, system.c())?;
     let ld = dense_mul(l, system.d())?;
-    let a = dense_sub(system.a(), lc.as_ref())?;
-    let u_block = dense_sub(system.b(), ld.as_ref())?;
+    let a = system.a().to_owned() - lc.as_ref();
+    let u_block = system.b().to_owned() - ld.as_ref();
     let y_block = l.to_owned();
     // The injected system is driven by `[u; y_ext]`, not just `u`. This keeps
     // the innovation input explicit instead of hiding the measurement channel
@@ -898,11 +898,8 @@ where
 
     // The standalone controller state is the observer state `x_hat`, driven by
     // reference `r` and measurement `y`, with control law `u = r - K x_hat`.
-    let controller_a = dense_add(
-        dense_sub(dense_sub(plant.a(), bk.as_ref())?.as_ref(), lc.as_ref())?.as_ref(),
-        ldk.as_ref(),
-    )?;
-    let controller_b_r = dense_sub(plant.b(), ld.as_ref())?;
+    let controller_a = (plant.a().to_owned() - bk.as_ref() - lc.as_ref()) + ldk.as_ref();
+    let controller_b_r = plant.b().to_owned() - ld.as_ref();
     let controller_b = hcat(controller_b_r.as_ref(), l)?;
     let controller_c = negated(k);
     let controller_d = hcat(
@@ -911,7 +908,7 @@ where
     )?;
 
     let top_right = negated(bk.as_ref());
-    let bottom_right = dense_sub(dense_sub(plant.a(), bk.as_ref())?.as_ref(), lc.as_ref())?;
+    let bottom_right = plant.a().to_owned() - bk.as_ref() - lc.as_ref();
     // The closed-loop augmented state is `[x; x_hat]`, driven only by the
     // external reference/disturbance input `r`. The plant sees the estimated
     // state through `u = r - K x_hat`, while the observer sees the true plant
@@ -997,22 +994,6 @@ fn ensure_same_io<T, Domain>(
     Ok(())
 }
 
-fn dense_add<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
-where
-    T: ComplexField + Copy,
-{
-    ensure_same_shape("dense_add", lhs, rhs)?;
-    Ok(lhs.to_owned() + rhs)
-}
-
-fn dense_sub<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
-where
-    T: ComplexField + Copy,
-{
-    ensure_same_shape("dense_sub", lhs, rhs)?;
-    Ok(lhs.to_owned() - rhs)
-}
-
 fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
 where
     T: ComplexField + Copy,
@@ -1071,23 +1052,6 @@ where
     Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
         -matrix[(row, col)]
     })
-}
-
-fn ensure_same_shape<T>(
-    which: &'static str,
-    lhs: MatRef<'_, T>,
-    rhs: MatRef<'_, T>,
-) -> Result<(), StateSpaceError> {
-    if lhs.nrows() != rhs.nrows() || lhs.ncols() != rhs.ncols() {
-        return Err(StateSpaceError::DimensionMismatch {
-            which,
-            expected_nrows: lhs.nrows(),
-            expected_ncols: lhs.ncols(),
-            actual_nrows: rhs.nrows(),
-            actual_ncols: rhs.ncols(),
-        });
-    }
-    Ok(())
 }
 
 fn hcat<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
