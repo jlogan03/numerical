@@ -65,6 +65,7 @@
 mod dense;
 pub mod linear;
 pub mod nonlinear;
+pub(crate) mod nonlinear_core;
 
 pub use linear::{
     ContinuousObserver, ContinuousObserverDerivative, CovarianceUpdate, DiscreteKalmanFilter,

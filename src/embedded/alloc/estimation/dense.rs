@@ -16,6 +16,7 @@ where
     Mat::from_fn(nrows, ncols, |_, _| T::zero())
 }
 
+#[cfg(test)]
 /// Returns the identity matrix of order `n`.
 pub(super) fn identity_matrix<T>(n: usize) -> Matrix<T>
 where
@@ -42,6 +43,65 @@ where
     T: Copy,
 {
     Col::from_fn(values.len(), |i| values[i.unbound()])
+}
+
+/// Copies one dense vector into a single-column dense matrix.
+pub(super) fn vector_as_column_matrix<T>(vector: &Vector<T>) -> Matrix<T>
+where
+    T: Copy,
+{
+    Mat::from_fn(vector.nrows(), 1, |row, _| vector[row])
+}
+
+/// Copies one single-column dense matrix into a dense vector.
+pub(super) fn column_matrix_to_vector<T>(
+    matrix: &Matrix<T>,
+    which: &'static str,
+) -> Result<Vector<T>, EmbeddedError>
+where
+    T: Copy,
+{
+    if matrix.ncols() != 1 {
+        return Err(EmbeddedError::DimensionMismatch {
+            which,
+            expected_rows: matrix.nrows(),
+            expected_cols: 1,
+            actual_rows: matrix.nrows(),
+            actual_cols: matrix.ncols(),
+        });
+    }
+
+    Ok(Col::from_fn(matrix.nrows(), |row| {
+        matrix[(row.unbound(), 0)]
+    }))
+}
+
+/// Packs a set of equal-length vectors into one column-major matrix.
+pub(super) fn vectors_as_columns<T>(
+    vectors: &[Vector<T>],
+    which: &'static str,
+) -> Result<Matrix<T>, EmbeddedError>
+where
+    T: Float + Copy,
+{
+    if vectors.is_empty() {
+        return Ok(zero_matrix(0, 0));
+    }
+
+    let nrows = vectors[0].nrows();
+    for vector in &vectors[1..] {
+        if vector.nrows() != nrows {
+            return Err(EmbeddedError::LengthMismatch {
+                which,
+                expected: nrows,
+                actual: vector.nrows(),
+            });
+        }
+    }
+
+    Ok(Mat::from_fn(nrows, vectors.len(), |row, col| {
+        vectors[col.unbound()][row]
+    }))
 }
 
 /// Returns an immutable slice view of one dense vector.
@@ -78,26 +138,6 @@ where
 
     Ok(Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
         lhs[(row, col)] + rhs[(row, col)]
-    }))
-}
-
-/// Returns the matrix difference `lhs - rhs`.
-pub(super) fn mat_sub<T>(lhs: &Matrix<T>, rhs: &Matrix<T>) -> Result<Matrix<T>, EmbeddedError>
-where
-    T: Float + Copy,
-{
-    if lhs.nrows() != rhs.nrows() || lhs.ncols() != rhs.ncols() {
-        return Err(EmbeddedError::DimensionMismatch {
-            which: "embedded.alloc.matrix.sub",
-            expected_rows: lhs.nrows(),
-            expected_cols: lhs.ncols(),
-            actual_rows: rhs.nrows(),
-            actual_cols: rhs.ncols(),
-        });
-    }
-
-    Ok(Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] - rhs[(row, col)]
     }))
 }
 
@@ -160,14 +200,6 @@ where
     }))
 }
 
-/// Returns the outer product `x y^T`.
-pub(super) fn outer_product<T>(x: &Vector<T>, y: &Vector<T>) -> Matrix<T>
-where
-    T: Float + Copy,
-{
-    Mat::from_fn(x.nrows(), y.nrows(), |row, col| x[row] * y[col])
-}
-
 /// Returns the Euclidean norm of one dense vector.
 pub(super) fn vec_norm<T>(vector: &Vector<T>) -> T
 where
@@ -178,26 +210,6 @@ where
         sum = sum + vector[idx] * vector[idx];
     }
     sum.sqrt()
-}
-
-/// Returns the dot product `lhs^T rhs`.
-pub(super) fn vec_dot<T>(lhs: &Vector<T>, rhs: &Vector<T>) -> Result<T, EmbeddedError>
-where
-    T: Float + Copy,
-{
-    if lhs.nrows() != rhs.nrows() {
-        return Err(EmbeddedError::LengthMismatch {
-            which: "embedded.alloc.vec_dot",
-            expected: lhs.nrows(),
-            actual: rhs.nrows(),
-        });
-    }
-
-    let mut acc = T::zero();
-    for idx in 0..lhs.nrows() {
-        acc = acc + lhs[idx] * rhs[idx];
-    }
-    Ok(acc)
 }
 
 /// Returns `lhs + rhs` for dense vectors.
@@ -273,43 +285,6 @@ where
         for col in 0..solution.ncols() {
             solution[(row, col)] = ensure_finite(solution[(row, col)], which)?;
         }
-    }
-    Ok(solution)
-}
-
-/// Solves `matrix * x = rhs` for one dense vector using faer's dense `LL^T` factorization.
-pub(super) fn llt_solve_vector<T>(
-    matrix: &Matrix<T>,
-    rhs: &Vector<T>,
-    which: &'static str,
-) -> Result<Vector<T>, EmbeddedError>
-where
-    T: ComplexField<Real = T> + Float + Copy,
-{
-    if matrix.nrows() != matrix.ncols() {
-        return Err(EmbeddedError::DimensionMismatch {
-            which,
-            expected_rows: matrix.nrows(),
-            expected_cols: matrix.nrows(),
-            actual_rows: matrix.nrows(),
-            actual_cols: matrix.ncols(),
-        });
-    }
-    if rhs.nrows() != matrix.nrows() {
-        return Err(EmbeddedError::LengthMismatch {
-            which,
-            expected: matrix.nrows(),
-            actual: rhs.nrows(),
-        });
-    }
-
-    let factor = matrix
-        .as_ref()
-        .llt(Side::Lower)
-        .map_err(|_| EmbeddedError::NonPositiveDefinite { which })?;
-    let mut solution = factor.solve(rhs.as_ref());
-    for idx in 0..solution.nrows() {
-        solution[idx] = ensure_finite(solution[idx], which)?;
     }
     Ok(solution)
 }

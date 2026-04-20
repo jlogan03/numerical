@@ -1,13 +1,18 @@
 //! Simplified dynamic-size discrete-time extended Kalman filtering.
 
 use super::dense::{
-    identity_matrix, llt_solve, llt_solve_vector, mat_add, mat_mul, mat_mul_vec, mat_sub,
-    transpose, vec_add, vec_as_slice, vec_as_slice_mut, vec_dot, vec_norm, vec_sub,
-    vector_from_slice, zero_matrix, zero_vector,
+    llt_solve, mat_mul, mat_mul_vec, transpose, vec_add, vec_as_slice, vec_as_slice_mut, vec_norm,
+    vec_sub, vector_as_column_matrix, vector_from_slice, zero_matrix, zero_vector,
+};
+use super::map_nonlinear_error;
+use crate::control::estimation::CovarianceUpdate;
+use crate::control::estimation::nonlinear_core::{
+    normalized_innovation_norm, predict_covariance, updated_covariance,
 };
 use crate::embedded::EmbeddedError;
 use crate::embedded::alloc::{Matrix, Vector};
-use faer_traits::ComplexField;
+use crate::sparse::compensated::CompensatedField;
+use faer_traits::RealField;
 use num_traits::Float;
 
 /// Dynamic nonlinear discrete-time model.
@@ -81,7 +86,8 @@ pub struct ExtendedKalmanFilter<T, M> {
 
 impl<T, M> ExtendedKalmanFilter<T, M>
 where
-    T: ComplexField<Real = T> + Float + Copy,
+    T: CompensatedField + RealField,
+    T::Real: Float + Copy,
     M: DiscreteExtendedKalmanModel<T>,
 {
     /// Creates a validated dynamic-size EKF runtime.
@@ -166,7 +172,7 @@ where
             vec_as_slice_mut(&mut state),
         );
 
-        let covariance = mat_add(&mat_mul(&mat_mul(&f, &self.p)?, &transpose(&f))?, &self.w)?;
+        let covariance = predict_covariance(f.as_ref(), self.p.as_ref(), self.w.as_ref());
         let mut output = zero_vector(self.model.output_dim());
         self.model
             .output(vec_as_slice(&state), input, vec_as_slice_mut(&mut output));
@@ -194,31 +200,23 @@ where
             .output_jacobian(vec_as_slice(&prediction.state), input, &mut h);
 
         let innovation = vec_sub(&vector_from_slice(measurement), &prediction.output)?;
-        let innovation_covariance = mat_add(
-            &mat_mul(&mat_mul(&h, &prediction.covariance)?, &transpose(&h))?,
-            &self.v,
-        )?;
+        let innovation_covariance =
+            predict_covariance(h.as_ref(), prediction.covariance.as_ref(), self.v.as_ref());
         let cross_covariance = mat_mul(&prediction.covariance, &transpose(&h))?;
         let gain = transpose(&llt_solve(
             &innovation_covariance,
             &transpose(&cross_covariance),
             "embedded.alloc.ekf.innovation_covariance",
         )?);
-        let whitened_innovation = llt_solve_vector(
-            &innovation_covariance,
-            &innovation,
-            "embedded.alloc.ekf.innovation_covariance",
-        )?;
         let state = vec_add(&prediction.state, &mat_mul_vec(&gain, &innovation)?)?;
-        let identity = identity_matrix(self.model.state_dim());
-        let residual = mat_sub(&identity, &mat_mul(&gain, &h)?)?;
-        let covariance = mat_add(
-            &mat_mul(
-                &mat_mul(&residual, &prediction.covariance)?,
-                &transpose(&residual),
-            )?,
-            &mat_mul(&mat_mul(&gain, &self.v)?, &transpose(&gain))?,
-        )?;
+        let covariance = updated_covariance(
+            CovarianceUpdate::Joseph,
+            prediction.covariance.as_ref(),
+            gain.as_ref(),
+            h.as_ref(),
+            self.v.as_ref(),
+            innovation_covariance.as_ref(),
+        );
 
         let mut output = zero_vector(ny);
         self.model
@@ -226,9 +224,11 @@ where
 
         Ok(ExtendedKalmanUpdate {
             innovation_norm: vec_norm(&innovation),
-            normalized_innovation_norm: vec_dot(&innovation, &whitened_innovation)?
-                .max(T::zero())
-                .sqrt(),
+            normalized_innovation_norm: normalized_innovation_norm(
+                vector_as_column_matrix(&innovation).as_ref(),
+                innovation_covariance.as_ref(),
+            )
+            .map_err(map_nonlinear_error)?,
             innovation,
             innovation_covariance,
             gain,

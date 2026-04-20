@@ -1,15 +1,22 @@
 //! Simplified SPD-only dynamic-size discrete-time unscented Kalman filtering.
 
 use super::dense::{
-    cholesky_lower, llt_solve, llt_solve_vector, mat_add, mat_mul, mat_mul_vec, mat_sub,
-    outer_product, scale_matrix, transpose, vec_add, vec_as_slice, vec_as_slice_mut, vec_dot,
-    vec_norm, vec_sub, vector_from_slice, zero_matrix, zero_vector,
+    cholesky_lower, column_matrix_to_vector, llt_solve, mat_add, mat_mul_vec, scale_matrix,
+    transpose, vec_add, vec_as_slice, vec_as_slice_mut, vec_norm, vec_sub, vector_as_column_matrix,
+    vector_from_slice, vectors_as_columns, zero_vector,
 };
 use super::ekf::DiscreteNonlinearModel;
+use super::map_nonlinear_error;
+use crate::control::estimation::CovarianceUpdate;
+use crate::control::estimation::nonlinear_core::{
+    normalized_innovation_norm, updated_covariance_ukf, weighted_covariance,
+    weighted_cross_covariance, weighted_mean,
+};
 use crate::embedded::EmbeddedError;
 use crate::embedded::alloc::{Matrix, Vector};
+use crate::sparse::compensated::CompensatedField;
 use alloc::vec::Vec;
-use faer_traits::ComplexField;
+use faer_traits::RealField;
 use num_traits::Float;
 
 /// One UKF prediction stage.
@@ -67,7 +74,8 @@ pub struct UnscentedKalmanFilter<T, M> {
 
 impl<T, M> UnscentedKalmanFilter<T, M>
 where
-    T: ComplexField<Real = T> + Float + Copy,
+    T: CompensatedField + RealField,
+    T::Real: Float + Copy,
     M: DiscreteNonlinearModel<T>,
 {
     /// Creates a validated SPD-only UKF runtime.
@@ -184,9 +192,18 @@ where
             propagated.push(next_state);
         }
 
-        let state = weighted_mean(&propagated, &weights.mean);
+        let propagated_matrix =
+            vectors_as_columns(&propagated, "embedded.alloc.ukf.propagated_sigma_points")?;
+        let state = column_matrix_to_vector(
+            &weighted_mean(propagated_matrix.as_ref(), vec_as_slice(&weights.mean)),
+            "embedded.alloc.ukf.predicted_state",
+        )?;
         let covariance = mat_add(
-            &weighted_covariance(&propagated, &state, &weights.covariance)?,
+            &weighted_covariance(
+                propagated_matrix.as_ref(),
+                vector_as_column_matrix(&state).as_ref(),
+                vec_as_slice(&weights.covariance),
+            ),
             &self.w,
         )?;
 
@@ -219,40 +236,60 @@ where
             measurement_points.push(output);
         }
 
-        let predicted_output = weighted_mean(&measurement_points, &weights.mean);
+        let state_points_matrix = vectors_as_columns(
+            &prediction.sigma_points,
+            "embedded.alloc.ukf.state_sigma_points",
+        )?;
+        let measurement_points_matrix = vectors_as_columns(
+            &measurement_points,
+            "embedded.alloc.ukf.measurement_sigma_points",
+        )?;
+        let predicted_output = column_matrix_to_vector(
+            &weighted_mean(
+                measurement_points_matrix.as_ref(),
+                vec_as_slice(&weights.mean),
+            ),
+            "embedded.alloc.ukf.predicted_output",
+        )?;
         let innovation = vec_sub(&vector_from_slice(measurement), &predicted_output)?;
         let innovation_covariance = mat_add(
-            &weighted_covariance(&measurement_points, &predicted_output, &weights.covariance)?,
+            &weighted_covariance(
+                measurement_points_matrix.as_ref(),
+                vector_as_column_matrix(&predicted_output).as_ref(),
+                vec_as_slice(&weights.covariance),
+            ),
             &self.v,
         )?;
-        let cross_covariance = cross_covariance(
-            &prediction.sigma_points,
-            &prediction.state,
-            &measurement_points,
-            &predicted_output,
-            &weights.covariance,
-        )?;
+        let cross_covariance = weighted_cross_covariance(
+            state_points_matrix.as_ref(),
+            vector_as_column_matrix(&prediction.state).as_ref(),
+            measurement_points_matrix.as_ref(),
+            vector_as_column_matrix(&predicted_output).as_ref(),
+            vec_as_slice(&weights.covariance),
+        );
         let gain = transpose(&llt_solve(
             &innovation_covariance,
             &transpose(&cross_covariance),
             "embedded.alloc.ukf.innovation_covariance",
         )?);
-        let whitened_innovation = llt_solve_vector(
-            &innovation_covariance,
-            &innovation,
-            "embedded.alloc.ukf.innovation_covariance",
-        )?;
         let state = vec_add(&prediction.state, &mat_mul_vec(&gain, &innovation)?)?;
-        let covariance = mat_sub(
-            &prediction.covariance,
-            &mat_mul(&mat_mul(&gain, &innovation_covariance)?, &transpose(&gain))?,
-        )?;
+        let covariance = updated_covariance_ukf(
+            CovarianceUpdate::Simple,
+            prediction.covariance.as_ref(),
+            gain.as_ref(),
+            cross_covariance.as_ref(),
+            self.v.as_ref(),
+            innovation_covariance.as_ref(),
+        )
+        .map_err(map_nonlinear_error)?;
 
         Ok(UnscentedKalmanUpdate {
             innovation_norm: vec_norm(&innovation),
-            normalized_innovation_norm: vec_dot(&innovation, &whitened_innovation)?
-                .max(T::zero())
-                .sqrt(),
+            normalized_innovation_norm: normalized_innovation_norm(
+                vector_as_column_matrix(&innovation).as_ref(),
+                innovation_covariance.as_ref(),
+            )
+            .map_err(map_nonlinear_error)?,
             innovation,
             innovation_covariance,
             gain,
@@ -344,65 +381,6 @@ where
         points.push(minus);
     }
     Ok(points)
-}
-
-/// Computes the weighted sigma-point mean.
-fn weighted_mean<T>(points: &[Vector<T>], weights: &Vector<T>) -> Vector<T>
-where
-    T: Float + Copy,
-{
-    let dim = points.first().map_or(0, Vector::nrows);
-    let mut mean = zero_vector(dim);
-    for (idx, point) in points.iter().enumerate() {
-        for j in 0..dim {
-            mean[j] = mean[j] + weights[idx] * point[j];
-        }
-    }
-    mean
-}
-
-/// Computes the weighted covariance of one sigma-point cloud.
-fn weighted_covariance<T>(
-    points: &[Vector<T>],
-    mean: &Vector<T>,
-    weights: &Vector<T>,
-) -> Result<Matrix<T>, EmbeddedError>
-where
-    T: Float + Copy,
-{
-    let dim = mean.nrows();
-    let mut covariance = zero_matrix(dim, dim);
-    for (idx, point) in points.iter().enumerate() {
-        let delta = vec_sub(point, mean)?;
-        covariance = mat_add(
-            &covariance,
-            &scale_matrix(&outer_product(&delta, &delta), weights[idx]),
-        )?;
-    }
-    Ok(covariance)
-}
-
-/// Computes the weighted state/measurement cross covariance.
-fn cross_covariance<T>(
-    state_points: &[Vector<T>],
-    state_mean: &Vector<T>,
-    measurement_points: &[Vector<T>],
-    measurement_mean: &Vector<T>,
-    weights: &Vector<T>,
-) -> Result<Matrix<T>, EmbeddedError>
-where
-    T: Float + Copy,
-{
-    let mut covariance = zero_matrix(state_mean.nrows(), measurement_mean.nrows());
-    for idx in 0..state_points.len() {
-        let dx = vec_sub(&state_points[idx], state_mean)?;
-        let dz = vec_sub(&measurement_points[idx], measurement_mean)?;
-        covariance = mat_add(
-            &covariance,
-            &scale_matrix(&outer_product(&dx, &dz), weights[idx]),
-        )?;
-    }
-    Ok(covariance)
 }
 
 /// Validates the nonlinear-model input dimension.
