@@ -132,7 +132,7 @@ where
 {
     match covariance_update {
         CovarianceUpdate::Simple => {
-            predicted_covariance.to_owned()
+            predicted_covariance
                 - dense_mul_adjoint_rhs(dense_mul(gain, innovation_covariance).as_ref(), gain)
                     .as_ref()
         }
@@ -140,13 +140,13 @@ where
             let identity =
                 Mat::<R>::identity(predicted_covariance.nrows(), predicted_covariance.nrows());
             let kh = dense_mul(gain, h);
-            let i_minus_kh = identity - kh.as_ref();
+            let i_minus_kh = &identity - &kh;
             let first = dense_mul_adjoint_rhs(
                 dense_mul(i_minus_kh.as_ref(), predicted_covariance).as_ref(),
                 i_minus_kh.as_ref(),
             );
             let second = dense_mul_adjoint_rhs(dense_mul(gain, r).as_ref(), gain);
-            first + second.as_ref()
+            &first + &second
         }
     }
 }
@@ -165,7 +165,7 @@ where
     R::Real: Float + Copy,
 {
     match covariance_update {
-        CovarianceUpdate::Simple => Ok(predicted_covariance.to_owned()
+        CovarianceUpdate::Simple => Ok(predicted_covariance
             - dense_mul_adjoint_rhs(dense_mul(gain, innovation_covariance).as_ref(), gain)
                 .as_ref()),
         CovarianceUpdate::Joseph => {

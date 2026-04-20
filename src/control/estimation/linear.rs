@@ -617,16 +617,16 @@ where
         // `P^- = A P A^H + W`
         //
         // where `W` is interpreted directly in state coordinates.
-        let state = dense_mul(self.a.as_ref(), self.x_hat.as_ref())
-            + dense_mul(self.b.as_ref(), input).as_ref();
+        let bu = dense_mul(self.b.as_ref(), input);
+        let state = dense_mul(self.a.as_ref(), self.x_hat.as_ref()) + &bu;
         let covariance = dense_mul_adjoint_rhs(
             dense_mul(self.a.as_ref(), self.p.as_ref()).as_ref(),
             self.a.as_ref(),
-        ) + self.w.as_ref();
+        ) + &self.w;
         let mut covariance = covariance;
         hermitian_project_in_place(&mut covariance);
-        let output =
-            dense_mul(self.c.as_ref(), state.as_ref()) + dense_mul(self.d.as_ref(), input).as_ref();
+        let du = dense_mul(self.d.as_ref(), input);
+        let output = dense_mul(self.c.as_ref(), state.as_ref()) + &du;
 
         if !state.as_ref().is_all_finite() {
             return Err(EstimatorError::NonFiniteResult {
@@ -693,11 +693,11 @@ where
         // before solving for the Kalman gain.
         let predicted_output = dense_mul(self.c.as_ref(), prediction.state.as_ref())
             + dense_mul(self.d.as_ref(), input).as_ref();
-        let innovation = measurement.to_owned() - predicted_output.as_ref();
+        let innovation = measurement - &predicted_output;
         let innovation_covariance = dense_mul_adjoint_rhs(
             dense_mul(self.c.as_ref(), prediction.covariance.as_ref()).as_ref(),
             self.c.as_ref(),
-        ) + self.v.as_ref();
+        ) + &self.v;
         let mut innovation_covariance = innovation_covariance;
         hermitian_project_in_place(&mut innovation_covariance);
         let cross = dense_mul_adjoint_rhs(prediction.covariance.as_ref(), self.c.as_ref());
@@ -709,8 +709,8 @@ where
             default_tolerance::<T>(),
             || EstimatorError::SingularInnovationCovariance,
         )?;
-        let state =
-            prediction.state.to_owned() + dense_mul(gain.as_ref(), innovation.as_ref()).as_ref();
+        let correction = dense_mul(gain.as_ref(), innovation.as_ref());
+        let state = &prediction.state + &correction;
         let covariance = updated_covariance(
             self.covariance_update,
             prediction.covariance.as_ref(),
@@ -721,8 +721,8 @@ where
         );
         let mut covariance = covariance;
         hermitian_project_in_place(&mut covariance);
-        let output =
-            dense_mul(self.c.as_ref(), state.as_ref()) + dense_mul(self.d.as_ref(), input).as_ref();
+        let du = dense_mul(self.d.as_ref(), input);
+        let output = dense_mul(self.c.as_ref(), state.as_ref()) + &du;
         let innovation_norm = column_vector_norm(innovation.as_ref());
         let normalized_innovation_norm =
             normalized_innovation_norm(innovation.as_ref(), innovation_covariance.as_ref())?;
@@ -913,10 +913,10 @@ where
         input: MatRef<'_, T>,
     ) -> Result<SteadyStateKalmanPrediction<T>, EstimatorError> {
         validate_column_vector("input", input, self.b.ncols())?;
-        let state = dense_mul(self.a.as_ref(), self.x_hat.as_ref())
-            + dense_mul(self.b.as_ref(), input).as_ref();
-        let output =
-            dense_mul(self.c.as_ref(), state.as_ref()) + dense_mul(self.d.as_ref(), input).as_ref();
+        let bu = dense_mul(self.b.as_ref(), input);
+        let state = dense_mul(self.a.as_ref(), self.x_hat.as_ref()) + &bu;
+        let du = dense_mul(self.d.as_ref(), input);
+        let output = dense_mul(self.c.as_ref(), state.as_ref()) + &du;
         if !state.as_ref().is_all_finite() {
             return Err(EstimatorError::NonFiniteResult {
                 which: "steady_state_prediction.state",
@@ -961,13 +961,12 @@ where
             self.c.nrows(),
         )?;
 
-        let predicted_output = dense_mul(self.c.as_ref(), prediction.state.as_ref())
-            + dense_mul(self.d.as_ref(), input).as_ref();
-        let innovation = measurement.to_owned() - predicted_output.as_ref();
-        let state = prediction.state.to_owned()
-            + dense_mul(self.gain.as_ref(), innovation.as_ref()).as_ref();
-        let output =
-            dense_mul(self.c.as_ref(), state.as_ref()) + dense_mul(self.d.as_ref(), input).as_ref();
+        let du = dense_mul(self.d.as_ref(), input);
+        let predicted_output = dense_mul(self.c.as_ref(), prediction.state.as_ref()) + &du;
+        let innovation = measurement - &predicted_output;
+        let correction = dense_mul(self.gain.as_ref(), innovation.as_ref());
+        let state = &prediction.state + &correction;
+        let output = dense_mul(self.c.as_ref(), state.as_ref()) + &du;
         let innovation_norm = column_vector_norm(innovation.as_ref());
 
         if !predicted_output.as_ref().is_all_finite() {
@@ -1108,12 +1107,13 @@ where
         validate_column_vector("input", input, self.b.ncols())?;
         validate_column_vector("measurement", measurement, self.c.nrows())?;
 
-        let output = dense_mul(self.c.as_ref(), self.x_hat.as_ref())
-            + dense_mul(self.d.as_ref(), input).as_ref();
-        let innovation = measurement.to_owned() - output.as_ref();
-        let state_derivative = (dense_mul(self.a.as_ref(), self.x_hat.as_ref())
-            + dense_mul(self.b.as_ref(), input).as_ref())
-            + dense_mul(self.gain.as_ref(), innovation.as_ref()).as_ref();
+        let du = dense_mul(self.d.as_ref(), input);
+        let output = dense_mul(self.c.as_ref(), self.x_hat.as_ref()) + &du;
+        let innovation = measurement - &output;
+        let bu = dense_mul(self.b.as_ref(), input);
+        let correction = dense_mul(self.gain.as_ref(), innovation.as_ref());
+        let state_derivative =
+            (dense_mul(self.a.as_ref(), self.x_hat.as_ref()) + &bu) + &correction;
         let innovation_norm = column_vector_norm(innovation.as_ref());
 
         if !output.as_ref().is_all_finite() {
@@ -1303,7 +1303,8 @@ where
 {
     // Both continuous and discrete steady-state observer design report the
     // estimator dynamics in the same algebraic form `A - L C`.
-    a.to_owned() - dense_mul(l, c).as_ref()
+    let lc = dense_mul(l, c);
+    a - &lc
 }
 
 fn steady_state_filter_gain<T>(
@@ -1346,7 +1347,7 @@ where
 {
     match covariance_update {
         CovarianceUpdate::Simple => {
-            predicted_covariance.to_owned()
+            predicted_covariance
                 - dense_mul_adjoint_rhs(dense_mul(gain, innovation_covariance).as_ref(), gain)
                     .as_ref()
         }
@@ -1358,13 +1359,13 @@ where
             let identity =
                 Mat::<T>::identity(predicted_covariance.nrows(), predicted_covariance.nrows());
             let kc = dense_mul(gain, c);
-            let i_minus_kc = identity - kc.as_ref();
+            let i_minus_kc = &identity - &kc;
             let first = dense_mul_adjoint_rhs(
                 dense_mul(i_minus_kc.as_ref(), predicted_covariance).as_ref(),
                 i_minus_kc.as_ref(),
             );
             let second = dense_mul_adjoint_rhs(dense_mul(gain, v).as_ref(), gain);
-            first + second.as_ref()
+            &first + &second
         }
     }
 }

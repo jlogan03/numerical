@@ -145,7 +145,7 @@ where
             1,
         )?;
         validate_finite("predicted_output", predicted_output.as_ref())?;
-        let innovation = measurement.to_owned() - predicted_output.as_ref();
+        let innovation = measurement - &predicted_output;
         let h = self.model.output_jacobian(prediction.state.as_ref(), input);
         validate_rect(
             "output_jacobian",
@@ -162,8 +162,8 @@ where
             default_tolerance::<R>(),
             || NonlinearEstimatorError::SingularInnovationCovariance,
         )?;
-        let state =
-            prediction.state.to_owned() + dense_mul(gain.as_ref(), innovation.as_ref()).as_ref();
+        let correction = dense_mul(gain.as_ref(), innovation.as_ref());
+        let state = &prediction.state + &correction;
         let covariance = updated_covariance(
             self.covariance_update,
             prediction.covariance.as_ref(),

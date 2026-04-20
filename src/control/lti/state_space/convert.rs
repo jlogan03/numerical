@@ -155,8 +155,8 @@ where
     //
     // with matching input/output transformations so the full state-space
     // quadruple follows the same trapezoidal-rule change of variables.
-    let p = identity.as_ref().to_owned() - dense_scale_real(system.a.as_ref(), alpha).as_ref();
-    let q = identity + dense_scale_real(system.a.as_ref(), alpha).as_ref();
+    let p = &identity - dense_scale_real(system.a.as_ref(), alpha).as_ref();
+    let q = &identity + dense_scale_real(system.a.as_ref(), alpha).as_ref();
     let p_inv = inverse_checked(p.as_ref(), "I - alpha A")?;
 
     let ad = dense_mul(p_inv.as_ref(), q.as_ref());
@@ -167,7 +167,7 @@ where
         dense_mul(c_p_inv.as_ref(), system.b.as_ref()).as_ref(),
         alpha,
     );
-    let dd = system.d.to_owned() + d_corr.as_ref();
+    let dd = system.d.as_ref() + &d_corr;
 
     Ok(StateSpace {
         a: ad,
@@ -192,8 +192,8 @@ where
     let n = system.nstates();
 
     let identity = Mat::<T>::identity(n, n);
-    let ap = system.a.to_owned() + identity.as_ref();
-    let am = system.a.to_owned() - identity.as_ref();
+    let ap = system.a.as_ref() + &identity;
+    let am = system.a.as_ref() - &identity;
     let ap_inv = inverse_checked(ap.as_ref(), "Ad + I")?;
     let bc_scale = (gamma + gamma) / (gamma * gamma);
 
@@ -214,7 +214,7 @@ where
     let c_ap_inv = dense_mul(system.c.as_ref(), ap_inv.as_ref());
     let c = dense_scale_real(c_ap_inv.as_ref(), bc_scale);
     let d_corr = dense_mul(c_ap_inv.as_ref(), system.b.as_ref());
-    let d = system.d.to_owned() - d_corr.as_ref();
+    let d = system.d.as_ref() - &d_corr;
 
     Ok(StateSpace {
         a,
@@ -328,8 +328,8 @@ where
     dense_axpy_real(&mut v, b[2], a2.as_ref());
     dense_axpy_real(&mut v, b[0], ident.as_ref());
 
-    let p = v.to_owned() - u.as_ref();
-    let q = v.to_owned() + u.as_ref();
+    let p = &v - &u;
+    let q = &v + &u;
     let mut result = solve_left_checked(p.as_ref(), q.as_ref(), "matrix exponential solve")?;
 
     for _ in 0..s {

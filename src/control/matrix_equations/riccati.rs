@@ -382,7 +382,7 @@ where
     validate_riccati_dims(a, b, x, r)?;
     let b_h_x = dense_mul_adjoint_lhs(b, x);
     let b_h_x_b = dense_mul(b_h_x.as_ref(), b);
-    let s = r.to_owned() + b_h_x_b.as_ref();
+    let s = r + &b_h_x_b;
     let rhs = dense_mul(b_h_x.as_ref(), a);
     solve_left_checked(
         s.as_ref(),
@@ -699,7 +699,8 @@ where
     T: CompensatedField,
     T::Real: Float + Copy + RealField,
 {
-    let closed_loop = a.to_owned() - dense_mul(b, k).as_ref();
+    let bk = dense_mul(b, k);
+    let closed_loop = a - &bk;
     let poles = dense_eigenvalues(closed_loop.as_ref())
         .map_err(expect_dense_evd)?
         .try_as_col_major()
@@ -719,7 +720,8 @@ where
     T: CompensatedField,
     T::Real: Float + Copy + RealField,
 {
-    let closed_loop = a.to_owned() - dense_mul(b, k).as_ref();
+    let bk = dense_mul(b, k);
+    let closed_loop = a - &bk;
     let poles = dense_eigenvalues(closed_loop.as_ref())
         .map_err(expect_dense_evd)?
         .try_as_col_major()

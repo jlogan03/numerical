@@ -287,12 +287,12 @@ where
         let mut h_k = Mat::<T>::zeros(noutputs, ninputs);
         if k <= observer_order {
             let y_u = first_columns(observer_markov_blocks[k - 1].as_ref(), ninputs);
-            h_k = h_k + y_u.as_ref();
+            h_k = &h_k + &y_u;
         }
         for i in 1..=k.min(observer_order) {
             let y_y = trailing_columns(observer_markov_blocks[i - 1].as_ref(), noutputs);
             let term = dense_mul(y_y.as_ref(), blocks[k - i].as_ref());
-            h_k = h_k + term.as_ref();
+            h_k = &h_k + &term;
         }
         check_finite(h_k.as_ref(), "markov_sequence")?;
         blocks.push(h_k);

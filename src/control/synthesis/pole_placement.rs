@@ -339,7 +339,7 @@ where
     // observer injection gain `L`.
     let gain = dual.gain.transpose().to_owned();
     let lc = dense_mul(gain.as_ref(), c);
-    let placed = a.to_owned() - lc.as_ref();
+    let placed = a - &lc;
 
     Ok(PolePlacementSolve {
         gain,
@@ -369,7 +369,7 @@ where
 
     let gain = Mat::from_fn(1, a.nrows(), |_, col| solution[(a.nrows() - 1, col)]);
     let bk = dense_mul(b, gain.as_ref());
-    let placed = a.to_owned() - bk.as_ref();
+    let placed = a - &bk;
     let (achieved_poles, placement_residual) =
         achieved_pole_diagnostics(placed.as_ref(), desired_poles)?;
 
@@ -470,7 +470,7 @@ where
     }
 
     let bk = dense_mul(b, gain.as_ref());
-    let placed = a.to_owned() - bk.as_ref();
+    let placed = a - &bk;
     let (achieved_poles, placement_residual) =
         achieved_pole_diagnostics(placed.as_ref(), desired_poles)?;
 

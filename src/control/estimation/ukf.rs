@@ -240,8 +240,7 @@ where
         )?;
         let state = weighted_mean(propagated.as_ref(), &sigma.mean_weights);
         let covariance =
-            weighted_covariance(propagated.as_ref(), state.as_ref(), &sigma.cov_weights)
-                + self.q.as_ref();
+            weighted_covariance(propagated.as_ref(), state.as_ref(), &sigma.cov_weights) + &self.q;
         let mut covariance = covariance;
         hermitian_project_in_place(&mut covariance);
         let measurement_sigma = self.sigma_strategy.sigma_points(
@@ -302,12 +301,12 @@ where
             "output",
         )?;
         let predicted_output = weighted_mean(output_points.as_ref(), &sigma.mean_weights);
-        let innovation = measurement.to_owned() - predicted_output.as_ref();
+        let innovation = measurement - &predicted_output;
         let innovation_covariance = weighted_covariance(
             output_points.as_ref(),
             predicted_output.as_ref(),
             &sigma.cov_weights,
-        ) + self.r.as_ref();
+        ) + &self.r;
         let mut innovation_covariance = innovation_covariance;
         hermitian_project_in_place(&mut innovation_covariance);
         let cross = weighted_cross_covariance(
@@ -323,8 +322,8 @@ where
             default_tolerance::<R>(),
             || NonlinearEstimatorError::SingularInnovationCovariance,
         )?;
-        let state =
-            prediction.state.to_owned() + dense_mul(gain.as_ref(), innovation.as_ref()).as_ref();
+        let correction = dense_mul(gain.as_ref(), innovation.as_ref());
+        let state = &prediction.state + &correction;
         let covariance = updated_covariance_ukf(
             self.covariance_update,
             prediction.covariance.as_ref(),
