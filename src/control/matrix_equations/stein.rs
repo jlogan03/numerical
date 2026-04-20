@@ -802,14 +802,10 @@ where
     let ax = dense_mul(a, x);
     let axah = dense_mul_adjoint_rhs(ax.as_ref(), a);
     Mat::from_fn(x.nrows(), x.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
         // Recompute the residual in the original matrix form instead of
         // recycling the vectorized solve state. That gives a more meaningful
         // post-solve accuracy check for downstream control code.
-        acc.add(x[(row, col)]);
-        acc.add(-axah[(row, col)]);
-        acc.add(-q[(row, col)]);
-        acc.finish()
+        x[(row, col)] - axah[(row, col)] - q[(row, col)]
     })
 }
 

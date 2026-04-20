@@ -698,12 +698,11 @@ where
         // Horner evaluation avoids explicitly building powers of `A`.
         let prod = dense_mul(a, out.as_ref());
         out = Mat::from_fn(n, n, |row, col| {
-            let mut acc = CompensatedSum::<T>::default();
-            acc.add(prod[(row, col)]);
             if row == col {
-                acc.add(coeff);
+                prod[(row, col)] + coeff
+            } else {
+                prod[(row, col)]
             }
-            acc.finish()
         });
     }
     if all_finite(out.as_ref()) {

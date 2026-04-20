@@ -667,15 +667,7 @@ where
     let xb = dense_mul(x, b);
     let xbk = dense_mul(xb.as_ref(), k);
     Mat::from_fn(x.nrows(), x.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        // Recompute the Riccati equation directly in matrix form instead of
-        // inferring accuracy from the invariant-subspace solve. That gives a
-        // more meaningful post-solve diagnostic for downstream controller code.
-        acc.add(a_h_x[(row, col)]);
-        acc.add(x_a[(row, col)]);
-        acc.add(-xbk[(row, col)]);
-        acc.add(q[(row, col)]);
-        acc.finish()
+        a_h_x[(row, col)] + x_a[(row, col)] - xbk[(row, col)] + q[(row, col)]
     })
 }
 
@@ -695,14 +687,7 @@ where
     let a_h_x_b = dense_mul(a_h_x.as_ref(), b);
     let a_h_x_b_k = dense_mul(a_h_x_b.as_ref(), k);
     Mat::from_fn(x.nrows(), x.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        // As in the CARE path, the residual is recomputed in the original DARE
-        // equation rather than inferred from the generalized-eigen solve.
-        acc.add(a_h_x_a[(row, col)]);
-        acc.add(-a_h_x_b_k[(row, col)]);
-        acc.add(-x[(row, col)]);
-        acc.add(q[(row, col)]);
-        acc.finish()
+        a_h_x_a[(row, col)] - a_h_x_b_k[(row, col)] - x[(row, col)] + q[(row, col)]
     })
 }
 
@@ -864,27 +849,19 @@ where
 
 fn dense_add<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
-    T: CompensatedField,
-    T::Real: Float + Copy,
+    T: ComplexField + Copy,
 {
     Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        acc.add(lhs[(row, col)]);
-        acc.add(rhs[(row, col)]);
-        acc.finish()
+        lhs[(row, col)] + rhs[(row, col)]
     })
 }
 
 fn dense_sub<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
-    T: CompensatedField,
-    T::Real: Float + Copy,
+    T: ComplexField + Copy,
 {
     Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        acc.add(lhs[(row, col)]);
-        acc.add(-rhs[(row, col)]);
-        acc.finish()
+        lhs[(row, col)] - rhs[(row, col)]
     })
 }
 

@@ -114,29 +114,6 @@ where
 }
 
 #[inline]
-pub(crate) fn sum2<T: CompensatedField>(lhs: T, rhs: T) -> T
-where
-    T::Real: Float + Copy,
-{
-    let mut acc = CompensatedSum::<T>::default();
-    acc.add(lhs);
-    acc.add(rhs);
-    acc.finish()
-}
-
-#[inline]
-pub(crate) fn sum3<T: CompensatedField>(lhs: T, mid: T, rhs: T) -> T
-where
-    T::Real: Float + Copy,
-{
-    let mut acc = CompensatedSum::<T>::default();
-    acc.add(lhs);
-    acc.add(mid);
-    acc.add(rhs);
-    acc.finish()
-}
-
-#[inline]
 pub(crate) fn dotc<T: CompensatedField>(lhs: &[T], rhs: &[T]) -> T
 where
     T::Real: Float + Copy,
@@ -174,7 +151,7 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::{dotc, sum2, sum3};
+    use super::dotc;
     use faer::c64;
 
     #[test]
@@ -193,16 +170,5 @@ mod test {
 
         let expected = lhs[0].conj() * rhs[0] + lhs[1].conj() * rhs[1];
         assert_eq!(dot, expected);
-    }
-
-    #[test]
-    fn sum2_handles_real_cancellation() {
-        assert_eq!(sum2(1.0e16f64, -1.0e16f64), 0.0);
-        assert_eq!(sum2(1.0e16f64, 1.0), 1.0e16f64 + 1.0);
-    }
-
-    #[test]
-    fn sum3_handles_real_cancellation() {
-        assert_eq!(sum3(1.0e16f64, 1.0, -1.0e16f64), 1.0);
     }
 }

@@ -38,7 +38,7 @@ use super::{
     permute_mat_cols, sorted_order_descending_by_abs,
 };
 use crate::sparse::col::{col_slice, col_slice_mut, zero_col};
-use crate::sparse::compensated::{CompensatedField, norm2, sum2};
+use crate::sparse::compensated::{CompensatedField, norm2};
 use faer::dyn_stack::{MemBuffer, MemStack, StackReq};
 use faer::get_global_parallelism;
 use faer::matrix_free::BiLinOp;
@@ -200,7 +200,7 @@ where
             .iter_mut()
             .zip(u.col(j).try_as_col_major().unwrap().as_slice())
         {
-            *dst = sum2(*dst, -(s[j] * u_value));
+            *dst -= s[j] * u_value;
         }
         let residual = norm2(col_slice(&av));
         if residual > max_residual_norm {
@@ -218,7 +218,7 @@ where
             .iter_mut()
             .zip(v.col(j).try_as_col_major().unwrap().as_slice())
         {
-            *dst = sum2(*dst, -(s[j] * v_value));
+            *dst -= s[j] * v_value;
         }
         let residual = norm2(col_slice(&ahu));
         if residual > max_residual_norm {

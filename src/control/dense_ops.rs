@@ -87,29 +87,17 @@ where
 /// Dense matrix addition using compensated accumulation per entry.
 pub(crate) fn dense_add<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
-    T: CompensatedField,
-    T::Real: Float + Copy,
+    T: ComplexField + Copy,
 {
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        acc.add(lhs[(row, col)]);
-        acc.add(rhs[(row, col)]);
-        acc.finish()
-    })
+    dense_add_plain(lhs, rhs)
 }
 
 /// Dense matrix subtraction using compensated accumulation per entry.
 pub(crate) fn dense_sub<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
-    T: CompensatedField,
-    T::Real: Float + Copy,
+    T: ComplexField + Copy,
 {
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        acc.add(lhs[(row, col)]);
-        acc.add(-rhs[(row, col)]);
-        acc.finish()
-    })
+    dense_sub_plain(lhs, rhs)
 }
 
 /// Plain dense matrix addition used where compensation is unnecessary.

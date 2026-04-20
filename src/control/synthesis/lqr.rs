@@ -41,7 +41,7 @@
 
 use crate::control::dense_ops::dense_mul;
 use crate::control::matrix_equations::{RiccatiError, solve_care_dense, solve_dare_dense};
-use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use crate::sparse::compensated::CompensatedField;
 use core::fmt;
 use faer::{Mat, MatRef};
 use faer_traits::RealField;
@@ -155,13 +155,10 @@ where
 {
     let bk = dense_mul(b, k);
     Mat::from_fn(a.nrows(), a.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
         // The public controller result always returns the closed-loop state
         // matrix explicitly so later response/simulation code does not need to
         // recompute `A - B K` on its own.
-        acc.add(a[(row, col)]);
-        acc.add(-bk[(row, col)]);
-        acc.finish()
+        a[(row, col)] - bk[(row, col)]
     })
 }
 

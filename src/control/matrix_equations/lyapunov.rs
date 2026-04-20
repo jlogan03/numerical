@@ -61,7 +61,7 @@
 //! - The same solver surface underlies the controllability and observability
 //!   Gramian helper entry points.
 
-use crate::sparse::compensated::{CompensatedField, CompensatedSum, sum2};
+use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use crate::sparse::{SparseLu, SparseLuError};
 use crate::twosum::TwoSum;
 use alloc::vec::Vec;
@@ -547,10 +547,8 @@ where
         let residual_scale = -(shift.real() + shift.real());
         for col in 0..block_cols {
             for row in 0..n {
-                residual_factor[(row, col)] = sum2(
-                    residual_factor[(row, col)],
-                    v[(row, col)].mul_real(residual_scale),
-                );
+                residual_factor[(row, col)] =
+                    residual_factor[(row, col)] + v[(row, col)].mul_real(residual_scale);
             }
         }
 

@@ -48,7 +48,7 @@
 //!   reused inside Krylov solvers.
 
 use super::col::{col_from_slice, col_slice, col_slice_mut, copy_col, zero_col};
-use super::compensated::{CompensatedField, norm2, sum2};
+use super::compensated::{CompensatedField, norm2};
 use super::matvec::SparseMatVec;
 use super::precond::Precond;
 use alloc::vec::Vec;
@@ -484,7 +484,7 @@ impl<I: Index, T: ComplexField> SparseLu<I, T> {
                 .iter_mut()
                 .zip(col_slice(&correction).iter())
             {
-                *x = sum2(*x, delta);
+                *x += delta;
             }
 
             refinement_steps += 1;
@@ -642,7 +642,7 @@ where
         .zip(b.iter())
         .zip(col_slice(matvec).iter())
     {
-        *r = sum2(b, -ax);
+        *r = b - ax;
     }
 }
 

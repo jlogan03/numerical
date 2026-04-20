@@ -32,7 +32,7 @@
 //!   and Cholesky factorizations from this crate.
 
 use super::col::{col_from_slice, col_slice, col_slice_mut, copy_col, zero_col};
-use super::compensated::{CompensatedField, dotc, norm2, norm2_sq, sum2, sum3};
+use super::compensated::{CompensatedField, dotc, norm2, norm2_sq};
 use super::matvec::SparseMatVec;
 use super::precond::{IdentityPrecond, Precond, apply_precond_to_col, precond_buffer};
 use core::fmt;
@@ -321,7 +321,7 @@ where
             .zip(col_slice(&b_col).iter())
             .zip(col_slice(&scratch).iter())
         {
-            *r = sum2(b, -ax);
+            *r = b - ax;
         }
 
         let err = norm2::<T>(col_slice(&r));
@@ -408,7 +408,7 @@ where
             .zip(col_slice(&self.b).iter())
             .zip(col_slice(&self.scratch).iter())
         {
-            *r = sum2(b, -ax);
+            *r = b - ax;
         }
 
         self.err = norm2::<T>(col_slice(&self.r));
@@ -445,7 +445,7 @@ where
             .zip(col_slice(&self.x).iter())
             .zip(col_slice(&self.z).iter())
         {
-            *h = sum2(x, p * alpha);
+            *h = x + p * alpha;
         }
 
         for ((s, &r), &v) in col_slice_mut(&mut self.s)
@@ -453,7 +453,7 @@ where
             .zip(col_slice(&self.r).iter())
             .zip(col_slice(&self.v).iter())
         {
-            *s = sum2(r, -(v * alpha));
+            *s = r - v * alpha;
         }
 
         let s_norm_sq = norm2_sq::<T>(col_slice(&self.s));
@@ -491,7 +491,7 @@ where
             .zip(col_slice(&self.scratch).iter())
             .zip(col_slice(&self.z).iter())
         {
-            *x = sum2(h, s * omega);
+            *x = h + s * omega;
         }
 
         for ((r, &s), &t) in col_slice_mut(&mut self.r)
@@ -499,7 +499,7 @@ where
             .zip(col_slice(&self.s).iter())
             .zip(col_slice(&self.t).iter())
         {
-            *r = sum2(s, -(t * omega));
+            *r = s - t * omega;
         }
 
         let err_sq = norm2_sq::<T>(col_slice(&self.r));
@@ -521,7 +521,7 @@ where
                 .zip(col_slice(&self.p).iter())
                 .zip(col_slice(&self.v).iter())
             {
-                *p_new = sum3(r, p_old * beta, -((v * omega) * beta));
+                *p_new = r + p_old * beta - (v * omega) * beta;
             }
 
             copy_col(&mut self.p, &self.scratch);

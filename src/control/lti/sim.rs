@@ -53,7 +53,7 @@
 //!   replacement for SOS.
 
 use super::{DeltaSection, DeltaSos, DiscreteSos, DiscreteStateSpace, LtiError};
-use crate::sparse::compensated::{CompensatedField, CompensatedSum, sum2, sum3};
+use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use alloc::vec::Vec;
 use faer_traits::ComplexField;
 use faer_traits::RealField;
@@ -657,8 +657,8 @@ where
         // s2[n]  = b2 x[n] - a2 y[n]
         //
         // The section output becomes the next section input.
-        let y = sum2(b0 * sample, state[0]);
-        let next_s1 = sum3(b1 * sample, -(a1 * y), state[1]);
+        let y = b0 * sample + state[0];
+        let next_s1 = b1 * sample - a1 * y + state[1];
         let next_s2 = b2 * sample - a2 * y;
         state[0] = next_s1;
         state[1] = next_s2;
@@ -688,8 +688,8 @@ where
                 //   y   = c0 x + d u
                 // with `δ x = (x[k+1] - x[k]) / dt`.
                 let x = state[0];
-                let y = sum2(c0 * x, d * sample);
-                let next_x = sum3(x, -(dt * alpha0 * x), dt * sample);
+                let y = c0 * x + d * sample;
+                let next_x = x - dt * alpha0 * x + dt * sample;
                 state[0] = next_x;
                 state[1] = R::zero();
                 sample = y;
@@ -712,9 +712,9 @@ where
                 // Forward-delta second-order update:
                 //   δ x1 = x2
                 //   δ x2 = -alpha0 x1 - alpha1 x2 + u
-                let next_x1 = sum2(x1, dt * x2);
-                let forcing = sum3(-(alpha0 * x1), -(alpha1 * x2), sample);
-                let next_x2 = sum2(x2, dt * forcing);
+                let next_x1 = x1 + dt * x2;
+                let forcing = -(alpha0 * x1) - (alpha1 * x2) + sample;
+                let next_x2 = x2 + dt * forcing;
                 state[0] = next_x1;
                 state[1] = next_x2;
                 sample = y;

@@ -44,7 +44,7 @@ use super::state_space::{
 };
 use super::util::validate_nonnegative_monotone_grid;
 use crate::control::dense_ops::{clone_mat, dense_add_plain as dense_add, dense_mul};
-use crate::sparse::compensated::{CompensatedField, sum2};
+use crate::sparse::compensated::CompensatedField;
 use crate::sparse::matvec::SparseMatVec;
 use alloc::vec::Vec;
 use faer::complex::Complex;
@@ -479,7 +479,7 @@ where
             self.a().apply_compensated(&mut ax, &state);
             let bu = dense_mul(self.b(), input.as_ref());
             for row in 0..self.nstates() {
-                state[row] = sum2(ax[row], bu[(row, 0)]);
+                state[row] = ax[row] + bu[(row, 0)];
             }
             write_column_from_slice(states.as_mut(), k + 1, &state);
         }

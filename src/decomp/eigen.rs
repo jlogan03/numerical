@@ -45,7 +45,7 @@ use super::{
     permute_col, permute_mat_cols, sorted_order_descending_by_abs,
 };
 use crate::sparse::col::{col_slice, col_slice_mut, zero_col};
-use crate::sparse::compensated::{CompensatedField, norm2, sum2};
+use crate::sparse::compensated::{CompensatedField, norm2};
 use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer::dyn_stack::{MemBuffer, MemStack, StackReq};
@@ -205,7 +205,7 @@ where
         let col = j.unbound();
         let mut acc = Complex::<T::Real>::new(<T::Real as Zero>::zero(), <T::Real as Zero>::zero());
         for k in 0..a.ncols() {
-            acc = sum2(acc, complexify_scalar(a[(row, k)]) * rhs[(k, col)]);
+            acc += complexify_scalar(a[(row, k)]) * rhs[(k, col)];
         }
         acc
     })
@@ -227,7 +227,7 @@ where
         let rhs = Mat::from_fn(a.ncols(), 1, |i, _| vectors[(i.unbound(), j)]);
         let mut residual = dense_apply_complex(a, rhs.as_ref());
         for i in 0..a.nrows() {
-            residual[(i, 0)] = sum2(residual[(i, 0)], -(values[j] * vectors[(i, j)]));
+            residual[(i, 0)] -= values[j] * vectors[(i, j)];
         }
         let residual_norm = norm2(residual.col(0).try_as_col_major().unwrap().as_slice());
         if residual_norm > max_residual_norm {
@@ -539,7 +539,7 @@ where
             .iter_mut()
             .zip(vectors.col(j).try_as_col_major().unwrap().as_slice())
         {
-            *dst = sum2(*dst, -(values[j] * value));
+            *dst -= values[j] * value;
         }
         let residual = norm2(col_slice(&residual_vec));
         if residual > max_residual_norm {
@@ -577,7 +577,7 @@ where
             .iter_mut()
             .zip(vector.as_slice())
         {
-            *dst = sum2(*dst, -(values[j] * value));
+            *dst -= values[j] * value;
         }
         let residual_norm = norm2(col_slice(&residual));
         if residual_norm > max_residual_norm {
