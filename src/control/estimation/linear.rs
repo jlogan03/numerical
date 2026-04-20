@@ -50,15 +50,20 @@
 //! - Design and runtime live together so the fixed-gain wrappers can be built
 //!   directly from `LQE` / `DLQE` results.
 
+use crate::control::dense_ops::{
+    clone_mat, column_vector_norm, dense_add, dense_adjoint, dense_mul, dense_mul_adjoint_rhs,
+    dense_sub, hermitian_project_in_place, identity, inner_product_real,
+};
+use crate::control::estimation::dense::{
+    default_tolerance, solve_left_checked, solve_right_checked,
+};
 use crate::control::lti::{ContinuousStateSpace, DiscreteStateSpace};
 use crate::control::matrix_equations::{RiccatiError, solve_care_dense, solve_dare_dense};
-use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use crate::sparse::compensated::CompensatedField;
 use core::fmt;
-use faer::prelude::Solve;
 use faer::{Mat, MatRef};
-use faer_traits::ext::ComplexFieldExt;
-use faer_traits::{ComplexField, RealField};
-use num_traits::{Float, One, Zero};
+use faer_traits::RealField;
+use num_traits::{Float, Zero};
 
 /// Result of a dense continuous- or discrete-time steady-state estimator solve.
 ///
@@ -706,7 +711,7 @@ where
             cross.as_ref(),
             innovation_covariance.as_ref(),
             default_tolerance::<T>(),
-            EstimatorError::SingularInnovationCovariance,
+            || EstimatorError::SingularInnovationCovariance,
         )?;
         let state = dense_add(
             prediction.state.as_ref(),
@@ -1316,14 +1321,6 @@ fn validate_column_vector<T>(
     Ok(())
 }
 
-fn default_tolerance<T>() -> T::Real
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    T::Real::epsilon().sqrt()
-}
-
 fn estimator_matrix<T>(a: MatRef<'_, T>, l: MatRef<'_, T>, c: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
@@ -1357,7 +1354,7 @@ where
         cross.as_ref(),
         innovation_covariance.as_ref(),
         default_tolerance::<T>(),
-        EstimatorError::SingularInnovationCovariance,
+        || EstimatorError::SingularInnovationCovariance,
     )?;
     Ok((gain, innovation_covariance))
 }
@@ -1411,235 +1408,11 @@ where
         innovation_covariance,
         innovation,
         default_tolerance::<T>(),
-        EstimatorError::SingularInnovationCovariance,
+        || EstimatorError::SingularInnovationCovariance,
     )?;
     Ok(inner_product_real(innovation, whitened.as_ref())
         .max(<T::Real as Zero>::zero())
         .sqrt())
-}
-
-/// Solves `lhs * X = rhs` and rejects numerically unusable results.
-///
-/// This is used for innovation-covariance solves in the runtime filter and for
-/// the small dense dual-gain recovery steps.
-fn solve_left_checked<T>(
-    lhs: MatRef<'_, T>,
-    rhs: MatRef<'_, T>,
-    tol: T::Real,
-    err: EstimatorError,
-) -> Result<Mat<T>, EstimatorError>
-where
-    T: ComplexField + Copy,
-    T::Real: Float + Copy,
-{
-    let solution = lhs.full_piv_lu().solve(rhs);
-    if !solution.as_ref().is_all_finite() {
-        return Err(err);
-    }
-
-    let residual = dense_sub_plain(dense_mul_plain(lhs, solution.as_ref()).as_ref(), rhs);
-    let residual_norm = frobenius_norm_plain(residual.as_ref());
-    let scale = frobenius_norm_plain(lhs) * frobenius_norm_plain(solution.as_ref())
-        + frobenius_norm_plain(rhs);
-    let one = <T::Real as One>::one();
-    let threshold = scale.max(one) * tol * (one + one);
-    if !residual_norm.is_finite() || residual_norm > threshold {
-        return Err(err);
-    }
-
-    Ok(solution)
-}
-
-/// Solves `X * lhs = rhs` by transposing into [`solve_left_checked`].
-///
-/// The Kalman gain formula naturally appears as a right solve
-/// `K S = P^- C^H`, so this wrapper keeps the calling code in that form.
-fn solve_right_checked<T>(
-    rhs_left: MatRef<'_, T>,
-    lhs_right: MatRef<'_, T>,
-    tol: T::Real,
-    err: EstimatorError,
-) -> Result<Mat<T>, EstimatorError>
-where
-    T: ComplexField + Copy,
-    T::Real: Float + Copy,
-{
-    let lhs_t = dense_transpose(lhs_right);
-    let rhs_t = dense_transpose(rhs_left);
-    let solved_t = solve_left_checked(lhs_t.as_ref(), rhs_t.as_ref(), tol, err)?;
-    Ok(dense_transpose(solved_t.as_ref()))
-}
-
-fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
-        matrix[(row, col)]
-    })
-}
-
-/// Returns a dense identity matrix of the requested dimension.
-fn identity<T>(dim: usize) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(
-        dim,
-        dim,
-        |row, col| {
-            if row == col { T::one() } else { T::zero() }
-        },
-    )
-}
-
-fn dense_adjoint<T>(matrix: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
-        matrix[(col, row)].conj()
-    })
-}
-
-fn dense_transpose<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
-        matrix[(col, row)]
-    })
-}
-
-fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
-fn dense_mul_adjoint_rhs<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.nrows(), rhs.nrows(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * rhs[(col, k)].conj());
-        }
-        acc.finish()
-    })
-}
-
-fn dense_add<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        acc.add(lhs[(row, col)]);
-        acc.add(rhs[(row, col)]);
-        acc.finish()
-    })
-}
-
-fn dense_sub<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        acc.add(lhs[(row, col)]);
-        acc.add(-rhs[(row, col)]);
-        acc.finish()
-    })
-}
-
-fn dense_mul_plain<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = T::zero();
-        for k in 0..lhs.ncols() {
-            acc = acc + lhs[(row, k)] * rhs[(k, col)];
-        }
-        acc
-    })
-}
-
-fn dense_sub_plain<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] - rhs[(row, col)]
-    })
-}
-
-fn inner_product_real<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> T::Real
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    // The normalized-innovation metric only needs the real scalar value of the
-    // Hermitian inner product.
-    let mut acc = CompensatedSum::<T>::default();
-    for row in 0..lhs.nrows() {
-        acc.add(lhs[(row, 0)].conj() * rhs[(row, 0)]);
-    }
-    acc.finish().real()
-}
-
-/// Returns the Euclidean norm of a dense column vector.
-fn column_vector_norm<T>(vector: MatRef<'_, T>) -> T::Real
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    let mut acc = <T::Real as Zero>::zero();
-    for row in 0..vector.nrows() {
-        acc = acc + vector[(row, 0)].abs2();
-    }
-    acc.sqrt()
-}
-
-/// Projects a dense matrix onto the Hermitian subspace in place.
-///
-/// This is used after covariance-like updates so small floating-point skew does
-/// not accumulate into obviously non-Hermitian covariance matrices.
-fn hermitian_project_in_place<T>(matrix: &mut Mat<T>)
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    let one = <T::Real as One>::one();
-    let half = one / (one + one);
-    for col in 0..matrix.ncols() {
-        for row in 0..=col {
-            let avg = (matrix[(row, col)] + matrix[(col, row)].conj()).mul_real(half);
-            matrix[(row, col)] = avg;
-            matrix[(col, row)] = avg.conj();
-        }
-    }
-}
-
-fn frobenius_norm_plain<T>(matrix: MatRef<'_, T>) -> T::Real
-where
-    T: ComplexField + Copy,
-    T::Real: Float + Copy,
-{
-    let mut acc = <T::Real as Zero>::zero();
-    for col in 0..matrix.ncols() {
-        for row in 0..matrix.nrows() {
-            acc = acc + matrix[(row, col)].abs2();
-        }
-    }
-    acc.sqrt()
 }
 
 #[cfg(test)]

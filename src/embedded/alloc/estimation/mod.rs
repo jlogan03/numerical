@@ -1,5 +1,6 @@
 //! Dynamic-size nonlinear estimators for `embedded::alloc`.
 
+mod dense;
 mod ekf;
 mod ukf;
 

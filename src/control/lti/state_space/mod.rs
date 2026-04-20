@@ -67,6 +67,7 @@ pub use domain::{ContinuousTime, DiscreteTime};
 pub use error::StateSpaceError;
 pub use sparse::{SparseContinuousStateSpace, SparseDiscreteStateSpace, SparseStateSpace};
 
+use crate::control::dense_ops::{clone_mat, dense_add_plain, dense_mul_plain, dense_sub_plain};
 use crate::control::matrix_equations::lyapunov::{
     DenseLyapunovSolve, LyapunovError, controllability_gramian_dense, observability_gramian_dense,
 };
@@ -1001,9 +1002,7 @@ where
     T: ComplexField + Copy,
 {
     ensure_same_shape("dense_add", lhs, rhs)?;
-    Ok(Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] + rhs[(row, col)]
-    }))
+    Ok(dense_add_plain(lhs, rhs))
 }
 
 fn dense_sub<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
@@ -1011,9 +1010,7 @@ where
     T: ComplexField + Copy,
 {
     ensure_same_shape("dense_sub", lhs, rhs)?;
-    Ok(Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] - rhs[(row, col)]
-    }))
+    Ok(dense_sub_plain(lhs, rhs))
 }
 
 fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
@@ -1032,19 +1029,7 @@ where
     // The composition layer uses straightforward dense kernels here because
     // these helpers are only for assembling modest dense interconnections, not
     // for replacing the lower-level optimized linear algebra stack.
-    Ok(Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = T::zero();
-        for k in 0..lhs.ncols() {
-            acc = acc + lhs[(row, k)] * rhs[(k, col)];
-        }
-        acc
-    }))
-}
-
-fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
-        matrix[(row, col)]
-    })
+    Ok(dense_mul_plain(lhs, rhs))
 }
 
 /// Casts one dense matrix between scalar dtypes with explicit validation.

@@ -47,6 +47,7 @@
 //! - The current MIMO path is dense real and still conservative: complex MIMO
 //!   targets are intentionally deferred.
 
+use crate::control::dense_ops::{dense_mul, dense_sub, dense_transpose as transpose};
 use crate::control::lti::{ContinuousStateSpace, DiscreteStateSpace};
 use crate::decomp::{
     DecompError, DenseDecompParams, dense_eigenvalues, dense_self_adjoint_eigen, dense_svd,
@@ -757,43 +758,6 @@ fn compare_poles<R: Float + Copy>(lhs: Complex<R>, rhs: Complex<R>) -> core::cmp
                 .partial_cmp(&lhs.im)
                 .unwrap_or(core::cmp::Ordering::Equal)
         })
-}
-
-fn transpose<T>(matrix: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField + RealField,
-    T::Real: Float + Copy,
-{
-    Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
-        matrix[(col, row)]
-    })
-}
-
-fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField + RealField,
-    T::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
-fn dense_sub<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField + RealField,
-    T::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        acc.add(lhs[(row, col)]);
-        acc.add(-rhs[(row, col)]);
-        acc.finish()
-    })
 }
 
 fn all_finite<T>(matrix: MatRef<'_, T>) -> bool

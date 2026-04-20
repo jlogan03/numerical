@@ -53,15 +53,21 @@
 //!   Joseph-form and simpler updates stay aligned across estimator families.
 
 use super::CovarianceUpdate;
+use crate::control::dense_ops::{
+    clone_mat, column_vector_norm, dense_add, dense_mul, dense_mul_adjoint_rhs, dense_sub,
+    dense_transpose, hermitian_project_in_place, identity, inner_product_real,
+};
+use crate::control::estimation::dense::{
+    default_tolerance, solve_left_checked, solve_right_checked,
+};
 use crate::decomp::{DenseDecompParams, dense_self_adjoint_eigen};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use alloc::{boxed::Box, vec::Vec};
 use core::fmt;
-use faer::prelude::Solve;
 use faer::{Mat, MatRef};
 use faer_traits::ext::ComplexFieldExt;
 use faer_traits::{ComplexField, RealField};
-use num_traits::{Float, NumCast, One, Zero};
+use num_traits::{Float, NumCast, Zero};
 
 /// Discrete nonlinear state/output model used by EKF and UKF.
 ///
@@ -508,7 +514,7 @@ where
             cross.as_ref(),
             innovation_covariance.as_ref(),
             default_tolerance::<R>(),
-            NonlinearEstimatorError::SingularInnovationCovariance,
+            || NonlinearEstimatorError::SingularInnovationCovariance,
         )?;
         let state = dense_add(
             prediction.state.as_ref(),
@@ -833,7 +839,7 @@ where
             cross.as_ref(),
             innovation_covariance.as_ref(),
             default_tolerance::<R>(),
-            NonlinearEstimatorError::SingularInnovationCovariance,
+            || NonlinearEstimatorError::SingularInnovationCovariance,
         )?;
         let state = dense_add(
             prediction.state.as_ref(),
@@ -1353,7 +1359,7 @@ where
                 predicted_covariance,
                 cross,
                 default_tolerance::<R>(),
-                NonlinearEstimatorError::SingularPredictedCovariance,
+                || NonlinearEstimatorError::SingularPredictedCovariance,
             )?;
             Ok(updated_covariance(
                 CovarianceUpdate::Joseph,
@@ -1383,243 +1389,11 @@ where
         innovation_covariance,
         innovation,
         default_tolerance::<R>(),
-        NonlinearEstimatorError::SingularInnovationCovariance,
+        || NonlinearEstimatorError::SingularInnovationCovariance,
     )?;
     Ok(inner_product_real(innovation, whitened.as_ref())
         .max(<R::Real as Zero>::zero())
         .sqrt())
-}
-
-/// Solves `lhs * X = rhs` and rejects numerically unusable results.
-///
-/// The nonlinear layer keeps the same posture as the linear estimator code:
-/// avoid explicit inversion, but also reject obviously inconsistent dense
-/// solves using a residual check.
-fn solve_left_checked<R>(
-    lhs: MatRef<'_, R>,
-    rhs: MatRef<'_, R>,
-    tol: R::Real,
-    err: NonlinearEstimatorError,
-) -> Result<Mat<R>, NonlinearEstimatorError>
-where
-    R: ComplexField + Copy,
-    R::Real: Float + Copy,
-{
-    let solution = lhs.full_piv_lu().solve(rhs);
-    if !solution.as_ref().is_all_finite() {
-        return Err(err);
-    }
-    let residual = dense_sub_plain(dense_mul_plain(lhs, solution.as_ref()).as_ref(), rhs);
-    let residual_norm = frobenius_norm_plain(residual.as_ref());
-    let scale = frobenius_norm_plain(lhs) * frobenius_norm_plain(solution.as_ref())
-        + frobenius_norm_plain(rhs);
-    let one = <R::Real as One>::one();
-    let threshold = scale.max(one) * tol * (one + one);
-    if !residual_norm.is_finite() || residual_norm > threshold {
-        return Err(err);
-    }
-    Ok(solution)
-}
-
-/// Solves `X * lhs = rhs` by transposing into [`solve_left_checked`].
-fn solve_right_checked<R>(
-    rhs_left: MatRef<'_, R>,
-    lhs_right: MatRef<'_, R>,
-    tol: R::Real,
-    err: NonlinearEstimatorError,
-) -> Result<Mat<R>, NonlinearEstimatorError>
-where
-    R: ComplexField + Copy,
-    R::Real: Float + Copy,
-{
-    let lhs_t = dense_transpose(lhs_right);
-    let rhs_t = dense_transpose(rhs_left);
-    let solved_t = solve_left_checked(lhs_t.as_ref(), rhs_t.as_ref(), tol, err)?;
-    Ok(dense_transpose(solved_t.as_ref()))
-}
-
-fn default_tolerance<R>() -> R::Real
-where
-    R: CompensatedField,
-    R::Real: Float + Copy,
-{
-    R::Real::epsilon().sqrt()
-}
-
-/// Clones a dense matrix reference into an owned matrix.
-fn clone_mat<R: Copy>(matrix: MatRef<'_, R>) -> Mat<R> {
-    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
-        matrix[(row, col)]
-    })
-}
-
-/// Returns a dense identity matrix of the requested size.
-fn identity<R>(dim: usize) -> Mat<R>
-where
-    R: ComplexField + Copy,
-{
-    Mat::from_fn(
-        dim,
-        dim,
-        |row, col| if row == col { R::one() } else { R::zero() },
-    )
-}
-
-/// Returns the plain transpose of a dense matrix.
-fn dense_transpose<R: Copy>(matrix: MatRef<'_, R>) -> Mat<R> {
-    Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
-        matrix[(col, row)]
-    })
-}
-
-/// Dense matrix multiply using compensated accumulation per output entry.
-fn dense_mul<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> Mat<R>
-where
-    R: CompensatedField + RealField,
-    R::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<R>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
-/// Dense multiply with an adjoint on the right-hand factor.
-///
-/// This is the common covariance-like pattern `A B^H` used throughout the
-/// estimator implementation.
-fn dense_mul_adjoint_rhs<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> Mat<R>
-where
-    R: CompensatedField + RealField,
-    R::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.nrows(), rhs.nrows(), |row, col| {
-        let mut acc = CompensatedSum::<R>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * rhs[(col, k)].conj());
-        }
-        acc.finish()
-    })
-}
-
-/// Dense matrix addition using compensated accumulation per entry.
-fn dense_add<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> Mat<R>
-where
-    R: CompensatedField + RealField,
-    R::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<R>::default();
-        acc.add(lhs[(row, col)]);
-        acc.add(rhs[(row, col)]);
-        acc.finish()
-    })
-}
-
-/// Dense matrix subtraction using compensated accumulation per entry.
-fn dense_sub<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> Mat<R>
-where
-    R: CompensatedField + RealField,
-    R::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<R>::default();
-        acc.add(lhs[(row, col)]);
-        acc.add(-rhs[(row, col)]);
-        acc.finish()
-    })
-}
-
-/// Plain dense matrix multiply used only in residual checks.
-fn dense_mul_plain<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> Mat<R>
-where
-    R: ComplexField + Copy,
-{
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = R::zero();
-        for k in 0..lhs.ncols() {
-            acc = acc + lhs[(row, k)] * rhs[(k, col)];
-        }
-        acc
-    })
-}
-
-/// Plain dense subtraction used only in residual checks.
-fn dense_sub_plain<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> Mat<R>
-where
-    R: ComplexField + Copy,
-{
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] - rhs[(row, col)]
-    })
-}
-
-/// Returns the real part of the Hermitian inner product between two vectors.
-fn inner_product_real<R>(lhs: MatRef<'_, R>, rhs: MatRef<'_, R>) -> R::Real
-where
-    R: CompensatedField + RealField,
-    R::Real: Float + Copy,
-{
-    let mut acc = CompensatedSum::<R>::default();
-    for row in 0..lhs.nrows() {
-        acc.add(lhs[(row, 0)].conj() * rhs[(row, 0)]);
-    }
-    acc.finish().real()
-}
-
-/// Returns the Euclidean norm of a dense column vector.
-fn column_vector_norm<R>(vector: MatRef<'_, R>) -> R::Real
-where
-    R: CompensatedField + RealField,
-    R::Real: Float + Copy,
-{
-    let mut acc = <R::Real as Zero>::zero();
-    for row in 0..vector.nrows() {
-        acc = acc + vector[(row, 0)].abs2();
-    }
-    acc.sqrt()
-}
-
-/// Projects a dense matrix onto the Hermitian subspace in place.
-///
-/// Small skew drift is expected after repeated covariance operations.
-/// Projecting back prevents that drift from accumulating into obviously
-/// inconsistent covariance matrices.
-fn hermitian_project_in_place<R>(matrix: &mut Mat<R>)
-where
-    R: CompensatedField + RealField,
-    R::Real: Float + Copy,
-{
-    let one = <R::Real as One>::one();
-    let half = one / (one + one);
-    for col in 0..matrix.ncols() {
-        for row in 0..=col {
-            let avg = (matrix[(row, col)] + matrix[(col, row)].conj()).mul_real(half);
-            matrix[(row, col)] = avg;
-            matrix[(col, row)] = avg.conj();
-        }
-    }
-}
-
-/// Returns the Frobenius norm of a dense matrix without compensation.
-///
-/// This is only used inside residual checks where a simple secondary norm
-/// calculation is sufficient.
-fn frobenius_norm_plain<R>(matrix: MatRef<'_, R>) -> R::Real
-where
-    R: ComplexField + Copy,
-    R::Real: Float + Copy,
-{
-    let mut acc = <R::Real as Zero>::zero();
-    for col in 0..matrix.ncols() {
-        for row in 0..matrix.nrows() {
-            acc = acc + matrix[(row, col)].abs2();
-        }
-    }
-    acc.sqrt()
 }
 
 #[cfg(test)]

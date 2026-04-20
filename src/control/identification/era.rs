@@ -31,10 +31,11 @@
 //!   model so later debugging or research workflows can inspect the retained
 //!   subspace data.
 
+use crate::control::dense_ops::{clone_mat, dense_adjoint as adjoint, dense_mul};
 use crate::control::lti::state_space::{DiscreteStateSpace, StateSpaceError};
 use crate::control::realization::{MarkovSequence, RealizationError, ShiftedBlockHankelPair};
 use crate::decomp::{DecompError, DenseDecompParams, dense_svd};
-use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use crate::sparse::compensated::CompensatedField;
 use core::fmt;
 use faer::{Col, ColRef, Mat, MatRef};
 use faer_traits::ext::ComplexFieldExt;
@@ -455,43 +456,12 @@ where
     out
 }
 
-fn adjoint<T>(matrix: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
-        matrix[(col, row)].conj()
-    })
-}
-
 fn first_rows<T: Copy>(matrix: MatRef<'_, T>, nrows: usize) -> Mat<T> {
     Mat::from_fn(nrows, matrix.ncols(), |row, col| matrix[(row, col)])
 }
 
 fn first_columns<T: Copy>(matrix: MatRef<'_, T>, ncols: usize) -> Mat<T> {
     Mat::from_fn(matrix.nrows(), ncols, |row, col| matrix[(row, col)])
-}
-
-fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    assert_eq!(lhs.ncols(), rhs.nrows());
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
-fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
-        matrix[(row, col)]
-    })
 }
 
 fn check_finite<T>(matrix: MatRef<'_, T>, which: &'static str) -> Result<(), EraError>

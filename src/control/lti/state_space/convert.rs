@@ -7,7 +7,10 @@
 use super::domain::{ContinuousTime, DiscreteTime};
 use super::error::StateSpaceError;
 use super::{ContinuousStateSpace, DiscreteStateSpace, StateSpace};
-use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use crate::control::dense_ops::{
+    dense_add_plain as dense_add, dense_mul, dense_sub_plain as dense_sub,
+};
+use crate::sparse::compensated::CompensatedField;
 use crate::twosum::TwoSum;
 use faer::linalg::solvers::Solve;
 use faer::{Mat, MatRef};
@@ -457,54 +460,6 @@ where
 {
     Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
         matrix[(row, col)].mul_real(&alpha)
-    })
-}
-
-/// Dense elementwise matrix addition used by the conversion formulas.
-fn dense_add<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    assert_eq!(lhs.nrows(), rhs.nrows());
-    assert_eq!(lhs.ncols(), rhs.ncols());
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] + rhs[(row, col)]
-    })
-}
-
-/// Dense elementwise matrix subtraction used by the conversion formulas.
-fn dense_sub<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    assert_eq!(lhs.nrows(), rhs.nrows());
-    assert_eq!(lhs.ncols(), rhs.ncols());
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] - rhs[(row, col)]
-    })
-}
-
-/// Dense matrix product with compensated inner products.
-///
-/// These matrices are usually modest in size, but they sit in numerically
-/// sensitive conversions and matrix-function code. Using the crate's
-/// compensated accumulation policy here keeps those dense helper kernels
-/// aligned with the rest of the control numerics.
-fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    assert_eq!(lhs.ncols(), rhs.nrows());
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        // The dense conversion helpers still use compensated accumulation in
-        // their inner products so the small matrix-function code here follows
-        // the same accuracy policy as the rest of the crate.
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * rhs[(k, col)]);
-        }
-        acc.finish()
     })
 }
 

@@ -43,13 +43,14 @@ use super::state_space::{
     ContinuousStateSpace, DiscreteStateSpace, SparseContinuousStateSpace, SparseDiscreteStateSpace,
 };
 use super::util::validate_nonnegative_monotone_grid;
-use crate::sparse::compensated::{CompensatedField, CompensatedSum, sum2};
+use crate::control::dense_ops::{clone_mat, dense_add_plain as dense_add, dense_mul};
+use crate::sparse::compensated::{CompensatedField, sum2};
 use crate::sparse::matvec::SparseMatVec;
 use alloc::vec::Vec;
 use faer::complex::Complex;
 use faer::{Mat, MatRef};
+use faer_traits::RealField;
 use faer_traits::ext::ComplexFieldExt;
-use faer_traits::{ComplexField, RealField};
 use num_traits::{Float, Zero};
 
 /// Sampled response values evaluated on a one-dimensional grid.
@@ -491,16 +492,6 @@ where
     }
 }
 
-/// Clones a matrix view into an owned dense matrix.
-///
-/// The response layer uses this mostly to preserve `B`, `C`, or `D` blocks in
-/// returned response objects without keeping borrow ties to the original model.
-fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
-        matrix[(row, col)]
-    })
-}
-
 /// Copies a dense column matrix into one column of a larger dense matrix.
 fn write_column<T: Copy>(mut dst: faer::MatMut<'_, T>, col: usize, src: MatRef<'_, T>) {
     assert_eq!(src.ncols(), 1);
@@ -530,45 +521,6 @@ fn column_from_slice<T: Copy>(values: &[T]) -> Mat<T> {
 /// Extracts one column of a dense matrix into an owned column matrix.
 fn column_owned<T: Copy>(matrix: MatRef<'_, T>, col: usize) -> Mat<T> {
     Mat::from_fn(matrix.nrows(), 1, |row, _| matrix[(row, col)])
-}
-
-/// Dense elementwise matrix addition for the response layer.
-///
-/// This stays local rather than reusing a broader utility because the current
-/// response code only needs a tiny subset of dense matrix arithmetic.
-fn dense_add<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    assert_eq!(lhs.nrows(), rhs.nrows());
-    assert_eq!(lhs.ncols(), rhs.ncols());
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] + rhs[(row, col)]
-    })
-}
-
-/// Dense matrix product with compensated accumulation.
-///
-/// The response routines build small dense intermediates from `A`, `B`, and
-/// `C`. Keeping these products compensated avoids losing the accuracy policy
-/// established elsewhere in the control module just because the matrices are
-/// small.
-fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    assert_eq!(lhs.ncols(), rhs.nrows());
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        // Keep even these small dense response-building products compensated so
-        // the LTI analysis layer follows the same accumulation policy as the
-        // rest of the control module.
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
 }
 
 /// Returns the first `n_steps` discrete-time Markov blocks for a dense system.

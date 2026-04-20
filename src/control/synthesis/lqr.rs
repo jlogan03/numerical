@@ -39,6 +39,7 @@
 //! - All numerical difficulty is delegated to the Riccati layer, and the solve
 //!   diagnostics are forwarded into the returned `LqrSolve`.
 
+use crate::control::dense_ops::dense_mul;
 use crate::control::matrix_equations::{RiccatiError, solve_care_dense, solve_dare_dense};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use core::fmt;
@@ -160,20 +161,6 @@ where
         // recompute `A - B K` on its own.
         acc.add(a[(row, col)]);
         acc.add(-bk[(row, col)]);
-        acc.finish()
-    })
-}
-
-fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * rhs[(k, col)]);
-        }
         acc.finish()
     })
 }

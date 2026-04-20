@@ -62,6 +62,7 @@
 //! | EKF | no | yes | no | yes |
 //! | UKF | no | yes | no | yes |
 
+mod dense;
 pub mod linear;
 pub mod nonlinear;
 

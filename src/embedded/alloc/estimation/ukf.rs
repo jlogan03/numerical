@@ -1,12 +1,12 @@
 //! Simplified SPD-only dynamic-size discrete-time unscented Kalman filtering.
 
-use super::ekf::DiscreteNonlinearModel;
-use crate::embedded::EmbeddedError;
-use crate::embedded::alloc::matrix::{
+use super::dense::{
     cholesky_lower, llt_solve, llt_solve_vector, mat_add, mat_mul, mat_mul_vec, mat_sub,
     outer_product, scale_matrix, transpose, vec_add, vec_as_slice, vec_as_slice_mut, vec_dot,
     vec_norm, vec_sub, vector_from_slice, zero_matrix, zero_vector,
 };
+use super::ekf::DiscreteNonlinearModel;
+use crate::embedded::EmbeddedError;
 use crate::embedded::alloc::{Matrix, Vector};
 use alloc::vec::Vec;
 use faer_traits::ComplexField;
@@ -439,8 +439,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::super::dense::{identity_matrix, scale_matrix, vector_from_slice};
     use super::*;
-    use crate::embedded::alloc::matrix::{identity_matrix, scale_matrix, vector_from_slice};
 
     #[derive(Clone, Debug, PartialEq)]
     struct QuadraticSensor;

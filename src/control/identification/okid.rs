@@ -31,13 +31,13 @@
 //!   deficient regressions that still carry useful Markov information, while
 //!   stricter modes can require a minimum retained rank or full row rank.
 
+use crate::control::dense_ops::{clone_mat, dense_add_plain as dense_add, dense_mul};
 use crate::control::realization::MarkovSequence;
 use crate::decomp::{DecompError, DenseDecompParams, PartialSvd, dense_svd};
-use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use crate::sparse::compensated::CompensatedField;
 use alloc::vec::Vec;
 use core::fmt;
 use faer::{Col, Mat, MatRef};
-use faer_traits::ComplexField;
 use faer_traits::ext::ComplexFieldExt;
 use num_traits::{Float, Zero};
 
@@ -392,38 +392,6 @@ fn first_columns<T: Copy>(matrix: MatRef<'_, T>, ncols: usize) -> Mat<T> {
 fn trailing_columns<T: Copy>(matrix: MatRef<'_, T>, ncols: usize) -> Mat<T> {
     let start = matrix.ncols() - ncols;
     Mat::from_fn(matrix.nrows(), ncols, |row, col| matrix[(row, start + col)])
-}
-
-fn dense_add<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    assert_eq!(lhs.nrows(), rhs.nrows());
-    assert_eq!(lhs.ncols(), rhs.ncols());
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] + rhs[(row, col)]
-    })
-}
-
-fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    assert_eq!(lhs.ncols(), rhs.nrows());
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
-fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
-        matrix[(row, col)]
-    })
 }
 
 fn check_finite<T>(matrix: MatRef<'_, T>, which: &'static str) -> Result<(), OkidError>

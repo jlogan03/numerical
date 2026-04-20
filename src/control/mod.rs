@@ -71,6 +71,7 @@
 //! | `estimation` | LQE/Kalman/EKF/UKF | yes | no | partial | yes |
 //! | `synthesis` | LQR/LQG/PID/pole placement | yes | no | yes | yes |
 
+pub(crate) mod dense_ops;
 pub mod estimation;
 pub mod identification;
 pub mod lti;

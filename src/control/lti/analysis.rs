@@ -3,6 +3,7 @@ use super::state_space::{
     ContinuousStateSpace, DiscreteStateSpace, SparseContinuousStateSpace, SparseDiscreteStateSpace,
     SparseStateSpace, StateSpace,
 };
+use crate::control::dense_ops::{clone_mat, dense_mul_plain as dense_mul};
 use crate::decomp::dense_eigenvalues;
 use crate::sparse::lu::SparseLu;
 use alloc::vec::Vec;
@@ -291,12 +292,6 @@ fn compare_poles<R: Float + Copy>(lhs: Complex<R>, rhs: Complex<R>) -> core::cmp
         })
 }
 
-fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
-        matrix[(row, col)]
-    })
-}
-
 fn copy_block<T: Copy>(
     mut dst: faer::MatMut<'_, T>,
     row_offset: usize,
@@ -308,19 +303,6 @@ fn copy_block<T: Copy>(
             dst[(row_offset + row, col_offset + col)] = src[(row, col)];
         }
     }
-}
-
-fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = T::zero();
-        for k in 0..lhs.ncols() {
-            acc = acc + lhs[(row, k)] * rhs[(k, col)];
-        }
-        acc
-    })
 }
 
 fn numerical_rank<T>(matrix: MatRef<'_, T>) -> Result<usize, LtiError>

@@ -62,6 +62,7 @@
 //! - Stability is a precondition, not an internal stabilization step.
 
 use super::hsvd::{HsvdError, hsvd_from_dense_gramians, hsvd_from_factors};
+use crate::control::dense_ops::{clone_mat, dense_mul, dense_mul_adjoint_lhs};
 use crate::control::lti::{
     ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime, StateSpaceError,
 };
@@ -78,7 +79,6 @@ use core::fmt;
 use faer::sparse::SparseColMatRef;
 use faer::{Col, Index, Mat, MatRef, Unbind};
 use faer_traits::Conjugate;
-use faer_traits::ext::ComplexFieldExt;
 use num_traits::{Float, Zero};
 
 /// Alias of the shared HSVD internal-detail policy used by balanced
@@ -554,39 +554,6 @@ where
     Ok(())
 }
 
-fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            // Keep even the reduced-model assembly sums compensated so the
-            // balancing layer preserves the same accumulation policy used by
-            // the Gramian and HSVD code underneath it.
-            acc.add(lhs[(row, k)] * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
-fn dense_mul_adjoint_lhs<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.ncols(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.nrows() {
-            // This forms `lhs^H rhs`, so complex systems require conjugation on
-            // the left projection.
-            acc.add(lhs[(k, row)].conj() * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
 fn sparse_matmul_dense<I, T>(lhs: SparseColMatRef<'_, I, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
     I: Index,
@@ -622,12 +589,6 @@ where
     }
 
     out
-}
-
-fn clone_mat<T: Clone>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
-        matrix[(row, col)].clone()
-    })
 }
 
 #[cfg(test)]

@@ -42,6 +42,7 @@
 //!   state-space layer.
 
 use super::lqr::{LqrError, LqrSolve, dlqr_dense, lqr_dense};
+use crate::control::dense_ops::clone_mat;
 use crate::control::estimation::{EstimatorError, LqeSolve, dlqe_dense, lqe_dense};
 use crate::control::lti::{
     ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime, StateSpace,
@@ -49,7 +50,7 @@ use crate::control::lti::{
 };
 use crate::sparse::compensated::CompensatedField;
 use core::fmt;
-use faer::{Mat, MatRef};
+use faer::MatRef;
 use faer_traits::RealField;
 use num_traits::Float;
 
@@ -276,17 +277,6 @@ where
             v,
         )
     }
-}
-
-/// Clones a borrowed dense matrix reference into owned storage.
-///
-/// The free-function LQG entry points accept borrowed block matrices, but the
-/// returned controller and closed-loop realizations need owned `StateSpace`
-/// storage. This helper keeps that conversion local to the workflow layer.
-fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
-        matrix[(row, col)]
-    })
 }
 
 #[cfg(test)]

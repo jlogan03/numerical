@@ -40,12 +40,12 @@
 //! - Truncation policy is centralized in `HsvdParams` so higher layers see the
 //!   same order/tolerance behavior.
 
+use crate::control::dense_ops::{clone_mat, dense_adjoint, dense_mul, dense_mul_adjoint_lhs};
 use crate::decomp::{DecompError, DenseDecompParams, dense_self_adjoint_eigen, dense_svd};
-use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use crate::sparse::compensated::CompensatedField;
 use alloc::vec::Vec;
 use core::fmt;
 use faer::{Col, Mat, MatRef};
-use faer_traits::ComplexField;
 use faer_traits::ext::ComplexFieldExt;
 use num_traits::{Float, One, Zero};
 
@@ -609,57 +609,6 @@ where
     // The final multiplication by the Gramian factor turns the retained core
     // singular vectors into state-space projections.
     dense_mul(factor, scaled_basis.as_ref())
-}
-
-fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            // Keep these dense products compensated so the HSVD path follows
-            // the same full-accuracy accumulation policy as the rest of the
-            // control module.
-            acc.add(lhs[(row, k)] * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
-fn dense_mul_adjoint_lhs<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float + Copy,
-{
-    Mat::from_fn(lhs.ncols(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.nrows() {
-            // This forms `lhs^H rhs`, so conjugation is required for complex
-            // systems. The compensated sum keeps the small dense core products
-            // numerically consistent with the surrounding solvers.
-            acc.add(lhs[(k, row)].conj() * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
-fn dense_adjoint<T>(matrix: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    // Materialize an owned adjoint so the retained HSVD internals can keep the
-    // right singular-vector adjoint without borrowing the decomposition object.
-    Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
-        matrix[(col, row)].conj()
-    })
-}
-
-fn clone_mat<T: Clone>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
-        matrix[(row, col)].clone()
-    })
 }
 
 fn tail_sum<R>(values: faer::ColRef<'_, R>, from: usize) -> R
