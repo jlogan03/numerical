@@ -637,9 +637,7 @@ where
     T: ComplexField + Copy,
     T::Real: Float + Copy,
 {
-    let lhs_t = lhs.transpose().to_owned();
-    let rhs_t = rhs.transpose().to_owned();
-    let solved_t = solve_left_checked(lhs_t.as_ref(), rhs_t.as_ref(), tol, err)?;
+    let solved_t = solve_left_checked(lhs.transpose(), rhs.transpose(), tol, err)?;
     Ok(solved_t.transpose().to_owned())
 }
 

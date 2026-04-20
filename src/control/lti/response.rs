@@ -225,7 +225,7 @@ where
         write_column(states.as_mut(), 0, state.as_ref());
 
         for k in 0..sample_times.len() {
-            let input = column_owned(inputs_owned.as_ref(), k);
+            let input = inputs_owned.as_ref().subcols(k, 1);
             let output =
                 dense_mul(self.c(), state.as_ref()) + dense_mul(self.d(), input.as_ref()).as_ref();
             write_column(outputs.as_mut(), k, output.as_ref());
@@ -364,7 +364,7 @@ where
         write_column(states.as_mut(), 0, state.as_ref());
 
         for k in 0..inputs_owned.ncols() {
-            let input = column_owned(inputs_owned.as_ref(), k);
+            let input = inputs_owned.as_ref().subcols(k, 1);
 
             // Evaluate the output before the state update so the returned
             // columns match the standard discrete-time convention `y[k]`.
@@ -459,7 +459,7 @@ where
         write_column_from_slice(states.as_mut(), 0, &state);
 
         for k in 0..inputs_owned.ncols() {
-            let input = column_owned(inputs_owned.as_ref(), k);
+            let input = inputs_owned.as_ref().subcols(k, 1);
             let state_col = column_from_slice(&state);
 
             let output = dense_mul(self.c(), state_col.as_ref())
@@ -506,11 +506,6 @@ fn write_column_from_slice<T: Copy>(mut dst: faer::MatMut<'_, T>, col: usize, sr
 /// Builds an owned column matrix from a state-vector slice.
 fn column_from_slice<T: Copy>(values: &[T]) -> Mat<T> {
     Mat::from_fn(values.len(), 1, |row, _| values[row])
-}
-
-/// Extracts one column of a dense matrix into an owned column matrix.
-fn column_owned<T: Copy>(matrix: MatRef<'_, T>, col: usize) -> Mat<T> {
-    Mat::from_fn(matrix.nrows(), 1, |row, _| matrix[(row, col)])
 }
 
 /// Returns the first `n_steps` discrete-time Markov blocks for a dense system.

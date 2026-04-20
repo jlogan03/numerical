@@ -58,8 +58,6 @@ where
     T::Real: Float + Copy,
     F: Fn() -> E + Copy,
 {
-    let lhs_t = lhs_right.transpose().to_owned();
-    let rhs_t = rhs_left.transpose().to_owned();
-    let solved_t = solve_left_checked(lhs_t.as_ref(), rhs_t.as_ref(), tol, err)?;
+    let solved_t = solve_left_checked(lhs_right.transpose(), rhs_left.transpose(), tol, err)?;
     Ok(solved_t.transpose().to_owned())
 }
