@@ -47,7 +47,7 @@
 //! - The current MIMO path is dense real and still conservative: complex MIMO
 //!   targets are intentionally deferred.
 
-use crate::control::dense_ops::{dense_mul, dense_sub, dense_transpose as transpose};
+use crate::control::dense_ops::dense_mul;
 use crate::control::lti::{ContinuousStateSpace, DiscreteStateSpace};
 use crate::decomp::{
     DecompError, DenseDecompParams, dense_eigenvalues, dense_self_adjoint_eigen, dense_svd,
@@ -326,17 +326,20 @@ where
     validate_observer_dims(a, c, desired_poles.len())?;
 
     // Observer placement is the dual state-feedback problem on `(A^T, C^T)`.
-    let dual =
-        place_state_feedback_impl(transpose(a).as_ref(), transpose(c).as_ref(), desired_poles)
-            .map_err(|err| match err {
-                PolePlacementError::Uncontrollable => PolePlacementError::Unobservable,
-                other => other,
-            })?;
+    let dual = place_state_feedback_impl(
+        a.transpose().to_owned().as_ref(),
+        c.transpose().to_owned().as_ref(),
+        desired_poles,
+    )
+    .map_err(|err| match err {
+        PolePlacementError::Uncontrollable => PolePlacementError::Unobservable,
+        other => other,
+    })?;
     // Transposing the dual state-feedback gain turns it back into the
     // observer injection gain `L`.
-    let gain = transpose(dual.gain.as_ref());
+    let gain = dual.gain.transpose().to_owned();
     let lc = dense_mul(gain.as_ref(), c);
-    let placed = dense_sub(a, lc.as_ref());
+    let placed = a.to_owned() - lc.as_ref();
 
     Ok(PolePlacementSolve {
         gain,
@@ -366,7 +369,7 @@ where
 
     let gain = Mat::from_fn(1, a.nrows(), |_, col| solution[(a.nrows() - 1, col)]);
     let bk = dense_mul(b, gain.as_ref());
-    let placed = dense_sub(a, bk.as_ref());
+    let placed = a.to_owned() - bk.as_ref();
     let (achieved_poles, placement_residual) =
         achieved_pole_diagnostics(placed.as_ref(), desired_poles)?;
 
@@ -458,14 +461,16 @@ where
         return Err(PolePlacementError::Uncontrollable);
     }
     let g = assemble_columns(&g_cols);
-    let gain_t = x.full_piv_lu().solve(transpose(g.as_ref()).as_ref());
-    let gain = transpose(gain_t.as_ref());
+    let gain_t = x
+        .full_piv_lu()
+        .solve(g.as_ref().transpose().to_owned().as_ref());
+    let gain = gain_t.transpose().to_owned();
     if !all_finite(gain.as_ref()) {
         return Err(PolePlacementError::Uncontrollable);
     }
 
     let bk = dense_mul(b, gain.as_ref());
-    let placed = dense_sub(a, bk.as_ref());
+    let placed = a.to_owned() - bk.as_ref();
     let (achieved_poles, placement_residual) =
         achieved_pole_diagnostics(placed.as_ref(), desired_poles)?;
 
@@ -623,7 +628,7 @@ where
     });
     // Use the eigenvector associated with the smallest Gram eigenvalue as a
     // direction in the orthogonal complement of the other columns.
-    let gram = dense_mul(others.as_ref(), transpose(others.as_ref()).as_ref());
+    let gram = dense_mul(others.as_ref(), others.transpose().to_owned().as_ref());
     let eig = dense_self_adjoint_eigen(gram.as_ref(), &DenseDecompParams::default())?;
     let last = eig.vectors.ncols() - 1;
     Ok(Mat::from_fn(n, 1, |row, _| eig.vectors[(row, last)]))

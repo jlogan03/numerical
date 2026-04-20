@@ -8,8 +8,7 @@ use super::CovarianceUpdate;
 use super::dense::{default_tolerance, solve_left_checked};
 use super::nonlinear::{NonlinearEstimatorError, UnscentedParams};
 use crate::control::dense_ops::{
-    dense_add, dense_mul, dense_mul_adjoint_rhs, dense_sub, dense_transpose,
-    hermitian_project_in_place, identity, inner_product_real,
+    dense_mul, dense_mul_adjoint_rhs, hermitian_project_in_place, inner_product_real,
 };
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use faer::{Mat, MatRef};
@@ -54,10 +53,7 @@ where
     R: CompensatedField + RealField,
     R::Real: Float + Copy,
 {
-    let mut covariance = dense_add(
-        dense_mul_adjoint_rhs(dense_mul(f, p).as_ref(), f).as_ref(),
-        q,
-    );
+    let mut covariance = dense_mul_adjoint_rhs(dense_mul(f, p).as_ref(), f) + q;
     hermitian_project_in_place(&mut covariance);
     covariance
 }
@@ -135,20 +131,22 @@ where
     R::Real: Float + Copy,
 {
     match covariance_update {
-        CovarianceUpdate::Simple => dense_sub(
-            predicted_covariance,
-            dense_mul_adjoint_rhs(dense_mul(gain, innovation_covariance).as_ref(), gain).as_ref(),
-        ),
+        CovarianceUpdate::Simple => {
+            predicted_covariance.to_owned()
+                - dense_mul_adjoint_rhs(dense_mul(gain, innovation_covariance).as_ref(), gain)
+                    .as_ref()
+        }
         CovarianceUpdate::Joseph => {
-            let identity = identity::<R>(predicted_covariance.nrows());
+            let identity =
+                Mat::<R>::identity(predicted_covariance.nrows(), predicted_covariance.nrows());
             let kh = dense_mul(gain, h);
-            let i_minus_kh = dense_sub(identity.as_ref(), kh.as_ref());
+            let i_minus_kh = identity - kh.as_ref();
             let first = dense_mul_adjoint_rhs(
                 dense_mul(i_minus_kh.as_ref(), predicted_covariance).as_ref(),
                 i_minus_kh.as_ref(),
             );
             let second = dense_mul_adjoint_rhs(dense_mul(gain, r).as_ref(), gain);
-            dense_add(first.as_ref(), second.as_ref())
+            first + second.as_ref()
         }
     }
 }
@@ -167,10 +165,9 @@ where
     R::Real: Float + Copy,
 {
     match covariance_update {
-        CovarianceUpdate::Simple => Ok(dense_sub(
-            predicted_covariance,
-            dense_mul_adjoint_rhs(dense_mul(gain, innovation_covariance).as_ref(), gain).as_ref(),
-        )),
+        CovarianceUpdate::Simple => Ok(predicted_covariance.to_owned()
+            - dense_mul_adjoint_rhs(dense_mul(gain, innovation_covariance).as_ref(), gain)
+                .as_ref()),
         CovarianceUpdate::Joseph => {
             let h_t = solve_left_checked(
                 predicted_covariance,
@@ -182,7 +179,7 @@ where
                 CovarianceUpdate::Joseph,
                 predicted_covariance,
                 gain,
-                dense_transpose(h_t.as_ref()).as_ref(),
+                h_t.transpose().to_owned().as_ref(),
                 r,
                 innovation_covariance,
             ))

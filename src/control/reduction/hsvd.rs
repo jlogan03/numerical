@@ -40,7 +40,7 @@
 //! - Truncation policy is centralized in `HsvdParams` so higher layers see the
 //!   same order/tolerance behavior.
 
-use crate::control::dense_ops::{clone_mat, dense_adjoint, dense_mul, dense_mul_adjoint_lhs};
+use crate::control::dense_ops::{dense_mul, dense_mul_adjoint_lhs};
 use crate::decomp::{DecompError, DenseDecompParams, dense_self_adjoint_eigen, dense_svd};
 use crate::sparse::compensated::CompensatedField;
 use alloc::vec::Vec;
@@ -326,8 +326,8 @@ where
     let core = build_balance_core(controllability_factor, observability_factor, params)?;
     let internals = factor_internals(
         params.internals,
-        clone_mat(controllability_factor),
-        clone_mat(observability_factor),
+        controllability_factor.to_owned(),
+        observability_factor.to_owned(),
         &core,
     );
     Ok(HsvdResult {
@@ -489,7 +489,7 @@ where
 
     Ok(DenseFactorData {
         factor: factor.clone(),
-        dense_gramian: clone_mat(gramian),
+        dense_gramian: gramian.to_owned(),
         dense_sqrt: factor,
     })
 }
@@ -588,7 +588,7 @@ where
         core,
         core_u: svd.u,
         core_singular_values: hankel_singular_values,
-        core_vh: dense_adjoint(svd.v.as_ref()),
+        core_vh: svd.v.adjoint().to_owned(),
     })
 }
 
@@ -684,8 +684,8 @@ mod tests {
             (2, 1) => -0.25,
             _ => 0.0,
         });
-        let wc = super::dense_mul(rc.as_ref(), super::dense_adjoint(rc.as_ref()).as_ref());
-        let wo = super::dense_mul(ro.as_ref(), super::dense_adjoint(ro.as_ref()).as_ref());
+        let wc = super::dense_mul(rc.as_ref(), rc.adjoint().to_owned().as_ref());
+        let wo = super::dense_mul(ro.as_ref(), ro.adjoint().to_owned().as_ref());
 
         let dense = hsvd_from_dense_gramians(wc.as_ref(), wo.as_ref(), &HsvdParams::new()).unwrap();
         let factor = hsvd_from_factors(rc.as_ref(), ro.as_ref(), &HsvdParams::new()).unwrap();
@@ -707,12 +707,12 @@ mod tests {
         );
         let expected_identity = Mat::<f64>::identity(dense.reduced_order, dense.reduced_order);
         assert_close(
-            &super::clone_mat(dense_identity.as_ref()),
+            &dense_identity.as_ref().to_owned(),
             &expected_identity,
             1.0e-10,
         );
         assert_close(
-            &super::clone_mat(factor_identity.as_ref()),
+            &factor_identity.as_ref().to_owned(),
             &expected_identity,
             1.0e-10,
         );

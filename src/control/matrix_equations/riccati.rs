@@ -220,7 +220,7 @@ where
     // subspace step close to the textbook CARE derivation.
     let r_inv_bh = solve_left_checked(
         r,
-        dense_adjoint(b).as_ref(),
+        b.adjoint().to_owned().as_ref(),
         tol,
         RiccatiError::SingularControlWeight { which: "r" },
     )?;
@@ -299,7 +299,7 @@ where
     // pencil can be assembled directly from `A`, `Q`, and `G = B R^-1 B^H`.
     let r_inv_bh = solve_left_checked(
         r,
-        dense_adjoint(b).as_ref(),
+        b.adjoint().to_owned().as_ref(),
         tol,
         RiccatiError::SingularControlWeight { which: "r" },
     )?;
@@ -382,7 +382,7 @@ where
     validate_riccati_dims(a, b, x, r)?;
     let b_h_x = dense_mul_adjoint_lhs(b, x);
     let b_h_x_b = dense_mul(b_h_x.as_ref(), b);
-    let s = dense_add(r, b_h_x_b.as_ref());
+    let s = r.to_owned() + b_h_x_b.as_ref();
     let rhs = dense_mul(b_h_x.as_ref(), a);
     solve_left_checked(
         s.as_ref(),
@@ -610,7 +610,7 @@ where
         return Err(err);
     }
 
-    let residual = dense_sub_plain(dense_mul_plain(lhs, solution.as_ref()).as_ref(), rhs);
+    let residual = dense_mul_plain(lhs, solution.as_ref()) - rhs;
     let residual_norm = frobenius_norm_plain(residual.as_ref());
     let scale = dense_solve_scale(lhs, solution.as_ref(), rhs);
     let one = <T::Real as One>::one();
@@ -637,10 +637,10 @@ where
     T: ComplexField + Copy,
     T::Real: Float + Copy,
 {
-    let lhs_t = dense_transpose(lhs);
-    let rhs_t = dense_transpose(rhs);
+    let lhs_t = lhs.transpose().to_owned();
+    let rhs_t = rhs.transpose().to_owned();
     let solved_t = solve_left_checked(lhs_t.as_ref(), rhs_t.as_ref(), tol, err)?;
-    Ok(dense_transpose(solved_t.as_ref()))
+    Ok(solved_t.transpose().to_owned())
 }
 
 fn dense_solve_scale<T>(lhs: MatRef<'_, T>, solution: MatRef<'_, T>, rhs: MatRef<'_, T>) -> T::Real
@@ -701,7 +701,7 @@ where
     T: CompensatedField,
     T::Real: Float + Copy + RealField,
 {
-    let closed_loop = dense_sub(a, dense_mul(b, k).as_ref());
+    let closed_loop = a.to_owned() - dense_mul(b, k).as_ref();
     let poles = dense_eigenvalues(closed_loop.as_ref())
         .map_err(expect_dense_evd)?
         .try_as_col_major()
@@ -721,7 +721,7 @@ where
     T: CompensatedField,
     T::Real: Float + Copy + RealField,
 {
-    let closed_loop = dense_sub(a, dense_mul(b, k).as_ref());
+    let closed_loop = a.to_owned() - dense_mul(b, k).as_ref();
     let poles = dense_eigenvalues(closed_loop.as_ref())
         .map_err(expect_dense_evd)?
         .try_as_col_major()
@@ -786,21 +786,6 @@ where
     Ok(out)
 }
 
-fn dense_adjoint<T>(matrix: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
-        matrix[(col, row)].conj()
-    })
-}
-
-fn dense_transpose<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
-        matrix[(col, row)]
-    })
-}
-
 fn hermitianize_in_place<T>(matrix: &mut Mat<T>)
 where
     T: ComplexField + Copy,
@@ -847,24 +832,6 @@ where
     })
 }
 
-fn dense_add<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] + rhs[(row, col)]
-    })
-}
-
-fn dense_sub<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] - rhs[(row, col)]
-    })
-}
-
 fn frobenius_norm<T>(matrix: MatRef<'_, T>) -> T::Real
 where
     T: CompensatedField,
@@ -900,15 +867,6 @@ where
             acc = acc + lhs[(row, k)] * rhs[(k, col)];
         }
         acc
-    })
-}
-
-fn dense_sub_plain<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] - rhs[(row, col)]
     })
 }
 

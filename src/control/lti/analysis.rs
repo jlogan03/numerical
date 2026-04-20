@@ -3,7 +3,7 @@ use super::state_space::{
     ContinuousStateSpace, DiscreteStateSpace, SparseContinuousStateSpace, SparseDiscreteStateSpace,
     SparseStateSpace, StateSpace,
 };
-use crate::control::dense_ops::{clone_mat, dense_mul_plain as dense_mul};
+use crate::control::dense_ops::dense_mul_plain as dense_mul;
 use crate::decomp::dense_eigenvalues;
 use crate::sparse::lu::SparseLu;
 use alloc::vec::Vec;
@@ -49,7 +49,7 @@ where
         let n = self.nstates();
         let m = self.ninputs();
         let mut out = Mat::zeros(n, n * m);
-        let mut block = clone_mat(self.b());
+        let mut block = self.b().to_owned();
         for k in 0..n {
             copy_block(out.as_mut(), 0, k * m, block.as_ref());
             if k + 1 != n {
@@ -65,7 +65,7 @@ where
         let n = self.nstates();
         let p = self.noutputs();
         let mut out = Mat::zeros(n * p, n);
-        let mut block = clone_mat(self.c());
+        let mut block = self.c().to_owned();
         for k in 0..n {
             copy_block(out.as_mut(), k * p, 0, block.as_ref());
             if k + 1 != n {
@@ -496,7 +496,7 @@ where
             Spec::<PartialPivLuParams, Complex<T::Real>>::default(),
         )?;
 
-        let mut state_response = clone_mat(b_complex.as_ref());
+        let mut state_response = b_complex.as_ref().to_owned();
         lu.solve_in_place(state_response.as_mut(), Par::Seq)?;
 
         let gain = dense_mul(c_complex.as_ref(), state_response.as_ref());

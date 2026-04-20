@@ -438,7 +438,7 @@ where
     validate_dims("c", c.nrows(), c.ncols(), c.nrows(), a.ncols().unbound())?;
 
     let a_adjoint = a.adjoint().to_col_major()?;
-    let c_adjoint = dense_adjoint(c);
+    let c_adjoint = c.adjoint().to_owned();
     low_rank_adi_core(a_adjoint.as_ref(), c_adjoint.as_ref(), shifts, params)
 }
 
@@ -466,7 +466,7 @@ where
     validate_dims("c", c.nrows(), c.ncols(), c.nrows(), a.ncols())?;
 
     let q = dense_mul_adjoint_lhs(c);
-    let a_adjoint = dense_adjoint(a);
+    let a_adjoint = a.adjoint().to_owned();
     solve_continuous_lyapunov_dense(a_adjoint.as_ref(), q.as_ref())
 }
 
@@ -646,15 +646,6 @@ fn unvectorize_square<T: ComplexField + Copy>(values: MatRef<'_, T>, n: usize) -
 
 fn vec_index(row: usize, col: usize, nrows: usize) -> usize {
     row + nrows * col
-}
-
-fn dense_adjoint<T>(matrix: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
-        matrix[(col, row)].conj()
-    })
 }
 
 fn hermitianize_in_place<T>(matrix: &mut Mat<T>)

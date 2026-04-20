@@ -67,7 +67,7 @@ pub use domain::{ContinuousTime, DiscreteTime};
 pub use error::StateSpaceError;
 pub use sparse::{SparseContinuousStateSpace, SparseDiscreteStateSpace, SparseStateSpace};
 
-use crate::control::dense_ops::{clone_mat, dense_add_plain, dense_mul_plain, dense_sub_plain};
+use crate::control::dense_ops::dense_mul_plain;
 use crate::control::matrix_equations::lyapunov::{
     DenseLyapunovSolve, LyapunovError, controllability_gramian_dense, observability_gramian_dense,
 };
@@ -309,7 +309,7 @@ where
         let dk = dense_mul(self.d(), k)?;
         let a = dense_sub(self.a(), bk.as_ref())?;
         let c = dense_sub(self.c(), dk.as_ref())?;
-        Self::new(a, clone_mat(self.b()), c, clone_mat(self.d()))
+        Self::new(a, self.b().to_owned(), c, self.d().to_owned())
     }
 
     /// Applies observer-style output injection with innovation gain `L`.
@@ -520,7 +520,7 @@ where
                 Mat::zeros(0, 0),
                 Mat::zeros(0, channels),
                 Mat::zeros(channels, 0),
-                identity(channels),
+                Mat::identity(channels, channels),
                 sample_time,
             );
         }
@@ -612,9 +612,9 @@ where
         let c = dense_sub(self.c(), dk.as_ref())?;
         Self::new(
             a,
-            clone_mat(self.b()),
+            self.b().to_owned(),
             c,
-            clone_mat(self.d()),
+            self.d().to_owned(),
             self.sample_time(),
         )
     }
@@ -790,12 +790,12 @@ where
     let rhs_c = if subtract_rhs {
         negated(rhs.c())
     } else {
-        clone_mat(rhs.c())
+        rhs.c().to_owned()
     };
     let rhs_d = if subtract_rhs {
         negated(rhs.d())
     } else {
-        clone_mat(rhs.d())
+        rhs.d().to_owned()
     };
     // Parallel composition keeps a shared input and stacks the two internal
     // state vectors. The output map is then the horizontal concatenation of
@@ -866,7 +866,7 @@ where
     let ld = dense_mul(l, system.d())?;
     let a = dense_sub(system.a(), lc.as_ref())?;
     let u_block = dense_sub(system.b(), ld.as_ref())?;
-    let y_block = clone_mat(l);
+    let y_block = l.to_owned();
     // The injected system is driven by `[u; y_ext]`, not just `u`. This keeps
     // the innovation input explicit instead of hiding the measurement channel
     // inside a special estimator-only type.
@@ -875,7 +875,7 @@ where
         system.d(),
         Mat::<T>::zeros(system.noutputs(), system.noutputs()).as_ref(),
     )?;
-    Ok((a, b, clone_mat(system.c()), d))
+    Ok((a, b, system.c().to_owned(), d))
 }
 
 type Parts<T> = (Mat<T>, Mat<T>, Mat<T>, Mat<T>);
@@ -906,7 +906,7 @@ where
     let controller_b = hcat(controller_b_r.as_ref(), l)?;
     let controller_c = negated(k);
     let controller_d = hcat(
-        identity(plant.ninputs()).as_ref(),
+        Mat::identity(plant.ninputs(), plant.ninputs()).as_ref(),
         Mat::<T>::zeros(plant.ninputs(), plant.noutputs()).as_ref(),
     )?;
 
@@ -927,7 +927,7 @@ where
         plant.c(),
         negated(dense_mul(plant.d(), k)?.as_ref()).as_ref(),
     )?;
-    let closed_loop_d = clone_mat(plant.d());
+    let closed_loop_d = plant.d().to_owned();
 
     Ok((
         (controller_a, controller_b, controller_c, controller_d),
@@ -1002,7 +1002,7 @@ where
     T: ComplexField + Copy,
 {
     ensure_same_shape("dense_add", lhs, rhs)?;
-    Ok(dense_add_plain(lhs, rhs))
+    Ok(lhs.to_owned() + rhs)
 }
 
 fn dense_sub<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
@@ -1010,7 +1010,7 @@ where
     T: ComplexField + Copy,
 {
     ensure_same_shape("dense_sub", lhs, rhs)?;
-    Ok(dense_sub_plain(lhs, rhs))
+    Ok(lhs.to_owned() - rhs)
 }
 
 fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
@@ -1071,19 +1071,6 @@ where
     Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
         -matrix[(row, col)]
     })
-}
-
-fn identity<T>(dim: usize) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(
-        dim,
-        dim,
-        |row, col| {
-            if row == col { T::one() } else { T::zero() }
-        },
-    )
 }
 
 fn ensure_same_shape<T>(

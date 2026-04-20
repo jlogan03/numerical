@@ -43,7 +43,7 @@ use super::state_space::{
     ContinuousStateSpace, DiscreteStateSpace, SparseContinuousStateSpace, SparseDiscreteStateSpace,
 };
 use super::util::validate_nonnegative_monotone_grid;
-use crate::control::dense_ops::{clone_mat, dense_add_plain as dense_add, dense_mul};
+use crate::control::dense_ops::dense_mul;
 use crate::sparse::compensated::CompensatedField;
 use crate::sparse::matvec::SparseMatVec;
 use alloc::vec::Vec;
@@ -149,7 +149,7 @@ where
         }
         Ok(ContinuousImpulseResponse {
             sample_times: sample_times.to_vec(),
-            direct_feedthrough: clone_mat(self.d()),
+            direct_feedthrough: self.d().to_owned(),
             values,
         })
     }
@@ -218,7 +218,7 @@ where
             });
         }
 
-        let inputs_owned = clone_mat(inputs);
+        let inputs_owned = inputs.to_owned();
         let mut states = Mat::<T>::zeros(self.nstates(), sample_times.len());
         let mut outputs = Mat::<T>::zeros(self.noutputs(), sample_times.len());
         let mut state = column_from_slice(x0);
@@ -226,19 +226,15 @@ where
 
         for k in 0..sample_times.len() {
             let input = column_owned(inputs_owned.as_ref(), k);
-            let output = dense_add(
-                dense_mul(self.c(), state.as_ref()).as_ref(),
-                dense_mul(self.d(), input.as_ref()).as_ref(),
-            );
+            let output =
+                dense_mul(self.c(), state.as_ref()) + dense_mul(self.d(), input.as_ref()).as_ref();
             write_column(outputs.as_mut(), k, output.as_ref());
 
             if k + 1 < sample_times.len() {
                 let dt = sample_times[k + 1] - sample_times[k];
                 let (ad, bd) = continuous_interval_maps(self, dt)?;
-                state = dense_add(
-                    dense_mul(ad.as_ref(), state.as_ref()).as_ref(),
-                    dense_mul(bd.as_ref(), input.as_ref()).as_ref(),
-                );
+                state = dense_mul(ad.as_ref(), state.as_ref())
+                    + dense_mul(bd.as_ref(), input.as_ref()).as_ref();
                 write_column(states.as_mut(), k + 1, state.as_ref());
             }
         }
@@ -361,7 +357,7 @@ where
             });
         }
 
-        let inputs_owned = clone_mat(inputs);
+        let inputs_owned = inputs.to_owned();
         let mut states = Mat::<T>::zeros(self.nstates(), inputs.ncols() + 1);
         let mut outputs = Mat::<T>::zeros(self.noutputs(), inputs.ncols());
         let mut state = column_from_slice(x0);
@@ -372,16 +368,12 @@ where
 
             // Evaluate the output before the state update so the returned
             // columns match the standard discrete-time convention `y[k]`.
-            let output = dense_add(
-                dense_mul(self.c(), state.as_ref()).as_ref(),
-                dense_mul(self.d(), input.as_ref()).as_ref(),
-            );
+            let output =
+                dense_mul(self.c(), state.as_ref()) + dense_mul(self.d(), input.as_ref()).as_ref();
             write_column(outputs.as_mut(), k, output.as_ref());
 
-            state = dense_add(
-                dense_mul(self.a(), state.as_ref()).as_ref(),
-                dense_mul(self.b(), input.as_ref()).as_ref(),
-            );
+            state =
+                dense_mul(self.a(), state.as_ref()) + dense_mul(self.b(), input.as_ref()).as_ref();
             write_column(states.as_mut(), k + 1, state.as_ref());
         }
 
@@ -459,7 +451,7 @@ where
             });
         }
 
-        let inputs_owned = clone_mat(inputs);
+        let inputs_owned = inputs.to_owned();
         let mut states = Mat::<T>::zeros(self.nstates(), inputs.ncols() + 1);
         let mut outputs = Mat::<T>::zeros(self.noutputs(), inputs.ncols());
         let mut state = x0.to_vec();
@@ -470,10 +462,8 @@ where
             let input = column_owned(inputs_owned.as_ref(), k);
             let state_col = column_from_slice(&state);
 
-            let output = dense_add(
-                dense_mul(self.c(), state_col.as_ref()).as_ref(),
-                dense_mul(self.d(), input.as_ref()).as_ref(),
-            );
+            let output = dense_mul(self.c(), state_col.as_ref())
+                + dense_mul(self.d(), input.as_ref()).as_ref();
             write_column(outputs.as_mut(), k, output.as_ref());
 
             self.a().apply_compensated(&mut ax, &state);
@@ -541,12 +531,12 @@ where
         return Vec::new();
     }
     let mut blocks = Vec::with_capacity(n_steps);
-    blocks.push(clone_mat(system.d()));
+    blocks.push(system.d().to_owned());
     if n_steps == 1 {
         return blocks;
     }
 
-    let mut state = clone_mat(system.b());
+    let mut state = system.b().to_owned();
     for _ in 1..n_steps {
         blocks.push(dense_mul(system.c(), state.as_ref()));
         state = dense_mul(system.a(), state.as_ref());
@@ -570,11 +560,8 @@ where
     let mut blocks = Vec::with_capacity(n_steps);
     let mut state = Mat::<T>::zeros(system.nstates(), system.ninputs());
     for _ in 0..n_steps {
-        blocks.push(dense_add(
-            dense_mul(system.c(), state.as_ref()).as_ref(),
-            system.d(),
-        ));
-        state = dense_add(dense_mul(system.a(), state.as_ref()).as_ref(), system.b());
+        blocks.push(dense_mul(system.c(), state.as_ref()) + system.d());
+        state = dense_mul(system.a(), state.as_ref()) + system.b();
     }
     blocks
 }
@@ -597,12 +584,12 @@ where
         return Vec::new();
     }
     let mut blocks = Vec::with_capacity(n_steps);
-    blocks.push(clone_mat(system.d()));
+    blocks.push(system.d().to_owned());
     if n_steps == 1 {
         return blocks;
     }
 
-    let mut state = clone_mat(system.b());
+    let mut state = system.b().to_owned();
     for _ in 1..n_steps {
         blocks.push(dense_mul(system.c(), state.as_ref()));
         state = sparse_apply_columns(system.a(), state.as_ref());
@@ -626,14 +613,8 @@ where
     let mut blocks = Vec::with_capacity(n_steps);
     let mut state = Mat::<T>::zeros(system.nstates(), system.ninputs());
     for _ in 0..n_steps {
-        blocks.push(dense_add(
-            dense_mul(system.c(), state.as_ref()).as_ref(),
-            system.d(),
-        ));
-        state = dense_add(
-            sparse_apply_columns(system.a(), state.as_ref()).as_ref(),
-            system.b(),
-        );
+        blocks.push(dense_mul(system.c(), state.as_ref()) + system.d());
+        state = sparse_apply_columns(system.a(), state.as_ref()) + system.b();
     }
     blocks
 }
@@ -656,10 +637,7 @@ where
     let mut blocks = Vec::with_capacity(sample_times.len());
     for &time in sample_times {
         let (_, bd) = continuous_interval_maps(system, time)?;
-        blocks.push(dense_add(
-            dense_mul(system.c(), bd.as_ref()).as_ref(),
-            system.d(),
-        ));
+        blocks.push(dense_mul(system.c(), bd.as_ref()) + system.d());
     }
     Ok(blocks)
 }

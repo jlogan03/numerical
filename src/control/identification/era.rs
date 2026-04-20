@@ -31,7 +31,7 @@
 //!   model so later debugging or research workflows can inspect the retained
 //!   subspace data.
 
-use crate::control::dense_ops::{clone_mat, dense_adjoint as adjoint, dense_mul};
+use crate::control::dense_ops::dense_mul;
 use crate::control::lti::state_space::{DiscreteStateSpace, StateSpaceError};
 use crate::control::realization::{MarkovSequence, RealizationError, ShiftedBlockHankelPair};
 use crate::decomp::{DecompError, DenseDecompParams, dense_svd};
@@ -271,10 +271,10 @@ where
         let sigma_sqrt = diagonal_from_real(&sigma_r, RealScale::Sqrt);
         let sigma_inv_sqrt = diagonal_from_real(&sigma_r, RealScale::InvSqrt);
         let observability_factor = dense_mul(u_r.as_ref(), sigma_sqrt.as_ref());
-        let v_r_h = adjoint(v_r.as_ref());
+        let v_r_h = v_r.adjoint().to_owned();
         let controllability_factor = dense_mul(sigma_sqrt.as_ref(), v_r_h.as_ref());
         let a_mid = dense_mul(
-            dense_mul(adjoint(u_r.as_ref()).as_ref(), pair.h1().matrix()).as_ref(),
+            dense_mul(u_r.adjoint().to_owned().as_ref(), pair.h1().matrix()).as_ref(),
             v_r.as_ref(),
         );
         let a_r = dense_mul(
@@ -293,7 +293,7 @@ where
             a_r,
             b_r,
             c_r,
-            clone_mat(direct_feedthrough),
+            direct_feedthrough.to_owned(),
             params.sample_time,
         )?
     };
@@ -320,7 +320,7 @@ where
             let sigma_r = truncated_real_col(singular_values.as_ref(), retained_order);
             let sigma_sqrt = diagonal_from_real(&sigma_r, RealScale::Sqrt);
             let observability_factor = dense_mul(u_r.as_ref(), sigma_sqrt.as_ref());
-            let v_r_h = adjoint(v_r.as_ref());
+            let v_r_h = v_r.adjoint().to_owned();
             let controllability_factor = dense_mul(sigma_sqrt.as_ref(), v_r_h.as_ref());
             internals.u_r = Some(u_r);
             internals.sigma_r = Some(sigma_r);
@@ -413,7 +413,7 @@ where
         Mat::zeros(0, 0),
         Mat::zeros(0, ninputs),
         Mat::zeros(noutputs, 0),
-        clone_mat(direct_feedthrough),
+        direct_feedthrough.to_owned(),
         sample_time,
     )
 }

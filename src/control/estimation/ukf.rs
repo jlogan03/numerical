@@ -1,9 +1,7 @@
 use alloc::{boxed::Box, vec::Vec};
 use core::fmt;
 
-use crate::control::dense_ops::{
-    clone_mat, column_vector_norm, dense_add, dense_mul, dense_sub, hermitian_project_in_place,
-};
+use crate::control::dense_ops::{column_vector_norm, dense_mul, hermitian_project_in_place};
 use crate::control::estimation::CovarianceUpdate;
 use crate::control::estimation::dense::{default_tolerance, solve_right_checked};
 use crate::control::estimation::nonlinear_core::{
@@ -241,10 +239,9 @@ where
             "transition",
         )?;
         let state = weighted_mean(propagated.as_ref(), &sigma.mean_weights);
-        let covariance = dense_add(
-            weighted_covariance(propagated.as_ref(), state.as_ref(), &sigma.cov_weights).as_ref(),
-            self.q.as_ref(),
-        );
+        let covariance =
+            weighted_covariance(propagated.as_ref(), state.as_ref(), &sigma.cov_weights)
+                + self.q.as_ref();
         let mut covariance = covariance;
         hermitian_project_in_place(&mut covariance);
         let measurement_sigma = self.sigma_strategy.sigma_points(
@@ -305,16 +302,12 @@ where
             "output",
         )?;
         let predicted_output = weighted_mean(output_points.as_ref(), &sigma.mean_weights);
-        let innovation = dense_sub(measurement, predicted_output.as_ref());
-        let innovation_covariance = dense_add(
-            weighted_covariance(
-                output_points.as_ref(),
-                predicted_output.as_ref(),
-                &sigma.cov_weights,
-            )
-            .as_ref(),
-            self.r.as_ref(),
-        );
+        let innovation = measurement.to_owned() - predicted_output.as_ref();
+        let innovation_covariance = weighted_covariance(
+            output_points.as_ref(),
+            predicted_output.as_ref(),
+            &sigma.cov_weights,
+        ) + self.r.as_ref();
         let mut innovation_covariance = innovation_covariance;
         hermitian_project_in_place(&mut innovation_covariance);
         let cross = weighted_cross_covariance(
@@ -330,10 +323,8 @@ where
             default_tolerance::<R>(),
             || NonlinearEstimatorError::SingularInnovationCovariance,
         )?;
-        let state = dense_add(
-            prediction.state.as_ref(),
-            dense_mul(gain.as_ref(), innovation.as_ref()).as_ref(),
-        );
+        let state =
+            prediction.state.to_owned() + dense_mul(gain.as_ref(), innovation.as_ref()).as_ref();
         let covariance = updated_covariance_ukf(
             self.covariance_update,
             prediction.covariance.as_ref(),
@@ -377,8 +368,8 @@ where
     ) -> Result<NonlinearKalmanUpdate<R>, NonlinearEstimatorError> {
         let prediction = self.predict(input)?;
         let update = self.update(&prediction, input, measurement)?;
-        self.x_hat = clone_mat(update.state.as_ref());
-        self.p = clone_mat(update.covariance.as_ref());
+        self.x_hat = update.state.to_owned();
+        self.p = update.covariance.to_owned();
         Ok(update)
     }
 }
@@ -456,7 +447,7 @@ where
         });
     }
 
-    let mut covariance = clone_mat(covariance);
+    let mut covariance = covariance.to_owned();
     hermitian_project_in_place(&mut covariance);
     let eig = dense_self_adjoint_eigen(covariance.as_ref(), &DenseDecompParams::<R>::new())
         .map_err(|_| NonlinearEstimatorError::NonPositiveDefiniteCovariance {

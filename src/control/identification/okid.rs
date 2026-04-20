@@ -31,7 +31,7 @@
 //!   deficient regressions that still carry useful Markov information, while
 //!   stricter modes can require a minimum retained rank or full row rank.
 
-use crate::control::dense_ops::{clone_mat, dense_add_plain as dense_add, dense_mul};
+use crate::control::dense_ops::dense_mul;
 use crate::control::realization::MarkovSequence;
 use crate::decomp::{DecompError, DenseDecompParams, PartialSvd, dense_svd};
 use crate::sparse::compensated::CompensatedField;
@@ -281,18 +281,18 @@ where
     let ninputs = direct_feedthrough.ncols();
     let observer_order = observer_markov_blocks.len();
     let mut blocks = Vec::with_capacity(n_markov);
-    blocks.push(clone_mat(direct_feedthrough));
+    blocks.push(direct_feedthrough.to_owned());
 
     for k in 1..n_markov {
         let mut h_k = Mat::<T>::zeros(noutputs, ninputs);
         if k <= observer_order {
             let y_u = first_columns(observer_markov_blocks[k - 1].as_ref(), ninputs);
-            h_k = dense_add(h_k.as_ref(), y_u.as_ref());
+            h_k = h_k + y_u.as_ref();
         }
         for i in 1..=k.min(observer_order) {
             let y_y = trailing_columns(observer_markov_blocks[i - 1].as_ref(), noutputs);
             let term = dense_mul(y_y.as_ref(), blocks[k - i].as_ref());
-            h_k = dense_add(h_k.as_ref(), term.as_ref());
+            h_k = h_k + term.as_ref();
         }
         check_finite(h_k.as_ref(), "markov_sequence")?;
         blocks.push(h_k);

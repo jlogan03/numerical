@@ -42,7 +42,6 @@
 //!   state-space layer.
 
 use super::lqr::{LqrError, LqrSolve, dlqr_dense, lqr_dense};
-use crate::control::dense_ops::clone_mat;
 use crate::control::estimation::{EstimatorError, LqeSolve, dlqe_dense, lqe_dense};
 use crate::control::lti::{
     ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime, StateSpace,
@@ -160,7 +159,7 @@ where
     // Construct the validated plant model once, then reuse the existing
     // observer/controller interconnection algebra instead of re-deriving the
     // block formulas here.
-    let system = ContinuousStateSpace::new(clone_mat(a), clone_mat(b), clone_mat(c), clone_mat(d))?;
+    let system = ContinuousStateSpace::new(a.to_owned(), b.to_owned(), c.to_owned(), d.to_owned())?;
     let regulator = lqr_dense(a, b, q, r)?;
     let estimator = lqe_dense(a, c, w, v)?;
     // LQG stays intentionally thin: compute `K`, compute `L`, then hand the
@@ -207,10 +206,10 @@ where
     // interval, so the transient validated `StateSpace` object is part of the
     // packaging step rather than an optional convenience.
     let system = DiscreteStateSpace::new(
-        clone_mat(a),
-        clone_mat(b),
-        clone_mat(c),
-        clone_mat(d),
+        a.to_owned(),
+        b.to_owned(),
+        c.to_owned(),
+        d.to_owned(),
         sample_time,
     )?;
     let regulator = dlqr_dense(a, b, q, r)?;

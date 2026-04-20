@@ -1,6 +1,5 @@
 use crate::control::dense_ops::{
-    clone_mat, column_vector_norm, dense_add, dense_mul, dense_mul_adjoint_rhs, dense_sub,
-    hermitian_project_in_place,
+    column_vector_norm, dense_mul, dense_mul_adjoint_rhs, hermitian_project_in_place,
 };
 use crate::control::estimation::CovarianceUpdate;
 use crate::control::estimation::dense::{default_tolerance, solve_right_checked};
@@ -146,7 +145,7 @@ where
             1,
         )?;
         validate_finite("predicted_output", predicted_output.as_ref())?;
-        let innovation = dense_sub(measurement, predicted_output.as_ref());
+        let innovation = measurement.to_owned() - predicted_output.as_ref();
         let h = self.model.output_jacobian(prediction.state.as_ref(), input);
         validate_rect(
             "output_jacobian",
@@ -163,10 +162,8 @@ where
             default_tolerance::<R>(),
             || NonlinearEstimatorError::SingularInnovationCovariance,
         )?;
-        let state = dense_add(
-            prediction.state.as_ref(),
-            dense_mul(gain.as_ref(), innovation.as_ref()).as_ref(),
-        );
+        let state =
+            prediction.state.to_owned() + dense_mul(gain.as_ref(), innovation.as_ref()).as_ref();
         let covariance = updated_covariance(
             self.covariance_update,
             prediction.covariance.as_ref(),
@@ -210,8 +207,8 @@ where
     ) -> Result<NonlinearKalmanUpdate<R>, NonlinearEstimatorError> {
         let prediction = self.predict(input)?;
         let update = self.update(&prediction, input, measurement)?;
-        self.x_hat = clone_mat(update.state.as_ref());
-        self.p = clone_mat(update.covariance.as_ref());
+        self.x_hat = update.state.to_owned();
+        self.p = update.covariance.to_owned();
         Ok(update)
     }
 }

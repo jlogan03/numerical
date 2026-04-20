@@ -62,7 +62,7 @@
 //! - Stability is a precondition, not an internal stabilization step.
 
 use super::hsvd::{HsvdError, hsvd_from_dense_gramians, hsvd_from_factors};
-use crate::control::dense_ops::{clone_mat, dense_mul, dense_mul_adjoint_lhs};
+use crate::control::dense_ops::{dense_mul, dense_mul_adjoint_lhs};
 use crate::control::lti::{
     ContinuousStateSpace, ContinuousTime, DiscreteStateSpace, DiscreteTime, StateSpaceError,
 };
@@ -427,7 +427,7 @@ where
     let ar = dense_mul_adjoint_lhs(left_projection, dense_mul(a, right_projection).as_ref());
     let br = dense_mul_adjoint_lhs(left_projection, b);
     let cr = dense_mul(c, right_projection);
-    let dr = clone_mat(d);
+    let dr = d.to_owned();
     Ok(ContinuousStateSpace::new(ar, br, cr, dr)?)
 }
 
@@ -449,7 +449,7 @@ where
     let ar = dense_mul_adjoint_lhs(left_projection, dense_mul(a, right_projection).as_ref());
     let br = dense_mul_adjoint_lhs(left_projection, b);
     let cr = dense_mul(c, right_projection);
-    let dr = clone_mat(d);
+    let dr = d.to_owned();
     Ok(DiscreteStateSpace::new(ar, br, cr, dr, sample_time)?)
 }
 
@@ -475,7 +475,7 @@ where
     );
     let br = dense_mul_adjoint_lhs(left_projection, b);
     let cr = dense_mul(c, right_projection);
-    let dr = clone_mat(d);
+    let dr = d.to_owned();
     Ok(ContinuousStateSpace::new(ar, br, cr, dr)?)
 }
 
@@ -501,7 +501,7 @@ where
     );
     let br = dense_mul_adjoint_lhs(left_projection, b);
     let cr = dense_mul(c, right_projection);
-    let dr = clone_mat(d);
+    let dr = d.to_owned();
     Ok(DiscreteStateSpace::new(ar, br, cr, dr, sample_time)?)
 }
 
@@ -662,7 +662,7 @@ mod test {
         assert_eq!(result.reduced.nstates(), 0);
         assert_eq!(result.reduced.b().nrows(), 0);
         assert_eq!(result.reduced.c().ncols(), 0);
-        assert_close(&super::clone_mat(result.reduced.d()), &d, 1.0e-12);
+        assert_close(&result.reduced.d().to_owned(), &d, 1.0e-12);
     }
 
     #[test]
@@ -733,8 +733,8 @@ mod test {
                 .unwrap();
 
         assert_close(
-            &super::clone_mat(sparse.reduced.a()),
-            &super::clone_mat(dense.reduced.a()),
+            &sparse.reduced.a().to_owned(),
+            &dense.reduced.a().to_owned(),
             1.0e-6,
         );
         assert!(
@@ -802,8 +802,8 @@ mod test {
                 .unwrap();
 
         assert_close(
-            &super::clone_mat(sparse.reduced.a()),
-            &super::clone_mat(dense.reduced.a()),
+            &sparse.reduced.a().to_owned(),
+            &dense.reduced.a().to_owned(),
             1.0e-6,
         );
         assert!(

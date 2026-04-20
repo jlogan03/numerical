@@ -5,39 +5,8 @@
 
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use faer::{Mat, MatRef};
-use faer_traits::ComplexField;
 use faer_traits::ext::ComplexFieldExt;
 use num_traits::{Float, One, Zero};
-
-/// Clones a dense matrix reference into an owned matrix.
-pub(crate) fn clone_mat<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
-        matrix[(row, col)]
-    })
-}
-
-/// Returns a dense identity matrix of the requested dimension.
-pub(crate) fn identity<T>(dim: usize) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::identity(dim, dim)
-}
-
-/// Returns the plain transpose of a dense matrix.
-pub(crate) fn dense_transpose<T: Copy>(matrix: MatRef<'_, T>) -> Mat<T> {
-    Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
-        matrix[(col, row)]
-    })
-}
-
-/// Returns the dense adjoint of a matrix.
-pub(crate) fn dense_adjoint<T>(matrix: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    matrix.adjoint().to_owned()
-}
 
 /// Dense matrix multiply using compensated accumulation per output entry.
 pub(crate) fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
@@ -84,36 +53,10 @@ where
     })
 }
 
-/// Dense matrix addition using compensated accumulation per entry.
-pub(crate) fn dense_add<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    dense_add_plain(lhs, rhs)
-}
-
-/// Dense matrix subtraction using compensated accumulation per entry.
-pub(crate) fn dense_sub<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    dense_sub_plain(lhs, rhs)
-}
-
-/// Plain dense matrix addition used where compensation is unnecessary.
-pub(crate) fn dense_add_plain<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] + rhs[(row, col)]
-    })
-}
-
 /// Plain dense matrix multiply used only in residual checks or lightweight analysis.
 pub(crate) fn dense_mul_plain<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
-    T: ComplexField + Copy,
+    T: faer_traits::ComplexField + Copy,
 {
     Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
         let mut acc = T::zero();
@@ -121,16 +64,6 @@ where
             acc = acc + lhs[(row, k)] * rhs[(k, col)];
         }
         acc
-    })
-}
-
-/// Plain dense subtraction used only in residual checks.
-pub(crate) fn dense_sub_plain<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] - rhs[(row, col)]
     })
 }
 
@@ -180,7 +113,7 @@ where
 /// Returns the Frobenius norm of a dense matrix without compensation.
 pub(crate) fn frobenius_norm_plain<T>(matrix: MatRef<'_, T>) -> T::Real
 where
-    T: ComplexField + Copy,
+    T: faer_traits::ComplexField + Copy,
     T::Real: Float + Copy,
 {
     let mut acc = <T::Real as Zero>::zero();

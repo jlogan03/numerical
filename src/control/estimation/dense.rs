@@ -1,8 +1,6 @@
 //! Shared dense solver helpers for estimator runtimes.
 
-use crate::control::dense_ops::{
-    dense_mul_plain, dense_sub_plain, dense_transpose, frobenius_norm_plain,
-};
+use crate::control::dense_ops::{dense_mul_plain, frobenius_norm_plain};
 use crate::sparse::compensated::CompensatedField;
 use faer::prelude::Solve;
 use faer::{Mat, MatRef};
@@ -35,7 +33,7 @@ where
         return Err(err());
     }
 
-    let residual = dense_sub_plain(dense_mul_plain(lhs, solution.as_ref()).as_ref(), rhs);
+    let residual = dense_mul_plain(lhs, solution.as_ref()) - rhs;
     let residual_norm = frobenius_norm_plain(residual.as_ref());
     let scale = frobenius_norm_plain(lhs) * frobenius_norm_plain(solution.as_ref())
         + frobenius_norm_plain(rhs);
@@ -60,8 +58,8 @@ where
     T::Real: Float + Copy,
     F: Fn() -> E + Copy,
 {
-    let lhs_t = dense_transpose(lhs_right);
-    let rhs_t = dense_transpose(rhs_left);
+    let lhs_t = lhs_right.transpose().to_owned();
+    let rhs_t = rhs_left.transpose().to_owned();
     let solved_t = solve_left_checked(lhs_t.as_ref(), rhs_t.as_ref(), tol, err)?;
-    Ok(dense_transpose(solved_t.as_ref()))
+    Ok(solved_t.transpose().to_owned())
 }
