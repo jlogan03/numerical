@@ -19,6 +19,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
       - name: Format
         run: cargo fmt --check --verbose
       - name: Run tests with no default features
@@ -29,5 +30,7 @@ jobs:
         run: cargo clippy --all-targets --verbose
       - name: Run tests default feature set
         run: cargo test --verbose
+      - name: Check wasm target
+        run: cargo check --target wasm32-unknown-unknown --verbose
       - name: Run tests with fma
         run: cargo test --features fma --verbose
