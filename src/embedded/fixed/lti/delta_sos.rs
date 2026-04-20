@@ -1,4 +1,8 @@
 //! Fixed-size delta-operator SOS runtime filters.
+//!
+//! This is the embedded execution form for deployed discrete IIR filters. It
+//! is meant to be produced from the alloc-side control representation after
+//! design, not used as the primary design or interchange form.
 
 use crate::embedded::error::EmbeddedError;
 use crate::embedded::math::ensure_finite;
@@ -22,6 +26,10 @@ pub enum DeltaSection<T> {
 }
 
 /// Fixed-size delta-SOS cascade shared across `LANES` independent channels.
+///
+/// This is an execution-only embedded representation of a discrete SOS
+/// cascade. It is intended to hold already-designed filter sections in a
+/// runtime basis that behaves better at low normalized cutoff.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DeltaSos<T, const SECTIONS: usize, const LANES: usize> {
     sections: [DeltaSection<T>; SECTIONS],
@@ -68,6 +76,10 @@ where
     T: Float + Copy,
 {
     /// Creates a fixed-size delta-SOS cascade.
+    ///
+    /// This constructor expects coefficients that are already in delta runtime
+    /// form. Typical callers should obtain those coefficients by converting a
+    /// designed ordinary SOS filter in the alloc-side control layer.
     pub fn new(
         sections: [DeltaSection<T>; SECTIONS],
         gain: T,

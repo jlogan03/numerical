@@ -1,3 +1,16 @@
+//! Canonical second-order-section representation for realized SISO filters.
+//!
+//! `Sos` is the crate's primary realized IIR storage form:
+//!
+//! - it is the preferred output of digital and analog IIR design
+//! - it is the sectioned form used for conversion and composition
+//! - it is the ordinary discrete execution form used by the DF2T runtime
+//!
+//! For very low normalized digital cutoffs, callers can derive
+//! [`DeltaSos`](super::DeltaSos) from a [`DiscreteSos`] when they need a more
+//! stable runtime basis near `z = 1`. That does not replace `Sos` as the
+//! canonical stored representation.
+
 use super::error::LtiError;
 use super::transfer_function::TransferFunction;
 use super::util::{
@@ -100,6 +113,13 @@ where
 }
 
 /// Real-coefficient SISO second-order-section cascade.
+///
+/// This is the canonical sectioned representation for realized IIR filters in
+/// this crate. It is the form used for design outputs, conversion between
+/// alternate SISO representations, and ordinary sectionwise execution. When a
+/// discrete filter needs a better-conditioned runtime basis at very low
+/// normalized cutoff, derive [`super::DeltaSos`] from [`DiscreteSos`] instead
+/// of replacing `Sos` itself.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Sos<R, Domain> {
     sections: Vec<SecondOrderSection<R>>,
@@ -108,9 +128,19 @@ pub struct Sos<R, Domain> {
 }
 
 /// Continuous-time SISO second-order-section cascade.
+///
+/// This is the preferred realized continuous-time filter form. Unlike
+/// [`DiscreteSos`], there is no delta-operator companion type because the
+/// delta basis is specifically a discrete-time runtime technique.
 pub type ContinuousSos<R> = Sos<R, ContinuousTime>;
 
 /// Discrete-time SISO second-order-section cascade.
+///
+/// This is the canonical stored and design-facing digital IIR form. It is also
+/// the ordinary sectionwise execution form used by the DF2T runtime. When
+/// executing very low-cutoff filters, derive [`super::DeltaSos`] with
+/// [`super::DiscreteSos::to_delta_sos`] to move the runtime recurrence into a
+/// better-conditioned basis near `z = 1`.
 pub type DiscreteSos<R> = Sos<R, DiscreteTime<R>>;
 
 impl<R, Domain> Sos<R, Domain>
@@ -119,6 +149,9 @@ where
     Domain: Clone,
 {
     /// Creates a second-order-section cascade with explicit overall gain.
+    ///
+    /// This constructor creates the canonical stored section representation,
+    /// not the specialized delta-operator runtime form.
     pub fn new(
         sections: impl Into<Vec<SecondOrderSection<R>>>,
         gain: R,
@@ -154,6 +187,9 @@ where
     }
 
     /// Evaluates the cascade at the supplied complex point.
+    ///
+    /// This is transfer-map evaluation of the stored SOS representation; it is
+    /// not tied to a particular runtime recurrence such as DF2T or delta-SOS.
     #[must_use]
     pub fn evaluate(&self, point: Complex<R>) -> Complex<R> {
         self.sections.iter().fold(
@@ -186,7 +222,9 @@ where
     /// Real roots become padded first-order sections, complex-conjugate pairs
     /// become true quadratic sections, and whichever side has fewer sections is
     /// padded with identity factors so the numerator and denominator cascades
-    /// stay aligned section-by-section.
+    /// stay aligned section-by-section. The result is the ordinary stored SOS
+    /// representation from which the delta runtime form can be derived later if
+    /// needed.
     pub fn from_zpk(zpk: &Zpk<R, Domain>) -> Result<Self, LtiError> {
         let numerator_sections = root_sections(zpk.zeros(), "zeros")?;
         let denominator_sections = root_sections(zpk.poles(), "poles")?;

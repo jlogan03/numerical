@@ -41,8 +41,11 @@
 //! # Glossary
 //!
 //! - **DC gain:** Steady-state gain, evaluated at `s = 0` or `z = 1`.
-//! - **SOS:** Second-order sections, a numerically robust cascade form for IIR
-//!   filters.
+//! - **SOS:** Second-order sections, the canonical cascade form for designing,
+//!   storing, and composing realized IIR filters.
+//! - **Delta-SOS:** A derived discrete-time execution form of SOS, used when
+//!   low normalized cutoffs make ordinary section recurrences ill-conditioned
+//!   near `z = 1`.
 //! - **ZPK:** Zero-pole-gain representation.
 //! - **`S`, `T`, `KS`, `PS`:** Classical loop-sensitivity channels.
 //! - **Bode / Nyquist / Nichols:** Standard frequency-domain plotting data.
@@ -61,15 +64,22 @@
 //! - polynomial ratio form (`TransferFunction`)
 //! - zero/pole/root form (`Zpk`)
 //! - sectioned factorization (`Sos`)
+//! - delta-operator execution form of a discrete sectioned factorization
+//!   (`DeltaSos`)
 //! - explicit delay process models (`FopdtModel`, `SopdtModel`)
 //!
 //! # Implementation Notes
 //!
 //! - Dense state space is the most complete representation and often serves as
 //!   the bridge between alternate forms.
+//! - `Sos` is the canonical realized IIR representation for design,
+//!   storage, conversion, and algebra.
+//! - `DeltaSos` is a derived discrete runtime basis for the same transfer map,
+//!   intended specifically for low-cutoff execution where ordinary SOS
+//!   coefficients approach tiny perturbations of `[1, -2, 1]`.
 //! - Digital runtime filtering is intentionally implemented only on
-//!   `DiscreteStateSpace`, `DiscreteSos`, and `Fir`, which are the numerically
-//!   credible execution forms.
+//!   `DiscreteStateSpace`, `DiscreteSos`, `DeltaSos`, and `Fir`, which are the
+//!   numerically credible execution forms.
 //! - Frequency-domain helper surfaces are generally sampled-grid based rather
 //!   than symbolic.
 //! - Continuous delay remains explicit in dedicated process-model types rather
@@ -82,7 +92,7 @@
 //! | State-space modeling | yes | yes | yes | yes | n/a |
 //! | Pole / stability analysis | yes | yes | partial | partial | yes (SISO) |
 //! | DC gain / transfer evaluation | yes | yes | yes | yes | yes |
-//! | Time-domain simulation | yes | yes | partial | yes | FIR yes, SOS yes, TF/ZPK via conversion |
+//! | Time-domain simulation | yes | yes | partial | yes | FIR yes, SOS yes, Delta-SOS yes, TF/ZPK via conversion |
 //! | Response metrics | yes | yes | no | no | yes (SISO) |
 //! | Loop analysis (`S`, `T`, margins, Nyquist, Nichols) | yes (SISO) | yes (SISO) | no | no | yes (SISO) |
 //! | Root locus | yes (SISO) | yes (SISO) | no | no | yes (SISO) |

@@ -4,9 +4,12 @@
 //! conservative:
 //!
 //! - prototype generation and frequency transformations stay in `Zpk` form
-//! - `Sos` is the preferred practical digital output form
+//! - `Sos` is the preferred practical realized output form
 //! - raw polynomial `TransferFunction` output is treated as an interoperability
 //!   view rather than the main working representation
+//! - `DeltaSos` is intentionally not a design target; it is a derived runtime
+//!   form obtained later from a designed `DiscreteSos` when low-cutoff
+//!   execution conditioning matters
 //!
 //! Supported here:
 //!
@@ -35,7 +38,10 @@
 //! - **Prototype:** Normalized analog lowpass filter used as a starting point.
 //! - **Prewarping:** Bilinear-transform frequency correction at one chosen
 //!   frequency.
-//! - **SOS:** Second-order sections, the preferred realized IIR form.
+//! - **SOS:** Second-order sections, the preferred realized IIR design and
+//!   storage form.
+//! - **Delta-SOS:** A derived discrete execution form of SOS, useful when very
+//!   low normalized cutoffs make ordinary section recurrences ill-conditioned.
 //! - **Order selection:** Computing the smallest filter order that meets a
 //!   ripple/attenuation specification.
 //!
@@ -111,7 +117,9 @@ where
 /// Designs an analog IIR filter and returns it in `Sos` form.
 ///
 /// `Sos` is usually the best practical representation for realized high-order
-/// filters because it localizes rounding error section by section.
+/// filters because it localizes rounding error section by section. It is also
+/// the canonical sectioned storage form in this crate; delta-SOS is only a
+/// derived discrete runtime form.
 pub fn design_analog_filter_sos<R>(
     spec: &AnalogFilterSpec<R>,
 ) -> Result<ContinuousSos<R>, FilterDesignError>
@@ -162,7 +170,11 @@ where
 
 /// Designs a digital IIR filter and returns it in `Sos` form.
 ///
-/// This is the recommended output form for practical digital filtering.
+/// This is the canonical realized digital IIR representation in this crate.
+/// It is the preferred storage and interchange form for high-order filters.
+/// Callers that need a different view can convert from this form after design,
+/// including deriving `DeltaSos` later when low-cutoff runtime conditioning is
+/// the main concern.
 pub fn design_digital_filter_sos<R>(
     spec: &DigitalFilterSpec<R>,
 ) -> Result<DiscreteSos<R>, FilterDesignError>

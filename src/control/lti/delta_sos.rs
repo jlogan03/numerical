@@ -10,6 +10,11 @@
 //! into a forward-delta state update. That shifts the numerically important
 //! quantities into explicit small parameters such as `alpha0` and `alpha1`
 //! instead of recovering them from subtraction against large fixed constants.
+//!
+//! `DeltaSos` is therefore a derived discrete execution representation, not a
+//! replacement for ordinary [`DiscreteSos`](super::DiscreteSos). Design,
+//! storage, conversion, and section algebra still flow through the ordinary SOS
+//! type, with delta-SOS introduced only when the runtime basis matters.
 
 use super::error::LtiError;
 use super::util::{cast_real_scalar, trim_leading_zeros, validate_sample_time};
@@ -56,6 +61,12 @@ pub enum DeltaSection<R> {
 }
 
 /// Discrete-time delta-operator second-order-section cascade.
+///
+/// This stores the same transfer map as an ordinary [`DiscreteSos`], but in a
+/// runtime-oriented basis that is better conditioned for low normalized
+/// cutoffs. It is intended to be derived from ordinary SOS storage when
+/// execution conditioning matters, not used as the primary design or algebra
+/// representation.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DeltaSos<R> {
     sections: Vec<DeltaSection<R>>,
@@ -71,7 +82,10 @@ where
     ///
     /// The stored sections are already in execution form. No additional
     /// normalization or section synthesis is performed here beyond validating
-    /// the sample time and rejecting an empty cascade.
+    /// the sample time and rejecting an empty cascade. Callers that start from
+    /// an ordinary IIR design should usually prefer
+    /// [`DiscreteSos::to_delta_sos`](super::DiscreteSos::to_delta_sos) over
+    /// constructing `DeltaSos` sections by hand.
     pub fn new(
         sections: impl Into<Vec<DeltaSection<R>>>,
         gain: R,
@@ -193,7 +207,9 @@ where
     ///
     /// The conversion keeps the original cascade factorization. Each section
     /// is reduced to its true order, normalized to a monic denominator, and
-    /// then rewritten into a forward-delta state update.
+    /// then rewritten into a forward-delta state update. The ordinary
+    /// [`DiscreteSos`] remains the canonical stored representation; this
+    /// conversion only changes the runtime basis used during execution.
     pub fn to_delta_sos(&self) -> Result<DeltaSos<R>, LtiError> {
         let dt = self.sample_time();
         let sections = self

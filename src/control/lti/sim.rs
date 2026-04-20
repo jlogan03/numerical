@@ -6,7 +6,8 @@
 //! representations:
 //!
 //! - dense discrete state-space
-//! - discrete SOS
+//! - ordinary discrete SOS
+//! - delta-operator discrete SOS
 //!
 //! Callers should convert `TransferFunction` or `Zpk` into one of those
 //! representations first instead of running high-order coefficient recurrences
@@ -18,8 +19,9 @@
 //!    scalar signals, including both ordinary causal filtering and
 //!    forward-backward zero-phase filtering.
 //! 2. **Execution-kernel view.** It is also a deliberate restriction of the
-//!    public API to the two forms that are numerically credible for IIR
-//!    execution: explicit state-space recurrences and SOS cascades.
+//!    public API to the forms that are numerically credible for IIR
+//!    execution: explicit state-space recurrences, ordinary SOS cascades, and
+//!    delta-SOS cascades.
 //!
 //! # Glossary
 //!
@@ -32,7 +34,8 @@
 //! The module implements:
 //!
 //! - state-space recurrence `x[k+1] = A x[k] + B u[k]`, `y[k] = C x[k] + D u[k]`
-//! - sectionwise IIR recurrence for SOS cascades
+//! - sectionwise IIR recurrence for ordinary SOS cascades
+//! - delta-state recurrence for delta-SOS cascades
 //! - forward-backward application `y = reverse(F(reverse(F(x))))`
 //!   with configurable endpoint padding
 //!
@@ -45,6 +48,9 @@
 //! - `TransferFunction` and `Zpk` are intentionally excluded from direct
 //!   runtime simulation to avoid endorsing unstable high-order coefficient
 //!   recurrences.
+//! - Ordinary `DiscreteSos` remains the canonical stored/design form; `DeltaSos`
+//!   is a derived execution form for low-cutoff conditioning, not a wholesale
+//!   replacement for SOS.
 
 use super::{DeltaSection, DeltaSos, DiscreteSos, DiscreteStateSpace, LtiError};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum, sum2, sum3};
@@ -194,8 +200,10 @@ where
     /// runtime state.
     ///
     /// The runtime form is direct-form II transposed per section. That keeps
-    /// the state compact and matches the numerically sensible execution model
-    /// for high-order IIR filters represented as SOS cascades.
+    /// the state compact and matches the ordinary execution model for
+    /// high-order IIR filters represented as SOS cascades. When the same
+    /// stored cascade needs better low-cutoff conditioning, convert it to
+    /// `DeltaSos` and use the delta runtime path instead.
     pub fn filter_forward_stateful(
         &self,
         state: &mut SosFilterState<R>,
@@ -267,7 +275,9 @@ where
     /// This uses the delta-state recurrence defined by
     /// [`DeltaSection`](super::DeltaSection), not the ordinary DF2T SOS
     /// recurrence. It is intended for the same transfer map expressed in a
-    /// better-conditioned runtime basis near `z = 1`.
+    /// better-conditioned runtime basis near `z = 1`. The ordinary
+    /// [`DiscreteSos`](super::DiscreteSos) remains the canonical stored and
+    /// design-facing representation.
     pub fn filter_forward(&self, input: &[R]) -> Result<FilteredSignal<R>, LtiError> {
         let mut state = DeltaSosFilterState::zeros(self.sections().len());
         self.filter_forward_stateful(&mut state, input)
