@@ -1,12 +1,12 @@
 //! Simplified SPD-only dynamic-size discrete-time unscented Kalman filtering.
 
 use super::dense::{
-    cholesky_lower, column_matrix_to_vector, llt_solve, mat_add, mat_mul_vec, scale_matrix,
-    transpose, vec_add, vec_as_slice, vec_as_slice_mut, vec_norm, vec_sub, vector_as_column_matrix,
-    vector_from_slice, vectors_as_columns, zero_vector,
+    cholesky_lower, col_as_slice, col_as_slice_mut, column_matrix_to_vector, llt_solve,
+    mat_mul_vec, scale_matrix, vec_add, vec_as_slice, vec_as_slice_mut, vec_norm, vec_sub,
+    vector_as_column_matrix, vector_from_slice, vectors_as_columns, zero_matrix, zero_vector,
 };
 use super::ekf::DiscreteNonlinearModel;
-use super::map_nonlinear_error;
+use super::{map_nonlinear_error, validate_input_dim, validate_output_dim};
 use crate::control::estimation::CovarianceUpdate;
 use crate::control::estimation::nonlinear_core::{
     normalized_innovation_norm, updated_covariance_ukf, weighted_covariance,
@@ -16,6 +16,7 @@ use crate::embedded::EmbeddedError;
 use crate::embedded::alloc::{Matrix, Vector};
 use crate::sparse::compensated::CompensatedField;
 use alloc::vec::Vec;
+use faer::Col;
 use faer_traits::RealField;
 use num_traits::Float;
 
@@ -51,6 +52,44 @@ pub struct UnscentedKalmanUpdate<T> {
     pub predicted_output: Vector<T>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct UkfScratch<T> {
+    sigma_points: Matrix<T>,
+    propagated_state_points: Matrix<T>,
+    measurement_points: Matrix<T>,
+}
+
+impl<T> UkfScratch<T>
+where
+    T: Float + Copy,
+{
+    fn new(state_dim: usize, output_dim: usize) -> Self {
+        let npoints = 2 * state_dim + 1;
+        Self {
+            sigma_points: zero_matrix(state_dim, npoints),
+            propagated_state_points: zero_matrix(state_dim, npoints),
+            measurement_points: zero_matrix(output_dim, npoints),
+        }
+    }
+
+    fn ensure_dims(&mut self, state_dim: usize, output_dim: usize) {
+        let npoints = 2 * state_dim + 1;
+        if self.sigma_points.nrows() != state_dim || self.sigma_points.ncols() != npoints {
+            self.sigma_points = zero_matrix(state_dim, npoints);
+        }
+        if self.propagated_state_points.nrows() != state_dim
+            || self.propagated_state_points.ncols() != npoints
+        {
+            self.propagated_state_points = zero_matrix(state_dim, npoints);
+        }
+        if self.measurement_points.nrows() != output_dim
+            || self.measurement_points.ncols() != npoints
+        {
+            self.measurement_points = zero_matrix(output_dim, npoints);
+        }
+    }
+}
+
 /// Simplified SPD-only unscented Kalman filter runtime.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UnscentedKalmanFilter<T, M> {
@@ -70,6 +109,7 @@ pub struct UnscentedKalmanFilter<T, M> {
     pub beta: T,
     /// Secondary spread parameter.
     pub kappa: T,
+    scratch: UkfScratch<T>,
 }
 
 impl<T, M> UnscentedKalmanFilter<T, M>
@@ -132,6 +172,7 @@ where
             alpha: T::epsilon().sqrt(),
             beta: T::one() + T::one(),
             kappa: T::zero(),
+            scratch: UkfScratch::new(nx, ny),
         })
     }
 
@@ -198,14 +239,11 @@ where
             &weighted_mean(propagated_matrix.as_ref(), vec_as_slice(&weights.mean)),
             "embedded.alloc.ukf.predicted_state",
         )?;
-        let covariance = mat_add(
-            &weighted_covariance(
-                propagated_matrix.as_ref(),
-                vector_as_column_matrix(&state).as_ref(),
-                vec_as_slice(&weights.covariance),
-            ),
-            &self.w,
-        )?;
+        let covariance = weighted_covariance(
+            propagated_matrix.as_ref(),
+            vector_as_column_matrix(&state).as_ref(),
+            vec_as_slice(&weights.covariance),
+        ) + &self.w;
 
         Ok(UnscentedKalmanPrediction {
             state,
@@ -252,14 +290,11 @@ where
             "embedded.alloc.ukf.predicted_output",
         )?;
         let innovation = vec_sub(&vector_from_slice(measurement), &predicted_output)?;
-        let innovation_covariance = mat_add(
-            &weighted_covariance(
-                measurement_points_matrix.as_ref(),
-                vector_as_column_matrix(&predicted_output).as_ref(),
-                vec_as_slice(&weights.covariance),
-            ),
-            &self.v,
-        )?;
+        let innovation_covariance = weighted_covariance(
+            measurement_points_matrix.as_ref(),
+            vector_as_column_matrix(&predicted_output).as_ref(),
+            vec_as_slice(&weights.covariance),
+        ) + &self.v;
         let cross_covariance = weighted_cross_covariance(
             state_points_matrix.as_ref(),
             vector_as_column_matrix(&prediction.state).as_ref(),
@@ -267,11 +302,14 @@ where
             vector_as_column_matrix(&predicted_output).as_ref(),
             vec_as_slice(&weights.covariance),
         );
-        let gain = transpose(&llt_solve(
+        let cross_t = cross_covariance.transpose().to_owned();
+        let gain = llt_solve(
             &innovation_covariance,
-            &transpose(&cross_covariance),
+            &cross_t,
             "embedded.alloc.ukf.innovation_covariance",
-        )?);
+        )?
+        .transpose()
+        .to_owned();
         let state = vec_add(&prediction.state, &mat_mul_vec(&gain, &innovation)?)?;
         let covariance = updated_covariance_ukf(
             CovarianceUpdate::Simple,
@@ -305,11 +343,110 @@ where
         input: &[T],
         measurement: &[T],
     ) -> Result<UnscentedKalmanUpdate<T>, EmbeddedError> {
-        let prediction = self.predict(input)?;
-        let update = self.update(&prediction, input, measurement)?;
-        self.x_hat = update.state.clone();
-        self.p = update.covariance.clone();
-        Ok(update)
+        validate_input_dim(&self.model, input)?;
+        validate_output_dim(&self.model, measurement)?;
+
+        let state_dim = self.model.state_dim();
+        let output_dim = self.model.output_dim();
+        let npoints = 2 * state_dim + 1;
+        self.scratch.ensure_dims(state_dim, output_dim);
+
+        let weights = sigma_weights(state_dim, self.alpha, self.beta, self.kappa)?;
+        fill_sigma_points_matrix(
+            &mut self.scratch.sigma_points,
+            &self.x_hat,
+            &self.p,
+            self.alpha,
+            self.kappa,
+        )?;
+
+        for col in 0..npoints {
+            self.model.transition(
+                col_as_slice(self.scratch.sigma_points.col(col)),
+                input,
+                col_as_slice_mut(self.scratch.propagated_state_points.col_mut(col)),
+            );
+        }
+
+        let predicted_state = column_matrix_to_vector(
+            &weighted_mean(
+                self.scratch.propagated_state_points.as_ref(),
+                vec_as_slice(&weights.mean),
+            ),
+            "embedded.alloc.ukf.predicted_state",
+        )?;
+        let predicted_state_matrix = vector_as_column_matrix(&predicted_state);
+        let predicted_covariance = weighted_covariance(
+            self.scratch.propagated_state_points.as_ref(),
+            predicted_state_matrix.as_ref(),
+            vec_as_slice(&weights.covariance),
+        ) + &self.w;
+
+        for col in 0..npoints {
+            self.model.output(
+                col_as_slice(self.scratch.propagated_state_points.col(col)),
+                input,
+                col_as_slice_mut(self.scratch.measurement_points.col_mut(col)),
+            );
+        }
+
+        let predicted_output = column_matrix_to_vector(
+            &weighted_mean(
+                self.scratch.measurement_points.as_ref(),
+                vec_as_slice(&weights.mean),
+            ),
+            "embedded.alloc.ukf.predicted_output",
+        )?;
+        let predicted_output_matrix = vector_as_column_matrix(&predicted_output);
+        let innovation = vec_sub(&vector_from_slice(measurement), &predicted_output)?;
+        let innovation_covariance = weighted_covariance(
+            self.scratch.measurement_points.as_ref(),
+            predicted_output_matrix.as_ref(),
+            vec_as_slice(&weights.covariance),
+        ) + &self.v;
+        let cross_covariance = weighted_cross_covariance(
+            self.scratch.propagated_state_points.as_ref(),
+            predicted_state_matrix.as_ref(),
+            self.scratch.measurement_points.as_ref(),
+            predicted_output_matrix.as_ref(),
+            vec_as_slice(&weights.covariance),
+        );
+        let cross_t = cross_covariance.transpose().to_owned();
+        let gain = llt_solve(
+            &innovation_covariance,
+            &cross_t,
+            "embedded.alloc.ukf.innovation_covariance",
+        )?
+        .transpose()
+        .to_owned();
+        let state = vec_add(&predicted_state, &mat_mul_vec(&gain, &innovation)?)?;
+        let covariance = updated_covariance_ukf(
+            CovarianceUpdate::Simple,
+            predicted_covariance.as_ref(),
+            gain.as_ref(),
+            cross_covariance.as_ref(),
+            self.v.as_ref(),
+            innovation_covariance.as_ref(),
+        )
+        .map_err(map_nonlinear_error)?;
+
+        self.x_hat = state.clone();
+        self.p = covariance.clone();
+
+        Ok(UnscentedKalmanUpdate {
+            innovation_norm: vec_norm(&innovation),
+            normalized_innovation_norm: normalized_innovation_norm(
+                vector_as_column_matrix(&innovation).as_ref(),
+                innovation_covariance.as_ref(),
+            )
+            .map_err(map_nonlinear_error)?,
+            innovation,
+            innovation_covariance,
+            gain,
+            state,
+            covariance,
+            predicted_output,
+        })
     }
 }
 
@@ -358,6 +495,28 @@ where
     T: Float + Copy,
 {
     let n = state.nrows();
+    let mut points_matrix = zero_matrix(n, 2 * n + 1);
+    fill_sigma_points_matrix(&mut points_matrix, state, covariance, alpha, kappa)?;
+
+    let mut points = Vec::with_capacity(2 * n + 1);
+    for col in 0..points_matrix.ncols() {
+        let point = points_matrix.col(col);
+        points.push(Col::from_fn(n, |row| point[row]));
+    }
+    Ok(points)
+}
+
+fn fill_sigma_points_matrix<T>(
+    points: &mut Matrix<T>,
+    state: &Vector<T>,
+    covariance: &Matrix<T>,
+    alpha: T,
+    kappa: T,
+) -> Result<(), EmbeddedError>
+where
+    T: Float + Copy,
+{
+    let n = state.nrows();
     let n_t = T::from(n).ok_or(EmbeddedError::InvalidParameter {
         which: "embedded.alloc.ukf.state_dim",
     })?;
@@ -368,51 +527,21 @@ where
         "embedded.alloc.ukf.cholesky",
     )?;
 
-    let mut points = Vec::with_capacity(2 * n + 1);
-    points.push(state.clone());
+    if points.nrows() != n || points.ncols() != 2 * n + 1 {
+        *points = zero_matrix(n, 2 * n + 1);
+    }
+
+    for row in 0..n {
+        points[(row, 0)] = state[row];
+    }
     for col in 0..n {
-        let mut plus = state.clone();
-        let mut minus = state.clone();
         for row in 0..n {
-            plus[row] = plus[row] + factor[(row, col)];
-            minus[row] = minus[row] - factor[(row, col)];
+            let delta = factor[(row, col)];
+            points[(row, col + 1)] = state[row] + delta;
+            points[(row, col + n + 1)] = state[row] - delta;
         }
-        points.push(plus);
-        points.push(minus);
     }
-    Ok(points)
-}
-
-/// Validates the nonlinear-model input dimension.
-fn validate_input_dim<T, M>(model: &M, input: &[T]) -> Result<(), EmbeddedError>
-where
-    M: DiscreteNonlinearModel<T>,
-{
-    if input.len() == model.input_dim() {
-        Ok(())
-    } else {
-        Err(EmbeddedError::LengthMismatch {
-            which: "embedded.alloc.estimation.input",
-            expected: model.input_dim(),
-            actual: input.len(),
-        })
-    }
-}
-
-/// Validates the nonlinear-model output dimension.
-fn validate_output_dim<T, M>(model: &M, output: &[T]) -> Result<(), EmbeddedError>
-where
-    M: DiscreteNonlinearModel<T>,
-{
-    if output.len() == model.output_dim() {
-        Ok(())
-    } else {
-        Err(EmbeddedError::LengthMismatch {
-            which: "embedded.alloc.estimation.output",
-            expected: model.output_dim(),
-            actual: output.len(),
-        })
-    }
+    Ok(())
 }
 
 #[cfg(test)]

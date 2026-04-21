@@ -210,19 +210,6 @@ pub fn max_square_era_block_dim(markov_len: usize) -> usize {
     markov_len.saturating_sub(1) / 2
 }
 
-/// Recommended square ERA block dimension from the available Markov length.
-///
-/// This helper returns the largest admissible square size.
-/// Higher-level algorithms are free to choose smaller dimensions if they want
-/// a thinner identification window.
-///
-/// Later heuristics can become more conservative without changing the caller
-/// contract.
-#[must_use]
-pub fn recommended_square_era_block_dim(markov_len: usize) -> usize {
-    max_square_era_block_dim(markov_len)
-}
-
 /// Validates that a Markov sequence is long enough to support the requested
 /// block-Hankel layout.
 ///
@@ -260,8 +247,7 @@ fn validate_hankel_request(
 #[cfg(test)]
 mod tests {
     use super::{
-        BlockHankel, ShiftedBlockHankelPair, max_square_era_block_dim,
-        recommended_square_era_block_dim, required_markov_len,
+        BlockHankel, ShiftedBlockHankelPair, max_square_era_block_dim, required_markov_len,
     };
     use crate::control::realization::{MarkovSequence, RealizationError};
     use faer::Mat;
@@ -323,6 +309,6 @@ mod tests {
         assert_eq!(max_square_era_block_dim(0), 0);
         assert_eq!(max_square_era_block_dim(1), 0);
         assert_eq!(max_square_era_block_dim(5), 2);
-        assert_eq!(recommended_square_era_block_dim(7), 3);
+        assert_eq!(max_square_era_block_dim(7), 3);
     }
 }

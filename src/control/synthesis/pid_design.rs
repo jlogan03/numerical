@@ -55,7 +55,7 @@ use crate::control::identification::{
 };
 use crate::control::lti::state_space::{ContinuousStateSpace, DiscreteStateSpace, StateSpaceError};
 use crate::control::lti::{ContinuousTransferFunction, DiscreteTransferFunction, LtiError};
-use crate::control::realization::recommended_square_era_block_dim;
+use crate::control::realization::max_square_era_block_dim;
 use alloc::vec::Vec;
 use core::fmt;
 use faer::Mat;
@@ -854,7 +854,7 @@ pub fn design_pid_from_okid_era(
     let inputs = Mat::from_fn(1, nsamples, |_, col| data.input()[col]);
     let outputs = Mat::from_fn(1, nsamples, |_, col| data.output()[col]);
     let okid_result = okid(outputs.as_ref(), inputs.as_ref(), okid_params)?;
-    let q = recommended_square_era_block_dim(okid_result.markov.len());
+    let q = max_square_era_block_dim(okid_result.markov.len());
     if q == 0 {
         return Err(PidDesignError::InvalidData {
             which: "okid_era.block_dim",
@@ -1262,36 +1262,36 @@ impl DiscreteStepPidLmProblem<'_> {
         let spec = self.linear_pid_spec();
         let controller = match build_linear_pid_core(spec) {
             Ok(controller) => controller,
-            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+            Err(_) => return step_optimization_penalty_vector(self.params.horizon_steps),
         };
         let controller_tf = match controller.to_transfer_function_discrete(self.plant.sample_time())
         {
             Ok(tf) => tf,
-            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+            Err(_) => return step_optimization_penalty_vector(self.params.horizon_steps),
         };
         let open_loop = match controller_tf.mul(self.plant) {
             Ok(tf) => tf,
-            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+            Err(_) => return step_optimization_penalty_vector(self.params.horizon_steps),
         };
         let closed_output = match open_loop.unity_feedback() {
             Ok(tf) => tf,
-            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+            Err(_) => return step_optimization_penalty_vector(self.params.horizon_steps),
         };
         let closed_control = match controller_tf.feedback(self.plant) {
             Ok(tf) => tf,
-            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+            Err(_) => return step_optimization_penalty_vector(self.params.horizon_steps),
         };
         let closed_output_ss = match closed_output.to_state_space() {
             Ok(ss) => ss,
-            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+            Err(_) => return step_optimization_penalty_vector(self.params.horizon_steps),
         };
         let stable = closed_output_ss.is_asymptotically_stable().unwrap_or(false);
         if !stable {
-            return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]);
+            return step_optimization_penalty_vector(self.params.horizon_steps);
         }
         let closed_control_ss = match closed_control.to_state_space() {
             Ok(ss) => ss,
-            Err(_) => return OVector::<f64, Dyn>::from_vec(vec![1.0e6; self.params.horizon_steps]),
+            Err(_) => return step_optimization_penalty_vector(self.params.horizon_steps),
         };
         let output_response = closed_output_ss.step_response(self.params.horizon_steps);
         let control_response = closed_control_ss.step_response(self.params.horizon_steps);
@@ -1852,6 +1852,11 @@ fn interpolate_input_step_time(
     let target = lhs_u + 0.5 * du;
     let alpha = (target - lhs_u) / du;
     Ok(lhs_t + alpha * (rhs_t - lhs_t))
+}
+
+/// Large residual vector returned when step-optimization tuning hits an invalid design.
+fn step_optimization_penalty_vector(horizon_steps: usize) -> OVector<f64, Dyn> {
+    OVector::<f64, Dyn>::from_vec(vec![1.0e6; horizon_steps])
 }
 
 /// Heuristic tail length used for steady-state averaging.

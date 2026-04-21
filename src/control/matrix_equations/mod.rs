@@ -47,6 +47,10 @@
 //! | Stein | yes | yes | no | yes |
 //! | Riccati | yes | no | yes | yes |
 
+pub(super) fn vec_index(row: usize, col: usize, nrows: usize) -> usize {
+    row + nrows * col
+}
+
 pub mod lyapunov;
 pub mod riccati;
 pub mod stein;

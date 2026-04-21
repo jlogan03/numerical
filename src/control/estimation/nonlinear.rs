@@ -64,7 +64,7 @@ use alloc::{boxed::Box, vec::Vec};
 use core::fmt;
 use faer::{Mat, MatRef};
 use faer_traits::ComplexField;
-use num_traits::{Float, NumCast};
+use num_traits::Float;
 
 use crate::sparse::compensated::CompensatedField;
 
@@ -161,12 +161,12 @@ pub struct UnscentedParams<R> {
 
 impl<R> Default for UnscentedParams<R>
 where
-    R: Float + NumCast,
+    R: Float,
 {
     fn default() -> Self {
         Self {
-            alpha: NumCast::from(1.0e-3).unwrap(),
-            beta: NumCast::from(2.0).unwrap(),
+            alpha: R::epsilon().sqrt(),
+            beta: R::one() + R::one(),
             kappa: R::zero(),
         }
     }

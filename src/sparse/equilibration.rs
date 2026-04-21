@@ -177,8 +177,8 @@ impl<T: ComplexField> Equilibration<T> {
         // rebalance a scratch copy of the values so each iteration measures the
         // same sparse pattern under progressively better scaling.
         let mut working = matrix.val().to_vec();
-        let one = real_one::<T::Real>();
-        let zero = real_zero::<T::Real>();
+        let one = T::Real::one();
+        let zero = T::Real::zero();
 
         let mut row_scale = vec![one; nrows];
         let mut col_scale = vec![one; ncols];
@@ -274,8 +274,8 @@ impl<T: ComplexField> Equilibration<T> {
         // callers can reuse the original matrix for an unscaled solve or for
         // constructing a separately scaled copy later.
         let mut working = matrix.val().to_vec();
-        let one = real_one::<T::Real>();
-        let zero = real_zero::<T::Real>();
+        let one = T::Real::one();
+        let zero = T::Real::zero();
 
         let mut row_scale = vec![one; nrows];
         let mut col_scale = vec![one; ncols];
@@ -529,18 +529,6 @@ impl<T: ComplexField> Equilibration<T> {
     }
 }
 
-#[inline]
-fn real_zero<R: Float>() -> R {
-    // Keeping these tiny helpers local avoids depending on a particular
-    // extension-trait path for `zero()` / `one()` across real scalar types.
-    R::from(0.0).unwrap()
-}
-
-#[inline]
-fn real_one<R: Float>() -> R {
-    R::from(1.0).unwrap()
-}
-
 fn validate_params<R: Float + Copy>(
     params: EquilibrationParams<R>,
 ) -> Result<(), EquilibrationError> {
@@ -549,12 +537,12 @@ fn validate_params<R: Float + Copy>(
             reason: "max_iters must be at least 1",
         });
     }
-    if params.tol < real_zero::<R>() {
+    if params.tol < R::zero() {
         return Err(EquilibrationError::InvalidParams {
             reason: "tol must be nonnegative",
         });
     }
-    if params.norm_floor <= real_zero::<R>() {
+    if params.norm_floor <= R::zero() {
         return Err(EquilibrationError::InvalidParams {
             reason: "norm_floor must be positive",
         });
@@ -574,12 +562,12 @@ fn validate_nonzero_norms<R: Float + Copy>(
     // A zero row or column cannot be balanced to unit norm without an explicit
     // singular-handling policy, so we surface it immediately.
     for (index, &value) in row_norm.iter().enumerate() {
-        if value <= real_zero::<R>() {
+        if value <= R::zero() {
             return Err(EquilibrationError::ZeroRow { index });
         }
     }
     for (index, &value) in col_norm.iter().enumerate() {
-        if value <= real_zero::<R>() {
+        if value <= R::zero() {
             return Err(EquilibrationError::ZeroColumn { index });
         }
     }
@@ -587,12 +575,12 @@ fn validate_nonzero_norms<R: Float + Copy>(
 }
 
 fn max_deviation<R: Float + Copy>(row_norm: &[R], col_norm: &[R]) -> R {
-    let one = real_one::<R>();
+    let one = R::one();
     row_norm
         .iter()
         .chain(col_norm.iter())
         .map(|&value| (value - one).abs())
-        .fold(real_zero::<R>(), |max_dev, dev| max_dev.max(dev))
+        .fold(R::zero(), |max_dev, dev| max_dev.max(dev))
 }
 
 fn compute_updates<R: Float + Copy>(

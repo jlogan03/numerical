@@ -50,6 +50,7 @@
 //!   workflows line up across time domains.
 
 use super::lyapunov::{LowRankLyapunovSolve, LyapunovParams, ShiftStrategy};
+use super::vec_index;
 use crate::sparse::SparseLuError;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use crate::sparse::lu::SparseLu;
@@ -718,10 +719,6 @@ where
 
 fn unvectorize_square<T: ComplexField + Copy>(values: MatRef<'_, T>, n: usize) -> Mat<T> {
     Mat::from_fn(n, n, |row, col| values[(vec_index(row, col, n), 0)])
-}
-
-fn vec_index(row: usize, col: usize, nrows: usize) -> usize {
-    row + nrows * col
 }
 
 fn hermitianize_in_place<T>(matrix: &mut Mat<T>)

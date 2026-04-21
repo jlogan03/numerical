@@ -109,7 +109,7 @@ pub use matrix_equations::{
 };
 pub use realization::{
     BlockHankel, MarkovSequence, RealizationError, ShiftedBlockHankelPair, hankel_matrix_shape,
-    max_square_era_block_dim, recommended_square_era_block_dim, required_markov_len,
+    max_square_era_block_dim, required_markov_len,
 };
 pub use reduction::{
     BalancedError, BalancedInternals, BalancedParams, BalancedTruncationResult, HsvdError,

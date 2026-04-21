@@ -7,6 +7,36 @@ mod dense;
 mod ekf;
 mod ukf;
 
+fn validate_input_dim<T, M>(model: &M, input: &[T]) -> Result<(), EmbeddedError>
+where
+    M: ekf::DiscreteNonlinearModel<T>,
+{
+    if input.len() == model.input_dim() {
+        Ok(())
+    } else {
+        Err(EmbeddedError::LengthMismatch {
+            which: "embedded.alloc.estimation.input",
+            expected: model.input_dim(),
+            actual: input.len(),
+        })
+    }
+}
+
+fn validate_output_dim<T, M>(model: &M, output: &[T]) -> Result<(), EmbeddedError>
+where
+    M: ekf::DiscreteNonlinearModel<T>,
+{
+    if output.len() == model.output_dim() {
+        Ok(())
+    } else {
+        Err(EmbeddedError::LengthMismatch {
+            which: "embedded.alloc.estimation.output",
+            expected: model.output_dim(),
+            actual: output.len(),
+        })
+    }
+}
+
 fn map_nonlinear_error(error: NonlinearEstimatorError) -> EmbeddedError {
     match error {
         NonlinearEstimatorError::DimensionMismatch {

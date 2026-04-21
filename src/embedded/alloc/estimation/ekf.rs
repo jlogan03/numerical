@@ -1,10 +1,10 @@
 //! Simplified dynamic-size discrete-time extended Kalman filtering.
 
 use super::dense::{
-    llt_solve, mat_mul, mat_mul_vec, transpose, vec_add, vec_as_slice, vec_as_slice_mut, vec_norm,
-    vec_sub, vector_as_column_matrix, vector_from_slice, zero_matrix, zero_vector,
+    llt_solve, mat_mul, mat_mul_vec, vec_add, vec_as_slice, vec_as_slice_mut, vec_norm, vec_sub,
+    vector_as_column_matrix, vector_from_slice, zero_matrix, zero_vector,
 };
-use super::map_nonlinear_error;
+use super::{map_nonlinear_error, validate_input_dim, validate_output_dim};
 use crate::control::estimation::CovarianceUpdate;
 use crate::control::estimation::nonlinear_core::{
     normalized_innovation_norm, predict_covariance, updated_covariance,
@@ -202,12 +202,16 @@ where
         let innovation = vec_sub(&vector_from_slice(measurement), &prediction.output)?;
         let innovation_covariance =
             predict_covariance(h.as_ref(), prediction.covariance.as_ref(), self.v.as_ref());
-        let cross_covariance = mat_mul(&prediction.covariance, &transpose(&h))?;
-        let gain = transpose(&llt_solve(
+        let h_t = h.transpose().to_owned();
+        let cross_covariance = mat_mul(&prediction.covariance, &h_t)?;
+        let cross_t = cross_covariance.transpose().to_owned();
+        let gain = llt_solve(
             &innovation_covariance,
-            &transpose(&cross_covariance),
+            &cross_t,
             "embedded.alloc.ekf.innovation_covariance",
-        )?);
+        )?
+        .transpose()
+        .to_owned();
         let state = vec_add(&prediction.state, &mat_mul_vec(&gain, &innovation)?)?;
         let covariance = updated_covariance(
             CovarianceUpdate::Joseph,
@@ -249,38 +253,6 @@ where
         self.x_hat = update.state.clone();
         self.p = update.covariance.clone();
         Ok(update)
-    }
-}
-
-/// Validates the input dimension for one nonlinear model call.
-fn validate_input_dim<T, M>(model: &M, input: &[T]) -> Result<(), EmbeddedError>
-where
-    M: DiscreteNonlinearModel<T>,
-{
-    if input.len() == model.input_dim() {
-        Ok(())
-    } else {
-        Err(EmbeddedError::LengthMismatch {
-            which: "embedded.alloc.estimation.input",
-            expected: model.input_dim(),
-            actual: input.len(),
-        })
-    }
-}
-
-/// Validates the measurement dimension for one nonlinear model call.
-fn validate_output_dim<T, M>(model: &M, output: &[T]) -> Result<(), EmbeddedError>
-where
-    M: DiscreteNonlinearModel<T>,
-{
-    if output.len() == model.output_dim() {
-        Ok(())
-    } else {
-        Err(EmbeddedError::LengthMismatch {
-            which: "embedded.alloc.estimation.output",
-            expected: model.output_dim(),
-            actual: output.len(),
-        })
     }
 }
 

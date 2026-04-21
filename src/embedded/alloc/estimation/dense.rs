@@ -4,7 +4,7 @@ use crate::embedded::alloc::{Matrix, Vector};
 use crate::embedded::error::EmbeddedError;
 use crate::embedded::math::ensure_finite;
 use faer::linalg::solvers::Solve;
-use faer::{Col, Mat, Side, Unbind};
+use faer::{Col, ColMut, ColRef, Mat, Side, Unbind};
 use faer_traits::ComplexField;
 use num_traits::Float;
 
@@ -106,39 +106,34 @@ where
 
 /// Returns an immutable slice view of one dense vector.
 pub(super) fn vec_as_slice<T>(vector: &Vector<T>) -> &[T] {
-    vector.try_as_col_major().unwrap().as_slice()
+    match vector.try_as_col_major() {
+        Some(col) => col.as_slice(),
+        None => unreachable!("faer Col storage is always contiguous"),
+    }
 }
 
 /// Returns a mutable slice view of one dense vector.
 pub(super) fn vec_as_slice_mut<T>(vector: &mut Vector<T>) -> &mut [T] {
-    vector.try_as_col_major_mut().unwrap().as_slice_mut()
-}
-
-/// Returns the transpose of one dense matrix.
-pub(super) fn transpose<T: Copy>(matrix: &Matrix<T>) -> Matrix<T> {
-    Mat::from_fn(matrix.ncols(), matrix.nrows(), |row, col| {
-        matrix[(col, row)]
-    })
-}
-
-/// Returns the matrix sum `lhs + rhs`.
-pub(super) fn mat_add<T>(lhs: &Matrix<T>, rhs: &Matrix<T>) -> Result<Matrix<T>, EmbeddedError>
-where
-    T: Float + Copy,
-{
-    if lhs.nrows() != rhs.nrows() || lhs.ncols() != rhs.ncols() {
-        return Err(EmbeddedError::DimensionMismatch {
-            which: "embedded.alloc.matrix.add",
-            expected_rows: lhs.nrows(),
-            expected_cols: lhs.ncols(),
-            actual_rows: rhs.nrows(),
-            actual_cols: rhs.ncols(),
-        });
+    match vector.try_as_col_major_mut() {
+        Some(col) => col.as_slice_mut(),
+        None => unreachable!("faer Col storage is always contiguous"),
     }
+}
 
-    Ok(Mat::from_fn(lhs.nrows(), lhs.ncols(), |row, col| {
-        lhs[(row, col)] + rhs[(row, col)]
-    }))
+/// Returns an immutable slice view of one dense matrix column.
+pub(super) fn col_as_slice<T>(column: ColRef<'_, T>) -> &[T] {
+    match column.try_as_col_major() {
+        Some(col) => col.as_slice(),
+        None => unreachable!("faer Col storage is always contiguous"),
+    }
+}
+
+/// Returns a mutable slice view of one dense matrix column.
+pub(super) fn col_as_slice_mut<T>(column: ColMut<'_, T>) -> &mut [T] {
+    match column.try_as_col_major_mut() {
+        Some(col) => col.as_slice_mut(),
+        None => unreachable!("faer Col storage is always contiguous"),
+    }
 }
 
 /// Returns the scalar-scaled matrix `alpha * matrix`.
