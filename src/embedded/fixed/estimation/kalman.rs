@@ -228,8 +228,14 @@ impl<T, const NX: usize, const NU: usize, const NY: usize> SteadyStateKalmanFilt
 where
     T: Float + Copy,
 {
-    /// Creates a fixed-gain steady-state observer.
-    pub fn new(
+    /// Creates a fixed-gain steady-state observer from an explicit filter-form
+    /// correction gain.
+    ///
+    /// This is the runtime-side counterpart to
+    /// [`crate::control::steady_state_filter_gain_dense`]. The supplied `gain`
+    /// must already be the filter-form steady-state correction gain `K` used
+    /// in `x^+ = x^- + K (y - y^-)`.
+    pub fn from_filter_gain(
         system: DiscreteStateSpace<T, NX, NU, NY>,
         gain: Matrix<T, NX, NY>,
         x_hat: Vector<T, NX>,
@@ -378,6 +384,28 @@ mod tests {
 
         let update = filter.step([0.0], [1.0]).unwrap();
         assert!(update.output[0].is_finite());
+        assert!(filter.state_estimate()[0].is_finite());
+    }
+
+    #[test]
+    fn steady_state_from_filter_gain_runs() {
+        let system = DiscreteStateSpace::new(
+            [[1.0, 0.1], [0.0, 1.0]],
+            [[0.0], [0.1]],
+            [[1.0, 0.0]],
+            [[0.0]],
+            0.1,
+        )
+        .unwrap();
+        let mut filter = SteadyStateKalmanFilter::from_filter_gain(
+            system,
+            [[0.75], [0.25]],
+            [0.0, 0.0],
+            Some(identity_matrix::<f64, 2>()),
+        );
+
+        let output = filter.step([0.0], [1.0]);
+        assert!(output[0].is_finite());
         assert!(filter.state_estimate()[0].is_finite());
     }
 }

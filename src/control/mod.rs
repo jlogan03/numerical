@@ -87,7 +87,7 @@ pub use estimation::{
     NonlinearKalmanPrediction, NonlinearKalmanUpdate, SigmaPointProvider, SigmaPointSet,
     SigmaPointStrategy, SteadyStateKalmanFilter, SteadyStateKalmanPrediction,
     SteadyStateKalmanUpdate, UkfStage, UnscentedKalmanFilter, UnscentedParams, dlqe_dense,
-    lqe_dense,
+    lqe_dense, steady_state_filter_gain_dense,
 };
 pub use identification::{
     EraError, EraInternals, EraInternalsLevel, EraParams, EraResult, OkidError, OkidParams,

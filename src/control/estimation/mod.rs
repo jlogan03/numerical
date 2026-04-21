@@ -71,6 +71,7 @@ pub use linear::{
     ContinuousObserver, ContinuousObserverDerivative, CovarianceUpdate, DiscreteKalmanFilter,
     EstimatorError, KalmanPrediction, KalmanUpdate, LqeSolve, SteadyStateKalmanFilter,
     SteadyStateKalmanPrediction, SteadyStateKalmanUpdate, dlqe_dense, lqe_dense,
+    steady_state_filter_gain_dense,
 };
 pub use nonlinear::{
     DiscreteExtendedKalmanModel, DiscreteNonlinearModel, ExtendedKalmanFilter,

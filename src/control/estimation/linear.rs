@@ -565,7 +565,7 @@ where
     ) -> Result<Self, EstimatorError> {
         let solve = system.dlqe(w, v)?;
         let (gain, innovation_covariance) =
-            steady_state_filter_gain(system.c(), v, solve.covariance.as_ref())?;
+            steady_state_filter_gain_dense(system.c(), v, solve.covariance.as_ref())?;
         let mut posterior_covariance = updated_covariance(
             CovarianceUpdate::default(),
             solve.covariance.as_ref(),
@@ -880,7 +880,7 @@ where
         x_hat: Mat<T>,
     ) -> Result<Self, EstimatorError> {
         let solve = system.dlqe(w, v)?;
-        let (gain, _) = steady_state_filter_gain(system.c(), v, solve.covariance.as_ref())?;
+        let (gain, _) = steady_state_filter_gain_dense(system.c(), v, solve.covariance.as_ref())?;
         Self::from_filter_gain(system, gain, x_hat, Some(solve.covariance))
     }
 
@@ -1307,7 +1307,21 @@ where
     a - &lc
 }
 
-fn steady_state_filter_gain<T>(
+/// Forms the filter-form steady-state correction gain from a dense `DLQE`
+/// prior covariance.
+///
+/// `DLQE` returns the steady-state a-priori covariance `P^-`. Runtime
+/// filter-form observers use the correction gain
+///
+/// `K = P^- C^H (C P^- C^H + V)^-1`
+///
+/// together with the innovation covariance
+///
+/// `S = C P^- C^H + V`.
+///
+/// This helper keeps that conversion on the allocating design side so runtime
+/// fixed-gain observers can be constructed separately from the Riccati solve.
+pub fn steady_state_filter_gain_dense<T>(
     c: MatRef<'_, T>,
     v: MatRef<'_, T>,
     prior_covariance: MatRef<'_, T>,
@@ -1718,9 +1732,12 @@ mod test {
         let v = Mat::from_fn(1, 1, |_, _| 0.3f64);
         let x0 = Mat::from_fn(1, 1, |_, _| 0.0f64);
         let solve = system.dlqe(w.as_ref(), v.as_ref()).unwrap();
-        let (filter_gain, _) =
-            super::steady_state_filter_gain(system.c(), v.as_ref(), solve.covariance.as_ref())
-                .unwrap();
+        let (filter_gain, _) = super::steady_state_filter_gain_dense(
+            system.c(),
+            v.as_ref(),
+            solve.covariance.as_ref(),
+        )
+        .unwrap();
 
         let from_filter_gain = SteadyStateKalmanFilter::from_filter_gain(
             &system,
