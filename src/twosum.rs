@@ -5,6 +5,13 @@ use num_traits::Float;
 ///
 /// Returns `(sum, err)` such that `sum` is the rounded floating-point sum and
 /// `err` is the rounding error.
+///
+/// Args:
+///   a: First scalar addend.
+///   b: Second scalar addend.
+///
+/// Returns:
+///   A pair `(sum, err)` where `sum + err` equals the exact real-number sum.
 #[inline]
 pub fn twosum<T: Float>(a: T, b: T) -> (T, T) {
     let sum = a + b;
@@ -18,6 +25,13 @@ pub fn twosum<T: Float>(a: T, b: T) -> (T, T) {
 }
 
 /// Sums an iterator of values with the `TwoSum` accumulator.
+///
+/// Args:
+///   values: Scalar values to accumulate.
+///
+/// Returns:
+///   A pair `(sum, err)` where `sum` is the rounded accumulated value and
+///   `err` is the residual rounding term.
 #[inline]
 #[must_use]
 pub fn sum<I, T>(values: I) -> (T, T)
@@ -44,6 +58,9 @@ where
 /// Incoming values are staged until all lanes are full. At that point, each
 /// lane performs its own scalar `twosum` update, which gives the optimizer a
 /// fixed-width loop it can vectorize with SLP.
+///
+/// `NLANES` is the number of staged scalar lanes, not a matrix or vector
+/// dimension.
 #[derive(Clone, Copy, Debug)]
 pub struct TwoSum<T: Float, const NLANES: usize = 8> {
     values: [T; NLANES],
@@ -54,6 +71,12 @@ pub struct TwoSum<T: Float, const NLANES: usize = 8> {
 
 impl<T: Float, const NLANES: usize> TwoSum<T, NLANES> {
     /// Creates a new accumulator with an initial value and zero residual.
+    ///
+    /// Args:
+    ///   value: Initial scalar value.
+    ///
+    /// Returns:
+    ///   A new accumulator seeded with `value`.
     #[inline]
     #[must_use]
     pub fn new(value: T) -> Self {
@@ -61,6 +84,13 @@ impl<T: Float, const NLANES: usize> TwoSum<T, NLANES> {
     }
 
     /// Creates a new accumulator with an initial value and residual.
+    ///
+    /// Args:
+    ///   value: Initial scalar value.
+    ///   residual: Initial residual term paired with `value`.
+    ///
+    /// Returns:
+    ///   A new accumulator seeded with the supplied value and residual.
     #[inline]
     #[must_use]
     pub fn with_residual(value: T, residual: T) -> Self {
@@ -81,6 +111,9 @@ impl<T: Float, const NLANES: usize> TwoSum<T, NLANES> {
     }
 
     /// Adds a value into the staged lanes.
+    ///
+    /// Args:
+    ///   value: Scalar value to accumulate.
     #[inline]
     pub fn add(&mut self, value: T) {
         self.staged[self.staged_len] = value;
@@ -92,6 +125,9 @@ impl<T: Float, const NLANES: usize> TwoSum<T, NLANES> {
     }
 
     /// Finishes the accumulation and returns `(value, residual)`.
+    ///
+    /// Returns:
+    ///   The final rounded accumulated value and its residual rounding term.
     #[inline]
     #[must_use]
     pub fn finish(mut self) -> (T, T) {

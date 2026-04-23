@@ -60,47 +60,32 @@ where
         })
     }
 
-    /// Returns the state matrix.
-    ///
-    /// Returns:
-    ///   The `A` matrix with shape `(NX, NX)`.
+    /// Returns the state matrix `A` with shape `(NX, NX)`.
     #[must_use]
     pub fn a(&self) -> &Matrix<T, NX, NX> {
         &self.a
     }
 
-    /// Returns the input matrix.
-    ///
-    /// Returns:
-    ///   The `B` matrix with shape `(NX, NU)`.
+    /// Returns the input matrix `B` with shape `(NX, NU)`.
     #[must_use]
     pub fn b(&self) -> &Matrix<T, NX, NU> {
         &self.b
     }
 
-    /// Returns the output matrix.
-    ///
-    /// Returns:
-    ///   The `C` matrix with shape `(NY, NX)`.
+    /// Returns the output matrix `C` with shape `(NY, NX)`.
     #[must_use]
     pub fn c(&self) -> &Matrix<T, NY, NX> {
         &self.c
     }
 
-    /// Returns the feedthrough matrix.
-    ///
-    /// Returns:
-    ///   The `D` matrix with shape `(NY, NU)`.
+    /// Returns the feedthrough matrix `D` with shape `(NY, NU)`.
     #[must_use]
     pub fn d(&self) -> &Matrix<T, NY, NU> {
         &self.d
     }
 
-    /// Returns the stored sample interval.
-    ///
-    /// Returns:
-    ///   The sample interval in the same time unit that was supplied to
-    ///   [`Self::new`].
+    /// Returns the stored sample interval in the same time unit supplied to
+    /// [`Self::new`].
     #[must_use]
     pub fn sample_time(&self) -> T {
         self.sample_time

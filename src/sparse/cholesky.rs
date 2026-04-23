@@ -173,6 +173,9 @@ impl From<LdltError> for SparseLdltError {
 /// - refactor quickly when only the matrix values change
 /// - solve directly with the stored factorization
 /// - act as a right or left preconditioner through `Precond<T>`
+///
+/// All solve entry points expect right-hand sides with `n = nrows() = ncols()`
+/// rows.
 #[derive(Debug)]
 pub struct SparseLlt<I: Index, T> {
     symbolic: SymbolicCholesky<I>,
@@ -185,6 +188,15 @@ pub struct SparseLlt<I: Index, T> {
 
 impl<I: Index, T: ComplexField> SparseLlt<I, T> {
     /// Performs symbolic analysis for a CSC self-adjoint matrix pattern.
+    ///
+    /// Args:
+    ///   matrix: Sparse CSC self-adjoint matrix with shape `(n, n)`.
+    ///   side: Which triangle of `matrix` is interpreted as self-adjoint data.
+    ///   ordering: Symbolic ordering strategy used during analysis.
+    ///   symbolic_params: Backend symbolic-analysis parameters.
+    ///
+    /// Returns:
+    ///   A wrapper containing symbolic analysis and empty numeric storage.
     pub fn analyze<ViewT>(
         matrix: SparseColMatRef<'_, I, ViewT>,
         side: Side,
@@ -216,6 +228,18 @@ impl<I: Index, T: ComplexField> SparseLlt<I, T> {
     }
 
     /// Performs symbolic analysis and the first numeric factorization.
+    ///
+    /// Args:
+    ///   matrix: Sparse CSC self-adjoint matrix with shape `(n, n)`.
+    ///   side: Which triangle of `matrix` is interpreted as self-adjoint data.
+    ///   ordering: Symbolic ordering strategy used during analysis.
+    ///   symbolic_params: Backend symbolic-analysis parameters.
+    ///   regularization: Numeric regularization policy for the LLT factorization.
+    ///   par: Parallelism setting for backend kernels.
+    ///   numeric_params: Backend numeric-factorization parameters.
+    ///
+    /// Returns:
+    ///   A numerically ready sparse LLT factorization wrapper.
     pub fn factorize<ViewT>(
         matrix: SparseColMatRef<'_, I, ViewT>,
         side: Side,
@@ -268,7 +292,7 @@ impl<I: Index, T: ComplexField> SparseLlt<I, T> {
         &self.symbolic
     }
 
-    /// Borrow the stored numeric factor values.
+    /// Borrow the stored numeric factor values in the backend storage layout.
     #[inline]
     #[must_use]
     pub fn values(&self) -> &[T] {
@@ -276,6 +300,16 @@ impl<I: Index, T: ComplexField> SparseLlt<I, T> {
     }
 
     /// Recomputes the numeric LLT factors for a matrix with the same CSC pattern.
+    ///
+    /// Args:
+    ///   matrix: Sparse CSC self-adjoint matrix with shape `(n, n)` and the
+    ///     exact same CSC symbolic pattern used at analysis time.
+    ///   regularization: Numeric regularization policy for the LLT factorization.
+    ///   par: Parallelism setting for backend kernels.
+    ///   numeric_params: Backend numeric-factorization parameters.
+    ///
+    /// Returns:
+    ///   Success after refreshing the stored numeric factors.
     pub fn refactor<ViewT>(
         &mut self,
         matrix: SparseColMatRef<'_, I, ViewT>,
@@ -323,11 +357,22 @@ impl<I: Index, T: ComplexField> SparseLlt<I, T> {
     }
 
     /// Solves `A x = rhs` in place using the stored LLT factors.
+    ///
+    /// Args:
+    ///   rhs: Dense right-hand side matrix with shape `(n, nrhs)`. It is
+    ///     overwritten in place with the solution.
+    ///   par: Parallelism setting for backend kernels.
     pub fn solve_in_place(&self, rhs: MatMut<'_, T>, par: Par) -> Result<(), SparseLltError> {
         self.solve_in_place_with_conj(Conj::No, rhs, par)
     }
 
     /// Solves `conj(A) x = rhs` in place using the stored LLT factors.
+    ///
+    /// Args:
+    ///   conj: Whether to solve against `A` or `conj(A)`.
+    ///   rhs: Dense right-hand side matrix with shape `(n, nrhs)`. It is
+    ///     overwritten in place with the solution.
+    ///   par: Parallelism setting for backend kernels.
     pub fn solve_in_place_with_conj(
         &self,
         conj: Conj,
@@ -352,11 +397,23 @@ impl<I: Index, T: ComplexField> SparseLlt<I, T> {
     }
 
     /// Solves `A x = rhs` in place for a single dense column.
+    ///
+    /// Args:
+    ///   rhs: Dense right-hand side column with shape `(n, 1)`. It is
+    ///     overwritten in place with the solution.
+    ///   par: Parallelism setting for backend kernels.
     pub fn solve_col_in_place(&self, rhs: &mut Col<T>, par: Par) -> Result<(), SparseLltError> {
         self.solve_in_place(rhs.as_mat_mut(), par)
     }
 
     /// Solves `A x = rhs` and returns the result in a fresh dense column.
+    ///
+    /// Args:
+    ///   rhs: Dense right-hand side slice with length `n`.
+    ///   par: Parallelism setting for backend kernels.
+    ///
+    /// Returns:
+    ///   The solution column with shape `(n, 1)`.
     pub fn solve_rhs(&self, rhs: &[T], par: Par) -> Result<Col<T>, SparseLltError>
     where
         T: Copy,
@@ -466,6 +523,9 @@ impl<I: Index, T: ComplexField> Precond<T> for SparseLlt<I, T> {
 /// Compared with [`SparseLlt`], this path is more flexible: it can factorize
 /// indefinite self-adjoint systems and accepts an explicit dynamic
 /// regularization policy through [`LdltRegularization`].
+///
+/// All solve entry points expect right-hand sides with `n = nrows() = ncols()`
+/// rows.
 #[derive(Debug)]
 pub struct SparseLdlt<I: Index, T> {
     symbolic: SymbolicCholesky<I>,
@@ -478,6 +538,15 @@ pub struct SparseLdlt<I: Index, T> {
 
 impl<I: Index, T: ComplexField> SparseLdlt<I, T> {
     /// Performs symbolic analysis for a CSC self-adjoint matrix pattern.
+    ///
+    /// Args:
+    ///   matrix: Sparse CSC self-adjoint matrix with shape `(n, n)`.
+    ///   side: Which triangle of `matrix` is interpreted as self-adjoint data.
+    ///   ordering: Symbolic ordering strategy used during analysis.
+    ///   symbolic_params: Backend symbolic-analysis parameters.
+    ///
+    /// Returns:
+    ///   A wrapper containing symbolic analysis and empty numeric storage.
     pub fn analyze<ViewT>(
         matrix: SparseColMatRef<'_, I, ViewT>,
         side: Side,
@@ -509,6 +578,18 @@ impl<I: Index, T: ComplexField> SparseLdlt<I, T> {
     }
 
     /// Performs symbolic analysis and the first numeric LDLT factorization.
+    ///
+    /// Args:
+    ///   matrix: Sparse CSC self-adjoint matrix with shape `(n, n)`.
+    ///   side: Which triangle of `matrix` is interpreted as self-adjoint data.
+    ///   ordering: Symbolic ordering strategy used during analysis.
+    ///   symbolic_params: Backend symbolic-analysis parameters.
+    ///   regularization: Dynamic regularization policy for the LDLT factorization.
+    ///   par: Parallelism setting for backend kernels.
+    ///   numeric_params: Backend numeric-factorization parameters.
+    ///
+    /// Returns:
+    ///   A numerically ready sparse LDLT factorization wrapper.
     pub fn factorize<ViewT>(
         matrix: SparseColMatRef<'_, I, ViewT>,
         side: Side,
@@ -561,7 +642,7 @@ impl<I: Index, T: ComplexField> SparseLdlt<I, T> {
         &self.symbolic
     }
 
-    /// Borrow the stored numeric factor values.
+    /// Borrow the stored numeric factor values in the backend storage layout.
     #[inline]
     #[must_use]
     pub fn values(&self) -> &[T] {
@@ -569,6 +650,16 @@ impl<I: Index, T: ComplexField> SparseLdlt<I, T> {
     }
 
     /// Recomputes the numeric LDLT factors for a matrix with the same CSC pattern.
+    ///
+    /// Args:
+    ///   matrix: Sparse CSC self-adjoint matrix with shape `(n, n)` and the
+    ///     exact same CSC symbolic pattern used at analysis time.
+    ///   regularization: Dynamic regularization policy for the LDLT factorization.
+    ///   par: Parallelism setting for backend kernels.
+    ///   numeric_params: Backend numeric-factorization parameters.
+    ///
+    /// Returns:
+    ///   Success after refreshing the stored numeric factors.
     pub fn refactor<ViewT>(
         &mut self,
         matrix: SparseColMatRef<'_, I, ViewT>,
@@ -616,11 +707,22 @@ impl<I: Index, T: ComplexField> SparseLdlt<I, T> {
     }
 
     /// Solves `A x = rhs` in place using the stored LDLT factors.
+    ///
+    /// Args:
+    ///   rhs: Dense right-hand side matrix with shape `(n, nrhs)`. It is
+    ///     overwritten in place with the solution.
+    ///   par: Parallelism setting for backend kernels.
     pub fn solve_in_place(&self, rhs: MatMut<'_, T>, par: Par) -> Result<(), SparseLdltError> {
         self.solve_in_place_with_conj(Conj::No, rhs, par)
     }
 
     /// Solves `conj(A) x = rhs` in place using the stored LDLT factors.
+    ///
+    /// Args:
+    ///   conj: Whether to solve against `A` or `conj(A)`.
+    ///   rhs: Dense right-hand side matrix with shape `(n, nrhs)`. It is
+    ///     overwritten in place with the solution.
+    ///   par: Parallelism setting for backend kernels.
     pub fn solve_in_place_with_conj(
         &self,
         conj: Conj,
@@ -645,11 +747,23 @@ impl<I: Index, T: ComplexField> SparseLdlt<I, T> {
     }
 
     /// Solves `A x = rhs` in place for a single dense column.
+    ///
+    /// Args:
+    ///   rhs: Dense right-hand side column with shape `(n, 1)`. It is
+    ///     overwritten in place with the solution.
+    ///   par: Parallelism setting for backend kernels.
     pub fn solve_col_in_place(&self, rhs: &mut Col<T>, par: Par) -> Result<(), SparseLdltError> {
         self.solve_in_place(rhs.as_mat_mut(), par)
     }
 
     /// Solves `A x = rhs` and returns the result in a fresh dense column.
+    ///
+    /// Args:
+    ///   rhs: Dense right-hand side slice with length `n`.
+    ///   par: Parallelism setting for backend kernels.
+    ///
+    /// Returns:
+    ///   The solution column with shape `(n, 1)`.
     pub fn solve_rhs(&self, rhs: &[T], par: Par) -> Result<Col<T>, SparseLdltError>
     where
         T: Copy,

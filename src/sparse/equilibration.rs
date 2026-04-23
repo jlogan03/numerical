@@ -75,6 +75,15 @@ use num_traits::Float;
 /// `norm_floor` and `norm_ceil` bound the norm values before inversion. They
 /// keep extremely tiny or extremely large entries from producing unusable
 /// scaling factors.
+///
+/// Args:
+///   max_iters: Maximum number of balancing iterations.
+///   tol: Stopping tolerance on row/column infinity-norm deviation from `1`.
+///     It is dimensionless.
+///   norm_floor: Lower clamp on measured norms before inversion. It is
+///     dimensionless.
+///   norm_ceil: Upper clamp on measured norms before inversion. It is
+///     dimensionless.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct EquilibrationParams<R> {
     /// Maximum number of balancing iterations.
@@ -135,6 +144,8 @@ pub enum EquilibrationError {
 /// scales. Keeping only the final real scale vectors is enough to reconstruct
 /// the balanced matrix and to map vectors between the original and balanced
 /// coordinate systems.
+///
+/// `row_scale` has length `nrows()` and `col_scale` has length `ncols()`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Equilibration<T: ComplexField> {
     row_scale: Vec<T::Real>,
@@ -158,6 +169,14 @@ impl<T: ComplexField> Equilibration<T> {
     ///
     /// The square-root update splits the correction evenly between left and
     /// right scaling so that we do not over-correct in one step.
+    ///
+    /// Args:
+    ///   matrix: Sparse CSC matrix with shape `(nrows, ncols)`.
+    ///   params: Iteration limit and balancing tolerances. These are
+    ///     dimensionless because they describe relative scaling.
+    ///
+    /// Returns:
+    ///   Row scales with length `nrows` and column scales with length `ncols`.
     pub fn compute_from_csc<I, ViewT>(
         matrix: SparseColMatRef<'_, I, ViewT>,
         params: EquilibrationParams<T::Real>,
@@ -255,6 +274,14 @@ impl<T: ComplexField> Equilibration<T> {
     /// [`compute_from_csc`](Self::compute_from_csc), but written against CSR
     /// traversal so callers can avoid format conversion when their solver path
     /// is already row-oriented.
+    ///
+    /// Args:
+    ///   matrix: Sparse CSR matrix with shape `(nrows, ncols)`.
+    ///   params: Iteration limit and balancing tolerances. These are
+    ///     dimensionless because they describe relative scaling.
+    ///
+    /// Returns:
+    ///   Row scales with length `nrows` and column scales with length `ncols`.
     pub fn compute_from_csr<I, ViewT>(
         matrix: SparseRowMatRef<'_, I, ViewT>,
         params: EquilibrationParams<T::Real>,
@@ -342,40 +369,35 @@ impl<T: ComplexField> Equilibration<T> {
         })
     }
 
-    /// Number of rows covered by the equilibration.
-    ///
-    /// This is the dimension of vectors that can be scaled on the left, such
-    /// as residuals and right-hand sides.
+    /// Number of rows covered by the equilibration. This is the dimension of
+    /// vectors that can be scaled on the left, such as residuals and
+    /// right-hand sides.
     #[inline]
     #[must_use]
     pub fn nrows(&self) -> usize {
         self.row_scale.len()
     }
 
-    /// Number of columns covered by the equilibration.
-    ///
-    /// This is the dimension of vectors that live in the unknown space, such as
-    /// initial guesses and recovered solutions.
+    /// Number of columns covered by the equilibration. This is the dimension of
+    /// vectors that live in the unknown space, such as initial guesses and
+    /// recovered solutions.
     #[inline]
     #[must_use]
     pub fn ncols(&self) -> usize {
         self.col_scale.len()
     }
 
-    /// Positive row scaling factors.
-    ///
-    /// Multiplying row `i` by `row_scale[i]` is equivalent to left-multiplying
-    /// by `D_r`.
+    /// Positive row scaling factors with length `nrows()`. Multiplying row `i`
+    /// by `row_scale[i]` is equivalent to left-multiplying by `D_r`.
     #[inline]
     #[must_use]
     pub fn row_scale(&self) -> &[T::Real] {
         &self.row_scale
     }
 
-    /// Positive column scaling factors.
-    ///
-    /// Multiplying column `j` by `col_scale[j]` is equivalent to
-    /// right-multiplying by `D_c`.
+    /// Positive column scaling factors with length `ncols()`. Multiplying
+    /// column `j` by `col_scale[j]` is equivalent to right-multiplying by
+    /// `D_c`.
     #[inline]
     #[must_use]
     pub fn col_scale(&self) -> &[T::Real] {
@@ -389,6 +411,11 @@ impl<T: ComplexField> Equilibration<T> {
     ///
     /// The sparsity pattern is unchanged. Only the stored numeric values are
     /// rescaled.
+    ///
+    /// Args:
+    ///   symbolic: CSC symbolic structure with shape `(nrows(), ncols())`.
+    ///   values: Numeric value array with length equal to the number of stored
+    ///     CSC nonzeros. It is overwritten in place.
     pub fn scale_csc_values_in_place<I>(
         &self,
         symbolic: SymbolicSparseColMatRef<'_, I>,
@@ -421,6 +448,11 @@ impl<T: ComplexField> Equilibration<T> {
     ///
     /// Like [`scale_csc_values_in_place`](Self::scale_csc_values_in_place), this
     /// leaves the sparsity pattern alone and only rescales the numeric values.
+    ///
+    /// Args:
+    ///   symbolic: CSR symbolic structure with shape `(nrows(), ncols())`.
+    ///   values: Numeric value array with length equal to the number of stored
+    ///     CSR nonzeros. It is overwritten in place.
     pub fn scale_csr_values_in_place<I>(
         &self,
         symbolic: SymbolicSparseRowMatRef<'_, I>,
@@ -453,6 +485,10 @@ impl<T: ComplexField> Equilibration<T> {
     ///
     /// This is the convenient owned-matrix variant of
     /// [`scale_csc_values_in_place`](Self::scale_csc_values_in_place).
+    ///
+    /// Args:
+    ///   matrix: Owned CSC matrix with shape `(nrows(), ncols())`. Its numeric
+    ///     values are overwritten in place.
     pub fn scale_csc_matrix_in_place<I>(&self, matrix: &mut SparseColMat<I, T>)
     where
         T: Copy,
@@ -466,6 +502,10 @@ impl<T: ComplexField> Equilibration<T> {
     ///
     /// This is the convenient owned-matrix variant of
     /// [`scale_csr_values_in_place`](Self::scale_csr_values_in_place).
+    ///
+    /// Args:
+    ///   matrix: Owned CSR matrix with shape `(nrows(), ncols())`. Its numeric
+    ///     values are overwritten in place.
     pub fn scale_csr_matrix_in_place<I>(&self, matrix: &mut SparseRowMat<I, T>)
     where
         T: Copy,
@@ -482,6 +522,10 @@ impl<T: ComplexField> Equilibration<T> {
     ///
     /// Intuitively, this rescales each equation by the same factor used on the
     /// corresponding row of the matrix.
+    ///
+    /// Args:
+    ///   rhs: Right-hand side vector with length `nrows()`. It is overwritten
+    ///     in place.
     pub fn scale_rhs_in_place(&self, rhs: &mut [T])
     where
         T: Copy,
@@ -500,6 +544,10 @@ impl<T: ComplexField> Equilibration<T> {
     /// This is the easy step to miss when swapping between original and
     /// equilibrated systems: row scaling changes the equations, but column
     /// scaling changes the coordinates of the unknown itself.
+    ///
+    /// Args:
+    ///   x: Initial guess vector with length `ncols()`. It is overwritten in
+    ///     place with the scaled-coordinate guess `y`.
     pub fn scale_initial_guess_in_place(&self, x: &mut [T])
     where
         T: Copy,
@@ -518,6 +566,10 @@ impl<T: ComplexField> Equilibration<T> {
     ///
     /// This undoes the coordinate change introduced by
     /// [`scale_initial_guess_in_place`](Self::scale_initial_guess_in_place).
+    ///
+    /// Args:
+    ///   y: Balanced-coordinate solution vector with length `ncols()`. It is
+    ///     overwritten in place with the original-coordinate solution.
     pub fn unscale_solution_in_place(&self, y: &mut [T])
     where
         T: Copy,

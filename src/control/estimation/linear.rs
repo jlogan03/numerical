@@ -751,19 +751,13 @@ where
         )
     }
 
-    /// Returns the current posterior state estimate.
-    ///
-    /// Returns:
-    ///   The current state estimate with shape `(nx, 1)`.
+    /// Returns the current posterior state estimate with shape `(nx, 1)`.
     #[must_use]
     pub fn state_estimate(&self) -> MatRef<'_, T> {
         self.x_hat.as_ref()
     }
 
-    /// Returns the current posterior covariance.
-    ///
-    /// Returns:
-    ///   The current covariance with shape `(nx, nx)`.
+    /// Returns the current posterior covariance with shape `(nx, nx)`.
     #[must_use]
     pub fn covariance(&self) -> MatRef<'_, T> {
         self.p.as_ref()
@@ -1115,28 +1109,20 @@ where
         Self::from_filter_gain(system, gain, x_hat, Some(solve.covariance))
     }
 
-    /// Returns the current state estimate.
-    ///
-    /// Returns:
-    ///   The current state estimate with shape `(nx, 1)`.
+    /// Returns the current state estimate with shape `(nx, 1)`.
     #[must_use]
     pub fn state_estimate(&self) -> MatRef<'_, T> {
         self.x_hat.as_ref()
     }
 
-    /// Returns the fixed observer gain.
-    ///
-    /// Returns:
-    ///   The steady-state gain matrix with shape `(nx, ny)`.
+    /// Returns the fixed observer gain with shape `(nx, ny)`.
     #[must_use]
     pub fn gain(&self) -> MatRef<'_, T> {
         self.gain.as_ref()
     }
 
-    /// Returns the stored steady-state covariance when available.
-    ///
-    /// Returns:
-    ///   The optional steady-state covariance with shape `(nx, nx)`.
+    /// Returns the stored steady-state covariance, when available, with shape
+    /// `(nx, nx)`.
     #[must_use]
     pub fn steady_state_covariance(&self) -> Option<MatRef<'_, T>> {
         self.steady_state_covariance.as_ref().map(|p| p.as_ref())
@@ -1381,19 +1367,13 @@ where
         Self::from_gain(system, solve.gain, x_hat)
     }
 
-    /// Returns the current state estimate.
-    ///
-    /// Returns:
-    ///   The current state estimate with shape `(nx, 1)`.
+    /// Returns the current state estimate with shape `(nx, 1)`.
     #[must_use]
     pub fn state_estimate(&self) -> MatRef<'_, T> {
         self.x_hat.as_ref()
     }
 
-    /// Returns the fixed observer gain.
-    ///
-    /// Returns:
-    ///   The observer gain with shape `(nx, ny)`.
+    /// Returns the fixed observer gain with shape `(nx, ny)`.
     #[must_use]
     pub fn gain(&self) -> MatRef<'_, T> {
         self.gain.as_ref()

@@ -94,6 +94,9 @@ use num_traits::Float;
 /// Instead, they return whatever components the backend produced together with
 /// these diagnostics so callers can decide whether the result is good enough
 /// for their workflow.
+///
+/// `max_residual_norm` and `max_orthogonality_error` are dimensionless wrapper
+/// diagnostics over the returned component set.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DecompInfo<R> {
     /// Number of components requested by the caller after backend-specific
@@ -126,6 +129,8 @@ impl<R: Float> DecompInfo<R> {
 ///
 /// The columns of `u` and `v` are ordered to match `s`, and `s` is sorted by
 /// descending magnitude.
+///
+/// `u` has shape `(m, k)`, `s` has shape `(k, 1)`, and `v` has shape `(n, k)`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartialSvd<T: ComplexField> {
     /// Left singular vectors, one per column.
@@ -139,7 +144,8 @@ pub struct PartialSvd<T: ComplexField> {
 }
 
 impl<T: ComplexField> PartialSvd<T> {
-    /// Materializes the singular values as a diagonal matrix.
+    /// Materializes the singular values as a diagonal matrix with shape
+    /// `(k, k)`.
     #[must_use]
     pub fn sigma_as_diagonal(&self) -> Mat<T> {
         let n = self.s.nrows();
@@ -155,6 +161,8 @@ impl<T: ComplexField> PartialSvd<T> {
 ///
 /// The columns of `vectors` are ordered to match `values`, and `values` are
 /// sorted by descending magnitude.
+///
+/// `values` has shape `(k, 1)` and `vectors` has shape `(n, k)`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartialEigen<T: ComplexField> {
     /// Eigenvalues ordered by descending magnitude.
@@ -166,7 +174,7 @@ pub struct PartialEigen<T: ComplexField> {
 }
 
 impl<T: ComplexField> PartialEigen<T> {
-    /// Materializes the eigenvalues as a diagonal matrix.
+    /// Materializes the eigenvalues as a diagonal matrix with shape `(k, k)`.
     #[must_use]
     pub fn values_as_diagonal(&self) -> Mat<T> {
         let n = self.values.nrows();
@@ -183,6 +191,9 @@ impl<T: ComplexField> PartialEigen<T> {
 /// The columns of `vectors` are ordered to match the generalized eigenpairs
 /// `(alpha, beta)`. The implied generalized eigenvalues are `alpha / beta`
 /// wherever `beta` is nonzero.
+///
+/// `alpha` and `beta` each have shape `(k, 1)`, and `vectors` has shape
+/// `(n, k)`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PartialGeneralizedEigen<T: ComplexField> {
     /// Generalized eigen numerator factors.
@@ -201,6 +212,8 @@ pub struct PartialGeneralizedEigen<T: ComplexField> {
 /// only a leading dominant window. When a partial dense backend is not a good
 /// fit for the requested size, the dense wrappers may fall back to a full dense
 /// factorization and then truncate the result.
+///
+/// `start_vector`, when supplied, has shape `(n, 1)`. `tol` is dimensionless.
 #[derive(Clone, Debug, PartialEq)]
 pub struct DenseDecompParams<T: ComplexField> {
     /// `None` requests the full dense decomposition, while `Some(k)` requests
@@ -282,7 +295,7 @@ where
         self
     }
 
-    /// Supplies a user-chosen partial-backend start vector.
+    /// Supplies a user-chosen partial-backend start vector with shape `(n, 1)`.
     #[must_use]
     pub fn with_start_vector(mut self, start_vector: Col<T>) -> Self {
         self.start_vector = Some(start_vector);
@@ -294,6 +307,8 @@ where
 ///
 /// Sparse and matrix-free backends are intentionally partial-only. The target
 /// count is therefore required up front rather than expressed as `Option`.
+///
+/// `start_vector`, when supplied, has shape `(n, 1)`. `tol` is dimensionless.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SparseDecompParams<T: ComplexField> {
     /// Number of dominant components to request.
@@ -356,7 +371,7 @@ where
         self
     }
 
-    /// Supplies a user-chosen start vector.
+    /// Supplies a user-chosen start vector with shape `(n, 1)`.
     #[must_use]
     pub fn with_start_vector(mut self, start_vector: Col<T>) -> Self {
         self.start_vector = Some(start_vector);

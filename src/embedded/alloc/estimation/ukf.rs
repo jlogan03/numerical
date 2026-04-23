@@ -236,19 +236,13 @@ where
         Ok(self)
     }
 
-    /// Returns the current posterior estimate.
-    ///
-    /// Returns:
-    ///   The current state estimate with shape `(nx, 1)`.
+    /// Returns the current posterior state estimate with shape `(nx, 1)`.
     #[must_use]
     pub fn state_estimate(&self) -> &Vector<T> {
         &self.x_hat
     }
 
-    /// Returns the current posterior covariance.
-    ///
-    /// Returns:
-    ///   The current covariance matrix with shape `(nx, nx)`.
+    /// Returns the current posterior covariance with shape `(nx, nx)`.
     #[must_use]
     pub fn covariance(&self) -> &Matrix<T> {
         &self.p

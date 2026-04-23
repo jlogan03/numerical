@@ -78,6 +78,11 @@ use num_traits::Float;
 ///
 /// This improves the local arithmetic around the solve without replacing
 /// `faer`'s optimized LU kernels.
+///
+/// Args:
+///   tol: Absolute residual tolerance in right-hand-side units.
+///   max_iters: Maximum number of refinement corrections after the initial LU
+///     solve.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LuRefinementParams<R> {
     /// Absolute residual tolerance for the compensated residual recomputation.
@@ -100,6 +105,12 @@ impl<R: Float> Default for LuRefinementParams<R> {
 /// `solution` is the final iterate. `residual_norm` is the compensated residual
 /// norm of that final iterate. `converged` indicates whether the final residual
 /// met the requested tolerance.
+///
+/// Returns:
+///   `solution`: Final solution vector with shape `(n, 1)`.
+///   `residual_norm`: Final residual norm in right-hand-side units.
+///   `refinement_steps`: Number of refinement corrections applied.
+///   `converged`: Whether `residual_norm <= tol`.
 #[derive(Clone, Debug)]
 pub struct RefinedLuSolve<T: CompensatedField>
 where
@@ -176,6 +187,9 @@ impl From<LuError> for SparseLuError {
 /// - direct solve mode, where the factors correspond to the current matrix
 /// - lagged-preconditioner mode, where the factors come from a nearby matrix
 ///   and are used as an approximate inverse inside an iterative method
+///
+/// All solve entry points expect right-hand sides with `n = nrows() = ncols()`
+/// rows.
 #[derive(Clone, Debug)]
 pub struct SparseLu<I: Index, T> {
     symbolic: SymbolicLu<I>,
@@ -197,6 +211,13 @@ impl<I: Index, T: ComplexField> SparseLu<I, T> {
     /// No numeric factorization is performed here. The resulting wrapper must
     /// be numerically [`refactor`](Self::refactor)ed before it can solve or be
     /// used as a preconditioner.
+    ///
+    /// Args:
+    ///   matrix: Sparse CSC matrix with shape `(n, n)`.
+    ///   symbolic_params: Backend symbolic-analysis parameters.
+    ///
+    /// Returns:
+    ///   A wrapper containing symbolic analysis and empty numeric factors.
     pub fn analyze<ViewT>(
         matrix: SparseColMatRef<'_, I, ViewT>,
         symbolic_params: LuSymbolicParams<'_>,
@@ -228,6 +249,15 @@ impl<I: Index, T: ComplexField> SparseLu<I, T> {
     /// use. For repeated same-pattern systems, callers can instead use
     /// [`analyze`](Self::analyze) once and then [`refactor`](Self::refactor) as
     /// new numeric values arrive.
+    ///
+    /// Args:
+    ///   matrix: Sparse CSC matrix with shape `(n, n)`.
+    ///   par: Parallelism setting for backend kernels.
+    ///   symbolic_params: Backend symbolic-analysis parameters.
+    ///   numeric_params: Backend numeric-factorization parameters.
+    ///
+    /// Returns:
+    ///   A numerically ready sparse LU wrapper.
     pub fn factorize<ViewT>(
         matrix: SparseColMatRef<'_, I, ViewT>,
         par: Par,
@@ -290,6 +320,15 @@ impl<I: Index, T: ComplexField> SparseLu<I, T> {
     /// `row_idx` arrays must match exactly. This keeps the invariant around the
     /// stored symbolic LU simple and avoids any hidden reordering or
     /// canonicalization at this layer.
+    ///
+    /// Args:
+    ///   matrix: Sparse CSC matrix with shape `(n, n)` and the exact same CSC
+    ///     symbolic pattern used at analysis time.
+    ///   par: Parallelism setting for backend kernels.
+    ///   numeric_params: Backend numeric-factorization parameters.
+    ///
+    /// Returns:
+    ///   Success after refreshing the stored numeric LU factors.
     pub fn refactor<ViewT>(
         &mut self,
         matrix: SparseColMatRef<'_, I, ViewT>,
@@ -343,6 +382,11 @@ impl<I: Index, T: ComplexField> SparseLu<I, T> {
     ///
     /// This is the ordinary uncompensated direct-solve path delegated to
     /// `faer`'s LU solve kernels.
+    ///
+    /// Args:
+    ///   rhs: Dense right-hand side matrix with shape `(n, nrhs)`. It is
+    ///     overwritten in place with the solution.
+    ///   par: Parallelism setting for backend kernels.
     pub fn solve_in_place(&self, rhs: MatMut<'_, T>, par: Par) -> Result<(), SparseLuError> {
         self.solve_in_place_with_conj(Conj::No, rhs, par)
     }
@@ -355,6 +399,12 @@ impl<I: Index, T: ComplexField> SparseLu<I, T> {
     ///
     /// This method allocates only the solve scratch required by faer's LU
     /// kernels. The factorization itself is not modified.
+    ///
+    /// Args:
+    ///   conj: Whether to solve against `A` or `conj(A)`.
+    ///   rhs: Dense right-hand side matrix with shape `(n, nrhs)`. It is
+    ///     overwritten in place with the solution.
+    ///   par: Parallelism setting for backend kernels.
     pub fn solve_in_place_with_conj(
         &self,
         conj: Conj,
@@ -382,6 +432,11 @@ impl<I: Index, T: ComplexField> SparseLu<I, T> {
     ///
     /// This is a convenience wrapper over [`solve_in_place`](Self::solve_in_place)
     /// for the common single-vector case.
+    ///
+    /// Args:
+    ///   rhs: Dense right-hand side column with shape `(n, 1)`. It is
+    ///     overwritten in place with the solution.
+    ///   par: Parallelism setting for backend kernels.
     pub fn solve_col_in_place(&self, rhs: &mut Col<T>, par: Par) -> Result<(), SparseLuError> {
         self.solve_in_place(rhs.as_mat_mut(), par)
     }
@@ -391,6 +446,13 @@ impl<I: Index, T: ComplexField> SparseLu<I, T> {
     /// The input slice is copied into dense storage first, then solved in
     /// place. Use [`solve_col_in_place`](Self::solve_col_in_place) if the caller
     /// already owns a mutable dense column and wants to avoid that copy.
+    ///
+    /// Args:
+    ///   rhs: Dense right-hand side slice with length `n`.
+    ///   par: Parallelism setting for backend kernels.
+    ///
+    /// Returns:
+    ///   The solution column with shape `(n, 1)`.
     pub fn solve_rhs(&self, rhs: &[T], par: Par) -> Result<Col<T>, SparseLuError>
     where
         T: Copy,
@@ -425,6 +487,17 @@ impl<I: Index, T: ComplexField> SparseLu<I, T> {
     /// Intuitively, this keeps faer's LU solve as the fast inner solve while
     /// spending the extra arithmetic only where it matters numerically:
     /// residual recomputation and solution updates.
+    ///
+    /// Args:
+    ///   a: Sparse linear operator with shape `(n, n)` used for residual
+    ///     recomputation.
+    ///   rhs: Right-hand side slice with length `n`.
+    ///   par: Parallelism setting for backend kernels.
+    ///   params: Refinement tolerance and iteration budget.
+    ///
+    /// Returns:
+    ///   The refined solution vector `(n, 1)` and associated refinement
+    ///   diagnostics.
     pub fn solve_compensated<A>(
         &self,
         a: A,

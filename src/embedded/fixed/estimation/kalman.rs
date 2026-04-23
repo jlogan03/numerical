@@ -159,19 +159,13 @@ where
         })
     }
 
-    /// Returns the current posterior estimate.
-    ///
-    /// Returns:
-    ///   The current state estimate with shape `(NX,)`.
+    /// Returns the current posterior state estimate with shape `(NX,)`.
     #[must_use]
     pub fn state_estimate(&self) -> &Vector<T, NX> {
         &self.x_hat
     }
 
-    /// Returns the current posterior covariance.
-    ///
-    /// Returns:
-    ///   The current covariance matrix with shape `(NX, NX)`.
+    /// Returns the current posterior covariance with shape `(NX, NX)`.
     #[must_use]
     pub fn covariance(&self) -> &Matrix<T, NX, NX> {
         &self.p
@@ -327,10 +321,7 @@ where
         }
     }
 
-    /// Returns the current state estimate.
-    ///
-    /// Returns:
-    ///   The current state estimate with shape `(NX,)`.
+    /// Returns the current state estimate with shape `(NX,)`.
     #[must_use]
     pub fn state_estimate(&self) -> &Vector<T, NX> {
         &self.x_hat

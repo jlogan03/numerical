@@ -155,6 +155,10 @@ where
 
 impl<T: ComplexField + Copy, A: SparseMatVec<T>, P: Precond<T>> BiCGSTABSolveError<T, A, P> {
     /// Returns the underlying solver when the solve failed due to non-convergence.
+    ///
+    /// Returns:
+    ///   `Some(solver)` when the solve stopped at the iteration limit, or
+    ///   `None` when the failure was an input-validation error.
     pub fn into_solver(self) -> Option<BiCGSTAB<T, A, P>> {
         match self {
             Self::NoConvergence(solver) => Some(solver),
@@ -203,6 +207,8 @@ fn validate_bicgstab_dimensions<T: ComplexField + Copy, A: SparseMatVec<T>, P: P
 }
 
 /// Stabilized bi-conjugate gradient solver.
+///
+/// The internal vectors all have length `n = a.ncols() = a.nrows()`.
 pub struct BiCGSTAB<T: ComplexField + Copy, A: SparseMatVec<T>, P: Precond<T> = IdentityPrecond> {
     iteration_count: usize,
     soft_restart_threshold: T::Real,
@@ -255,6 +261,14 @@ where
     T::Real: Float + Copy,
 {
     /// Initializes a solver with a fresh residual estimate.
+    ///
+    /// Args:
+    ///   a: Sparse linear operator with shape `(n, n)`.
+    ///   x0: Initial guess vector with length `n`.
+    ///   b: Right-hand side vector with length `n`.
+    ///
+    /// Returns:
+    ///   A BiCGSTAB solver initialized at `x0` with residual `b - A x0`.
     #[inline]
     pub fn new(a: A, x0: &[T], b: &[T]) -> Result<Self, BiCGSTABError> {
         let dim = a.ncols();
@@ -262,6 +276,17 @@ where
     }
 
     /// Attempts to solve the system to the given absolute residual tolerance.
+    ///
+    /// Args:
+    ///   a: Sparse linear operator with shape `(n, n)`.
+    ///   x0: Initial guess vector with length `n`.
+    ///   b: Right-hand side vector with length `n`.
+    ///   tol: Absolute residual tolerance in right-hand-side units.
+    ///   max_iter: Maximum number of BiCGSTAB iterations.
+    ///
+    /// Returns:
+    ///   The converged solver state, or a wrapper carrying the unfinished
+    ///   solver on non-convergence.
     pub fn solve(
         a: A,
         x0: &[T],
@@ -300,6 +325,16 @@ where
     /// matrix-vector product. For a diagonal preconditioner, that means the
     /// search directions are scaled componentwise by the inverse diagonal
     /// before `A` sees them.
+    ///
+    /// Args:
+    ///   a: Sparse linear operator with shape `(n, n)`.
+    ///   preconditioner: Preconditioner with input and output dimensions `n`.
+    ///   x0: Initial guess vector with length `n`.
+    ///   b: Right-hand side vector with length `n`.
+    ///
+    /// Returns:
+    ///   A BiCGSTAB solver initialized at `x0` with the supplied right
+    ///   preconditioner.
     #[inline]
     pub fn new_with_precond(
         a: A,
@@ -362,6 +397,18 @@ where
     /// Intuitively, a good preconditioner changes the geometry of the problem
     /// so that the Krylov iteration sees components on more comparable scales.
     /// In this solver that effect is realized through right preconditioning.
+    ///
+    /// Args:
+    ///   a: Sparse linear operator with shape `(n, n)`.
+    ///   preconditioner: Preconditioner with input and output dimensions `n`.
+    ///   x0: Initial guess vector with length `n`.
+    ///   b: Right-hand side vector with length `n`.
+    ///   tol: Absolute residual tolerance in right-hand-side units.
+    ///   max_iter: Maximum number of BiCGSTAB iterations.
+    ///
+    /// Returns:
+    ///   The converged solver state, or a wrapper carrying the unfinished
+    ///   solver on non-convergence.
     pub fn solve_with_precond(
         a: A,
         preconditioner: P,
@@ -417,6 +464,9 @@ where
     }
 
     /// Advances the solver by one BiCGSTAB iteration.
+    ///
+    /// Returns:
+    ///   The latest residual norm estimate in right-hand-side units.
     pub fn step(&mut self) -> T::Real {
         self.iteration_count += 1;
 
@@ -531,6 +581,13 @@ where
     }
 
     /// Sets the soft-restart threshold.
+    ///
+    /// Args:
+    ///   threshold: Dimensionless restart heuristic threshold based on
+    ///     `|rho| / ||r||^2`.
+    ///
+    /// Returns:
+    ///   The updated solver.
     #[must_use]
     pub fn with_restart_threshold(mut self, threshold: T::Real) -> Self {
         self.soft_restart_threshold = threshold;
@@ -538,11 +595,14 @@ where
     }
 
     /// Current iteration count.
+    ///
+    /// Returns:
+    ///   The number of BiCGSTAB iterations completed.
     pub fn iteration_count(&self) -> usize {
         self.iteration_count
     }
 
-    /// Current soft-restart threshold.
+    /// Current soft-restart threshold, a dimensionless restart heuristic.
     pub fn soft_restart_threshold(&self) -> T::Real {
         self.soft_restart_threshold
     }
@@ -557,7 +617,7 @@ where
         self.hard_restart_count
     }
 
-    /// Latest residual norm estimate.
+    /// Latest residual norm estimate in right-hand-side units.
     pub fn err(&self) -> T::Real {
         self.err
     }
@@ -567,37 +627,37 @@ where
         self.rho
     }
 
-    /// Problem matrix.
+    /// Problem matrix with shape `(n, n)`.
     pub fn a(&self) -> A {
         self.a
     }
 
-    /// Preconditioner.
+    /// Preconditioner with input and output dimensions `n`.
     pub fn preconditioner(&self) -> &P {
         &self.preconditioner
     }
 
-    /// Latest solution estimate.
+    /// Latest solution estimate with shape `(n, 1)`.
     pub fn x(&self) -> &Col<T> {
         &self.x
     }
 
-    /// Right-hand side.
+    /// Right-hand side with shape `(n, 1)`.
     pub fn b(&self) -> &Col<T> {
         &self.b
     }
 
-    /// Latest residual vector.
+    /// Latest residual vector with shape `(n, 1)`.
     pub fn r(&self) -> &Col<T> {
         &self.r
     }
 
-    /// Shadow residual direction.
+    /// Shadow residual direction with shape `(n, 1)`.
     pub fn rhat(&self) -> &Col<T> {
         &self.rhat
     }
 
-    /// Current search direction.
+    /// Current search direction with shape `(n, 1)`.
     pub fn p(&self) -> &Col<T> {
         &self.p
     }
