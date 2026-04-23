@@ -51,13 +51,6 @@
 
 mod dense;
 pub mod linear;
-#[cfg(test)]
-#[allow(dead_code)]
-pub(crate) mod nonlinear;
-#[cfg(test)]
-#[allow(dead_code)]
-pub(crate) mod nonlinear_core;
-
 pub use linear::{
     ContinuousObserver, ContinuousObserverDerivative, CovarianceUpdate, DiscreteKalmanFilter,
     EstimatorError, KalmanPrediction, KalmanUpdate, LqeSolve, SteadyStateKalmanFilter,

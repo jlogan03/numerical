@@ -32,7 +32,6 @@
 //! - **ERA / OKID:** Data-driven realization and identification algorithms.
 //! - **HSVD / BT:** Hankel singular value decomposition and balanced
 //!   truncation.
-//! //!
 //! # Mathematical Formulation
 //!
 //! The dominant model form throughout the subsystem is state space:
