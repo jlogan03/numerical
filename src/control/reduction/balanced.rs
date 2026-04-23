@@ -1,7 +1,7 @@
-//! Balanced truncation for dense and low-rank state-space models.
+//! Balanced realization and balanced truncation for state-space models.
 //!
 //! This module relies on the Gramian solver set needed for balanced
-//! truncation:
+//! realization and truncation:
 //!
 //! - dense continuous Lyapunov
 //! - sparse continuous low-rank Lyapunov
@@ -14,8 +14,8 @@
 //! 2. delegate the balancing-core work to [`super::hsvd`]
 //! 3. assemble the reduced state-space system from the returned projections
 //!
-//! Standard balanced truncation assumes the plant is asymptotically stable in
-//! the relevant time domain:
+//! Standard balanced realization and truncation assume the plant is
+//! asymptotically stable in the relevant time domain:
 //!
 //! - continuous time: all poles lie in the open left half-plane
 //! - discrete time: all poles lie strictly inside the unit disk
@@ -40,6 +40,8 @@
 //!
 //! - **Balanced coordinates:** Coordinates where controllability and
 //!   observability energies are aligned and diagonalized together.
+//! - **Balanced realization:** Full numerical-rank coordinate change into
+//!   balanced coordinates without an intentional order reduction.
 //! - **Tail bound:** Classical balanced-truncation error bound based on
 //!   discarded Hankel singular values.
 //!
@@ -102,11 +104,12 @@ pub use super::hsvd::HsvdParams as BalancedParams;
 /// beyond what HSVD already exposes, so the internals type is reused directly.
 pub use super::hsvd::HsvdInternals as BalancedInternals;
 
-/// Result of balanced truncation.
+/// Result of balanced realization or balanced truncation.
 ///
-/// The reduced model is accompanied by the actual left/right projection
-/// operators used to assemble it. Those transforms are returned even at the
-/// summary level so callers can inspect or reuse the balancing map directly.
+/// The output model is accompanied by the actual left/right projection
+/// operators used to assemble it. For balanced realization these are the
+/// full numerical-rank balancing transforms; for balanced truncation they are
+/// the retained projection factors.
 ///
 /// The standard balanced-truncation interpretation of this result assumes the
 /// original plant was asymptotically stable. If the input model is unstable,
@@ -137,7 +140,14 @@ where
     pub internals: Option<BalancedInternals<T>>,
 }
 
-/// Errors produced by balanced-truncation front-ends.
+/// Result of balanced realization.
+///
+/// This is the same storage as [`BalancedTruncationResult`]. The distinct name
+/// documents the API intent: retain all positive Hankel singular directions
+/// instead of intentionally selecting a smaller reduced order.
+pub type BalancedRealizationResult<T, Domain> = BalancedTruncationResult<T, Domain>;
+
+/// Errors produced by balanced-realization and balanced-truncation front ends.
 #[derive(Debug)]
 pub enum BalancedError<R> {
     /// Dense or sparse continuous Gramian solve failed.
@@ -268,6 +278,59 @@ where
     })
 }
 
+/// Computes a dense continuous-time balanced realization.
+///
+/// This is a convenience wrapper around dense balanced truncation with the
+/// requested order set to the state dimension and the Hankel singular value
+/// lower bound set to zero. For a minimal stable system this keeps all states.
+/// Exact zero Hankel singular directions are still omitted because the
+/// balancing transform would require dividing by `sqrt(sigma)`.
+///
+/// Args:
+///     system: Stable continuous-time state-space model with `n` states.
+///
+/// Returns:
+///     Balanced realization result whose model has up to `n` states. Fewer
+///     states are returned only when exact zero Hankel singular directions are
+///     present.
+pub fn balanced_realization_continuous_dense<T>(
+    system: &ContinuousStateSpace<T>,
+) -> Result<BalancedRealizationResult<T, ContinuousTime>, BalancedError<T::Real>>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let params = full_rank_balanced_params(system.nstates());
+    balanced_truncation_continuous_dense(system, &params)
+}
+
+/// Computes a dense discrete-time balanced realization.
+///
+/// This is a convenience wrapper around dense balanced truncation with the
+/// requested order set to the state dimension and the Hankel singular value
+/// lower bound set to zero. For a minimal stable system this keeps all states.
+/// Exact zero Hankel singular directions are still omitted because the
+/// balancing transform would require dividing by `sqrt(sigma)`.
+///
+/// Args:
+///     system: Stable discrete-time state-space model with `n` states and
+///     sample time in seconds.
+///
+/// Returns:
+///     Balanced realization result whose model has up to `n` states. Fewer
+///     states are returned only when exact zero Hankel singular directions are
+///     present.
+pub fn balanced_realization_discrete_dense<T>(
+    system: &DiscreteStateSpace<T>,
+) -> Result<BalancedRealizationResult<T, DiscreteTime<T::Real>>, BalancedError<T::Real>>
+where
+    T: CompensatedField,
+    T::Real: Float + Copy,
+{
+    let params = full_rank_balanced_params(system.nstates());
+    balanced_truncation_discrete_dense(system, &params)
+}
+
 /// Computes sparse continuous-time low-rank balanced truncation.
 ///
 /// This path never forms dense full Gramians. It uses the low-rank factors
@@ -391,6 +454,20 @@ where
     ) -> Result<BalancedTruncationResult<T, ContinuousTime>, BalancedError<T::Real>> {
         balanced_truncation_continuous_dense(self, params)
     }
+
+    /// Computes a dense continuous-time balanced realization for this model.
+    ///
+    /// This keeps all positive Hankel singular directions and performs no
+    /// intentional order reduction. The model is assumed to be asymptotically
+    /// stable.
+    ///
+    /// Returns:
+    ///     Balanced realization result with up to `n` states.
+    pub fn balanced_realization(
+        &self,
+    ) -> Result<BalancedRealizationResult<T, ContinuousTime>, BalancedError<T::Real>> {
+        balanced_realization_continuous_dense(self)
+    }
 }
 
 impl<T> DiscreteStateSpace<T>
@@ -408,6 +485,30 @@ where
     ) -> Result<BalancedTruncationResult<T, DiscreteTime<T::Real>>, BalancedError<T::Real>> {
         balanced_truncation_discrete_dense(self, params)
     }
+
+    /// Computes a dense discrete-time balanced realization for this model.
+    ///
+    /// This keeps all positive Hankel singular directions and performs no
+    /// intentional order reduction. The model is assumed to be asymptotically
+    /// stable.
+    ///
+    /// Returns:
+    ///     Balanced realization result with up to `n` states and the original
+    ///     sample time in seconds.
+    pub fn balanced_realization(
+        &self,
+    ) -> Result<BalancedRealizationResult<T, DiscreteTime<T::Real>>, BalancedError<T::Real>> {
+        balanced_realization_discrete_dense(self)
+    }
+}
+
+fn full_rank_balanced_params<R>(nstates: usize) -> BalancedParams<R>
+where
+    R: Zero,
+{
+    BalancedParams::new()
+        .with_order(nstates)
+        .with_sigma_tol(R::zero())
 }
 
 fn build_dense_reduced_system<T>(
@@ -594,7 +695,8 @@ where
 #[cfg(test)]
 mod test {
     use super::{
-        BalancedParams, InternalsLevel, balanced_truncation_continuous_dense,
+        BalancedParams, InternalsLevel, balanced_realization_continuous_dense,
+        balanced_realization_discrete_dense, balanced_truncation_continuous_dense,
         balanced_truncation_continuous_low_rank, balanced_truncation_discrete_dense,
         balanced_truncation_discrete_low_rank,
     };
@@ -644,6 +746,24 @@ mod test {
     }
 
     #[test]
+    fn dense_continuous_balanced_realization_keeps_full_order() {
+        let a = Mat::from_fn(2, 2, |row, col| match (row, col) {
+            (0, 0) => -1.0,
+            (1, 1) => -4.0,
+            _ => 0.0,
+        });
+        let b = Mat::<f64>::identity(2, 2);
+        let c = Mat::<f64>::identity(2, 2);
+        let sys = ContinuousStateSpace::with_zero_feedthrough(a, b, c).unwrap();
+
+        let result = balanced_realization_continuous_dense(&sys).unwrap();
+
+        assert_eq!(result.reduced.nstates(), sys.nstates());
+        assert_eq!(result.reduced_order, sys.nstates());
+        assert!(result.error_bound.unwrap() <= 1.0e-14);
+    }
+
+    #[test]
     fn dense_continuous_balanced_truncation_supports_order_zero() {
         let a = Mat::from_fn(2, 2, |row, col| match (row, col) {
             (0, 0) => -1.0,
@@ -679,6 +799,24 @@ mod test {
         let result = balanced_truncation_discrete_dense(&sys, &BalancedParams::new()).unwrap();
         assert_eq!(result.reduced.sample_time(), 0.1);
         assert_eq!(result.hankel_singular_values.nrows(), 2);
+    }
+
+    #[test]
+    fn dense_discrete_balanced_realization_keeps_full_order() {
+        let a = Mat::from_fn(2, 2, |row, col| match (row, col) {
+            (0, 0) => 0.1,
+            (1, 1) => -0.25,
+            _ => 0.0,
+        });
+        let b = Mat::<f64>::identity(2, 2);
+        let c = Mat::<f64>::identity(2, 2);
+        let sys = crate::control::DiscreteStateSpace::with_zero_feedthrough(a, b, c, 0.1).unwrap();
+
+        let result = balanced_realization_discrete_dense(&sys).unwrap();
+
+        assert_eq!(result.reduced.nstates(), sys.nstates());
+        assert_eq!(result.reduced_order, sys.nstates());
+        assert!(result.error_bound.unwrap() <= 1.0e-14);
     }
 
     #[test]

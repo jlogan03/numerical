@@ -1,9 +1,9 @@
-//! Model-reduction building blocks and balanced-truncation front ends.
+//! Model-reduction building blocks and balanced front ends.
 //!
 //! This module groups the reduction-side layers:
 //!
 //! - [`hsvd`] for the reusable balancing core
-//! - [`balanced`] for dense and low-rank balanced truncation
+//! - [`balanced`] for dense balanced realization and balanced truncation
 //!
 //! # Two Intuitions
 //!
@@ -22,7 +22,8 @@
 //! # Mathematical Formulation
 //!
 //! Balanced reduction works by finding coordinates where controllability and
-//! observability Gramians are simultaneously diagonal, then truncating the
+//! observability Gramians are simultaneously diagonal. Balanced realization
+//! keeps the full numerical rank, while balanced truncation discards the
 //! smallest Hankel singular directions.
 //!
 //! # Implementation Notes
@@ -39,15 +40,18 @@
 //! | Feature | Dense continuous | Dense discrete | Sparse / low-rank continuous | Sparse / low-rank discrete |
 //! | --- | --- | --- | --- | --- |
 //! | HSVD core | yes | yes | yes | yes |
+//! | Balanced realization | yes | yes | no | no |
 //! | Balanced truncation | yes | yes | yes | yes |
 
 pub mod balanced;
 pub mod hsvd;
 
 pub use balanced::{
-    BalancedError, BalancedInternals, BalancedParams, BalancedTruncationResult, InternalsLevel,
-    balanced_truncation_continuous_dense, balanced_truncation_continuous_low_rank,
-    balanced_truncation_discrete_dense, balanced_truncation_discrete_low_rank,
+    BalancedError, BalancedInternals, BalancedParams, BalancedRealizationResult,
+    BalancedTruncationResult, InternalsLevel, balanced_realization_continuous_dense,
+    balanced_realization_discrete_dense, balanced_truncation_continuous_dense,
+    balanced_truncation_continuous_low_rank, balanced_truncation_discrete_dense,
+    balanced_truncation_discrete_low_rank,
 };
 pub use hsvd::{
     HsvdError, HsvdInternals, HsvdInternalsLevel, HsvdParams, HsvdResult, hsvd_from_dense_gramians,
