@@ -7,6 +7,15 @@
 //! whether to display continuity-preserving or wrapped traces. Because that
 //! phase is unwrapped, the input frequency grid must be monotone
 //! nondecreasing.
+//!
+//! # Glossary
+//!
+//! - **Bode data:** Frequency response reported as magnitude and phase versus
+//!   frequency.
+//! - **Unwrapped phase:** Phase adjusted by `±360 deg` jumps to preserve
+//!   continuity.
+//! - **Pole-zero data:** Root locations of the system numerator and
+//!   denominator.
 
 use super::{
     ContinuousSos, ContinuousStateSpace, ContinuousTransferFunction, ContinuousZpk, DiscreteSos,

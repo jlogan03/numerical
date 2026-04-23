@@ -1,5 +1,5 @@
 //! Small scalar helpers shared across the embedded runtime modules.
-
+//!
 use super::EmbeddedError;
 use num_traits::Float;
 

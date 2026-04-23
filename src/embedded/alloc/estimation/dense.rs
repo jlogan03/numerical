@@ -1,4 +1,9 @@
 //! Small dense helpers shared by the alloc-backed embedded estimators.
+//!
+//! # Glossary
+//!
+//! - **LLT solve:** Linear solve using a Cholesky factorization of a symmetric
+//!   positive-definite matrix.
 
 use crate::embedded::alloc::{Matrix, Vector};
 use crate::embedded::error::EmbeddedError;

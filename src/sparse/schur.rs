@@ -18,6 +18,16 @@
 //! The `LinOp::conj_apply` path follows `faer`'s conjugate-operator contract,
 //! not a transpose or adjoint contract. Adjoint application belongs on
 //! `BiLinOp`, which this type does not implement.
+//!
+//! # Glossary
+//!
+//! - **Schur complement:** Reduced operator `S = D - C A^{-1} B`.
+//! - **Implicit operator:** Operator applied through sub-operator solves and
+//!   matvecs rather than explicit matrix assembly.
+//! - **Inverse application:** Applying an already-available solver or
+//!   preconditioner for one block.
+//! - **Conjugate application:** `faer` contract for applying the conjugated
+//!   operator, distinct from transpose or adjoint application.
 
 use faer::Par;
 use faer::dyn_stack::{MemStack, StackReq};

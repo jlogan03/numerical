@@ -10,6 +10,16 @@
 //! Its `conj_apply` and `conj_apply_in_place` methods follow `faer`'s
 //! conjugate-operator contract. They do not implement transpose or adjoint
 //! block solves; those belong on `BiLinOp` / `BiPrecond`.
+//!
+//! # Glossary
+//!
+//! - **Schur complement:** Reduced trailing block `S = D - C A^{-1} B`.
+//! - **Block-LU inverse action:** Solve induced by factoring a 2x2 block matrix
+//!   into lower and upper block factors.
+//! - **Inverse application:** Applying a preconditioner as if it were the
+//!   inverse of an operator.
+//! - **Conjugate application:** `faer` contract for applying the conjugated
+//!   operator, distinct from transpose or adjoint solves.
 
 use faer::Par;
 use faer::dyn_stack::{MemStack, StackReq};

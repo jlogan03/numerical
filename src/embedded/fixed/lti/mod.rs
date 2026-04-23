@@ -11,6 +11,13 @@
 //! expected workflow is to design or store IIR filters in the alloc-side
 //! control layer, then convert to delta-SOS before deploying into the fixed
 //! embedded runtime.
+//!
+//! # Glossary
+//!
+//! - **Execution form:** Runtime-oriented representation chosen for numerical
+//!   robustness or deployment convenience.
+//! - **Delta-SOS:** Delta-operator second-order-section runtime form.
+//! - **Fractional delay:** FIR filter approximating a non-integer sample delay.
 
 mod delta_sos;
 mod fir;

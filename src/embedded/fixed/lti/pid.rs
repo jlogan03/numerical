@@ -1,4 +1,12 @@
 //! Fixed-size sampled PID controllers for embedded deployment.
+//!
+//! # Glossary
+//!
+//! - **PID:** Proportional-integral-derivative controller.
+//! - **Anti-windup:** Logic that limits or corrects the integral state when
+//!   the output saturates.
+//! - **Derivative filter:** Internal state used to smooth the derivative
+//!   contribution.
 
 use crate::embedded::error::EmbeddedError;
 use crate::embedded::math::clamp_value;

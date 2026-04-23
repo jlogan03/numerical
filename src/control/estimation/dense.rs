@@ -1,4 +1,9 @@
 //! Shared dense solver helpers for estimator runtimes.
+//!
+//! # Glossary
+//!
+//! - **Left solve:** Solve `A X = B` for `X`.
+//! - **Right solve:** Solve `X A = B` for `X`.
 
 use crate::control::dense_ops::{dense_mul_plain, frobenius_norm_plain};
 use crate::sparse::compensated::CompensatedField;

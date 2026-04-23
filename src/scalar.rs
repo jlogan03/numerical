@@ -3,6 +3,13 @@
 //! These helpers centralize the crate's optional use of `Float::mul_add` under
 //! the `fma` feature so call sites can opt into fused multiply-add without
 //! repeating feature-gated arithmetic branches throughout the codebase.
+//!
+//! # Glossary
+//!
+//! - **FMA:** Fused multiply-add, computing `a * b + c` with a single rounding
+//!   step when hardware or the language primitive permits it.
+//! - **Feature gate:** Compile-time option selecting one implementation path
+//!   or another.
 
 use faer::complex::Complex;
 use faer_traits::RealField;

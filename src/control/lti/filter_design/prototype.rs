@@ -3,6 +3,15 @@
 //! The public design layer builds every supported filter from one of these
 //! normalized lowpass prototypes before applying the requested analog shape
 //! transform.
+//!
+//! # Glossary
+//!
+//! - **Prototype:** Normalized lowpass filter used as the starting point for a
+//!   larger design family.
+//! - **Normalized cutoff:** Prototype cutoff fixed to a canonical value,
+//!   usually `1 rad/s`.
+//! - **Passband ripple:** Allowed gain variation inside the passband.
+//! - **Pole-zero-gain (ZPK):** Representation using roots and an overall gain.
 
 use super::error::FilterDesignError;
 use super::spec::AnalogFilterFamily;

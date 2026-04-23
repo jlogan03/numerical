@@ -1,4 +1,9 @@
 //! Fixed-size, allocation-free FIR filter banks.
+//!
+//! # Glossary
+//!
+//! - **FIR:** Finite impulse response filter.
+//! - **Tap:** One coefficient multiplying one delayed sample.
 
 use crate::embedded::error::EmbeddedError;
 use crate::embedded::math::ensure_finite;

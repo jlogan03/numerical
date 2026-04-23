@@ -3,6 +3,15 @@
 //! The public entry points in this file are intentionally method-driven rather
 //! than assumption-driven. A `c2d` or `d2c` call is not meaningful unless the
 //! caller states what happens between sample instants.
+//!
+//! # Glossary
+//!
+//! - **c2d / d2c:** Continuous-to-discrete and discrete-to-continuous
+//!   conversion.
+//! - **Zero-order hold:** Assumption that the input is piecewise constant over
+//!   each sample interval.
+//! - **Bilinear / Tustin conversion:** Frequency-warping continuous/discrete
+//!   map based on the trapezoidal rule.
 
 use super::domain::{ContinuousTime, DiscreteTime};
 use super::error::StateSpaceError;

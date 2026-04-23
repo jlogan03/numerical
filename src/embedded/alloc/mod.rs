@@ -1,5 +1,5 @@
 //! Dynamic-size `no_std + alloc` embedded runtimes.
-
+//!
 use faer::{Col, Mat};
 
 pub mod estimation;

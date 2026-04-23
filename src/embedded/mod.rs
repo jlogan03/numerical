@@ -9,7 +9,7 @@
 //! The goal is to provide runtime forms that map directly to embedded targets
 //! without pulling in the analysis, design, plotting, or dynamic conversion
 //! machinery from the `std`-only control module.
-
+//!
 pub mod error;
 pub mod fixed;
 pub(crate) mod math;

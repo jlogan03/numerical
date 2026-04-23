@@ -15,6 +15,12 @@
 //! replacement for ordinary [`DiscreteSos`](super::DiscreteSos). Design,
 //! storage, conversion, and section algebra still flow through the ordinary SOS
 //! type, with delta-SOS introduced only when the runtime basis matters.
+//!
+//! # Glossary
+//!
+//! - **Delta operator:** The discrete operator `δ = (1 - z^-1) / dt`.
+//! - **Low normalized cutoff:** A digital cutoff frequency close to DC
+//!   relative to the sample rate.
 
 use super::error::LtiError;
 use super::util::{cast_real_scalar, trim_leading_zeros, validate_sample_time};

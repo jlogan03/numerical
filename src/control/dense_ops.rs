@@ -2,6 +2,15 @@
 //!
 //! These helpers centralize the crate's repeated dense kernels so control
 //! submodules can share one implementation and one accumulation policy.
+//!
+//! # Glossary
+//!
+//! - **Adjoint:** Conjugate transpose of a matrix.
+//! - **Compensated accumulation:** Summation that keeps a running correction
+//!   term to reduce floating-point loss.
+//! - **Hermitian projection:** Explicit symmetrization step used to pull a
+//!   nearly Hermitian matrix back onto the Hermitian manifold.
+//! - **Frobenius norm:** Square-root of the sum of squared entry magnitudes.
 
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use faer::{Mat, MatRef};

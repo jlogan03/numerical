@@ -3,6 +3,10 @@
 //! This is the embedded execution form for deployed discrete IIR filters. It
 //! is meant to be produced from the alloc-side control representation after
 //! design, not used as the primary design or interchange form.
+//!
+//! # Glossary
+//!
+//! - **Delta operator:** The discrete operator `δ = (1 - z^-1) / dt`.
 
 use crate::embedded::error::EmbeddedError;
 use crate::embedded::math::ensure_finite;

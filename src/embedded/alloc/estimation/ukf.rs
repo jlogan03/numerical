@@ -1,4 +1,12 @@
 //! Simplified SPD-only dynamic-size discrete-time unscented Kalman filtering.
+//!
+//! # Glossary
+//!
+//! - **Sigma points:** Deterministic samples used by the unscented transform.
+//! - **Alpha / beta / kappa:** Spread and prior-shape parameters for the sigma
+//!   point set.
+//! - **SPD:** Symmetric positive definite.
+//! - **Innovation covariance:** Covariance of the predicted measurement error.
 
 use super::core::{
     normalized_innovation_norm, updated_covariance_ukf, weighted_covariance,

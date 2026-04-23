@@ -4,6 +4,15 @@
 //! concrete preconditioners in separate files. The current solver bridge lives
 //! here as well so iterative methods can apply a preconditioner repeatedly
 //! without allocating on every iteration.
+//!
+//! # Glossary
+//!
+//! - **Preconditioner:** Approximate inverse applied inside an iterative
+//!   solver.
+//! - **Scratch:** Temporary storage reserved once and reused across repeated
+//!   applications.
+//! - **`apply_in_place`:** Operation that overwrites the right-hand side with
+//!   the preconditioned result.
 
 mod block;
 mod diagonal;

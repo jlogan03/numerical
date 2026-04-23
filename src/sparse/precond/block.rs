@@ -7,6 +7,16 @@
 //! The `conj_apply` / `conj_apply_in_place` paths follow `faer`'s conjugate
 //! operator contract. They are not transpose or adjoint block solves; those
 //! would belong on `BiLinOp` / `BiPrecond`.
+//!
+//! # Glossary
+//!
+//! - **Block split:** Partition of a vector or operator into leading and
+//!   trailing sub-blocks.
+//! - **Block diagonal:** Preconditioner that inverts only the diagonal blocks.
+//! - **Upper triangular block preconditioner:** Preconditioner that keeps the
+//!   diagonal and upper off-diagonal blocks of a 2x2 block factor.
+//! - **Conjugate application:** `faer` contract for applying the conjugated
+//!   operator, distinct from transpose or adjoint solves.
 
 use faer::Par;
 use faer::dyn_stack::{MemStack, StackReq};

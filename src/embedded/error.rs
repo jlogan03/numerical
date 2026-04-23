@@ -1,5 +1,5 @@
 //! Errors shared by the embedded runtime modules.
-
+//!
 use core::fmt;
 
 /// Errors produced by the embedded runtime lane.

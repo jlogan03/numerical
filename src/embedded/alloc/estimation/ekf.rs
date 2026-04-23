@@ -1,4 +1,15 @@
 //! Simplified dynamic-size discrete-time extended Kalman filtering.
+//!
+//! # Glossary
+//!
+//! - **Jacobian:** First derivative of the state or output map with respect to
+//!   the state.
+//! - **Innovation:** Measurement residual between the actual and predicted
+//!   outputs.
+//! - **Process-noise covariance:** Covariance assigned to state evolution
+//!   uncertainty.
+//! - **Measurement-noise covariance:** Covariance assigned to sensor
+//!   uncertainty.
 
 use super::core::{normalized_innovation_norm, predict_covariance, updated_covariance};
 use super::dense::{

@@ -7,6 +7,15 @@
 //! - compute the minimum prototype order
 //! - map the resulting critical frequencies back into a design-ready filter
 //!   specification for the existing `design_*` entry points
+//!
+//! # Glossary
+//!
+//! - **Passband:** Frequency region where the filter should preserve signal.
+//! - **Stopband:** Frequency region where the filter should attenuate signal.
+//! - **Prototype order:** Order of the normalized lowpass prototype used by the
+//!   design.
+//! - **Critical frequencies:** Cutoff or band-edge frequencies used to realize
+//!   the selected order.
 
 use super::digital::{maybe_prewarp_shape, maybe_unprewarp_shape};
 use super::error::FilterDesignError;

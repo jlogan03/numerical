@@ -9,6 +9,15 @@
 //! This is intentionally a narrow boundary. The goal is not to replace `faer`'s
 //! decomposition algorithms, but to reduce the local summation error in sparse
 //! matrix-vector products before those values enter the Krylov iteration.
+//!
+//! # Glossary
+//!
+//! - **LinOp / BiLinOp:** `faer` traits for matrix-free linear and bilinear
+//!   operators.
+//! - **Compensated accumulation:** Summation that keeps correction terms to
+//!   reduce floating-point loss.
+//! - **Krylov iteration:** Iterative eigensolver or SVD process built from
+//!   repeated operator applications.
 
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use faer::dyn_stack::{DynArray, MemStack, StackReq};

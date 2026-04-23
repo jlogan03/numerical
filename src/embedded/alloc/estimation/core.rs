@@ -1,4 +1,14 @@
 //! Shared nonlinear-estimation algebra for the alloc-backed embedded runtimes.
+//!
+//! # Glossary
+//!
+//! - **Innovation:** Measurement residual between the actual and predicted
+//!   outputs.
+//! - **Innovation covariance:** Covariance of the innovation vector.
+//! - **Weighted mean / covariance:** Unscented-transform moments reconstructed
+//!   from sigma points and their weights.
+//! - **Joseph update:** Covariance update form that better preserves
+//!   positive-semidefiniteness in floating point.
 
 use super::dense::llt_solve;
 use crate::control::dense_ops::{dense_mul, dense_mul_adjoint_rhs, hermitian_project_in_place};

@@ -3,6 +3,15 @@
 //! This is the standard Jacobi-style preconditioner for sparse linear solves:
 //! keep only the diagonal of the matrix and apply its inverse during the
 //! iteration.
+//!
+//! # Glossary
+//!
+//! - **Jacobi preconditioner:** Preconditioner built from the inverse diagonal
+//!   of the matrix.
+//! - **Inverse diagonal:** Vector of reciprocals of the diagonal entries.
+//! - **Left preconditioning:** Forming `M^{-1} A x = M^{-1} b`.
+//! - **Right preconditioning:** Forming `A M^{-1} y = b` and recovering
+//!   `x = M^{-1} y`.
 
 use crate::sparse::col::col_slice;
 use faer::Par;

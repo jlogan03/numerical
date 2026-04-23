@@ -10,6 +10,16 @@
 //! [`DeltaSos`](super::DeltaSos) from a [`DiscreteSos`] when they need a more
 //! stable runtime basis near `z = 1`. That does not replace `Sos` as the
 //! canonical stored representation.
+//!
+//! # Glossary
+//!
+//! - **SOS:** Second-order sections, a factorization of an IIR filter into
+//!   first- and second-order pieces.
+//! - **Section gain:** Scalar factor multiplying the section cascade.
+//! - **Descending-power form:** Coefficient ordering from highest power to
+//!   lowest power.
+//! - **DF2T:** Transposed direct-form II runtime realization used by the
+//!   ordinary discrete execution path.
 
 use super::error::LtiError;
 use super::transfer_function::TransferFunction;

@@ -1,4 +1,11 @@
 //! Dynamic-size nonlinear estimators for `embedded::alloc`.
+//!
+//! # Glossary
+//!
+//! - **Posterior:** State estimate after incorporating the latest
+//!   measurement.
+//! - **Prediction:** State estimate before the latest measurement update.
+//! - **Measurement update:** Correction stage driven by the innovation.
 
 use crate::embedded::EmbeddedError;
 

@@ -1,4 +1,8 @@
 //! Fixed-size discrete-time state-space models.
+//!
+//! # Glossary
+//!
+//! - **DC gain:** Constant-input to constant-output gain.
 
 use crate::embedded::error::EmbeddedError;
 use crate::embedded::fixed::linalg::{

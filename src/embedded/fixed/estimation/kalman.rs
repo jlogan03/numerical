@@ -1,4 +1,15 @@
 //! Fixed-size discrete-time linear Kalman filtering.
+//!
+//! # Glossary
+//!
+//! - **Innovation:** Measurement residual between the actual and predicted
+//!   outputs.
+//! - **Process-noise covariance:** Covariance assigned to state evolution
+//!   uncertainty.
+//! - **Measurement-noise covariance:** Covariance assigned to sensor
+//!   uncertainty.
+//! - **Steady-state gain:** Fixed Kalman correction gain reused at every
+//!   sample once the Riccati recursion has converged.
 
 use crate::embedded::error::EmbeddedError;
 use crate::embedded::fixed::linalg::{

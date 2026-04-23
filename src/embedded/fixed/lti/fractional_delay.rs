@@ -1,4 +1,10 @@
 //! Fixed-size fractional-delay FIR constructors.
+//!
+//! # Glossary
+//!
+//! - **Fractional delay:** Delay by a non-integer number of samples.
+//! - **Lagrange taps:** Interpolating FIR coefficients derived from Lagrange
+//!   polynomials.
 
 use super::Fir;
 use crate::embedded::error::EmbeddedError;

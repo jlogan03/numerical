@@ -2,6 +2,13 @@
 //!
 //! The public digital design path accepts physical angular frequencies and
 //! optionally prewarps them before the bilinear transform.
+//!
+//! # Glossary
+//!
+//! - **Prewarp:** Bilinear-transform frequency correction that preserves one
+//!   chosen analog frequency exactly.
+//! - **Bilinear transform:** Mapping from the analog `s` plane to the digital
+//!   `z` plane.
 
 use super::spec::FilterShape;
 use faer_traits::RealField;

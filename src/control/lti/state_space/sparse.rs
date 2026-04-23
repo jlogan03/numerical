@@ -10,6 +10,15 @@
 //! This shape is enough to support sparse simulation, sparse frequency
 //! response, low-rank Gramian solves, and sparse balanced truncation without
 //! forcing the user to densify the full model.
+//!
+//! # Glossary
+//!
+//! - **CSC:** Compressed sparse column storage.
+//! - **Gramian:** Matrix measuring controllability or observability energy.
+//! - **Low-rank solve:** Approximation that stores or computes a factorized
+//!   Gramian instead of a full dense one.
+//! - **Balanced truncation:** Model-reduction method based on matched
+//!   controllability and observability coordinates.
 
 use super::{ContinuousTime, DiscreteTime, StateSpaceError, validate_blocks};
 use crate::control::matrix_equations::lyapunov::{

@@ -3,6 +3,14 @@
 //! These helpers keep the design pipeline in root form for as long as
 //! possible, which is materially more stable than repeatedly converting
 //! through high-order polynomials.
+//!
+//! # Glossary
+//!
+//! - **Shape transform:** Mapping from a normalized lowpass prototype to the
+//!   requested target shape.
+//! - **Bilinear transform:** Mapping from the analog `s` plane to the digital
+//!   `z` plane.
+//! - **Prewarp:** Frequency correction used with the bilinear transform.
 
 use super::error::FilterDesignError;
 use super::spec::FilterShape;

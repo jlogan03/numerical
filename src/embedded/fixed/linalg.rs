@@ -1,5 +1,5 @@
 //! Fixed-size linear algebra helpers for the embedded runtime lane.
-
+//!
 use crate::embedded::error::EmbeddedError;
 use crate::embedded::math::ensure_finite;
 use num_traits::Float;
