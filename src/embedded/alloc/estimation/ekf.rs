@@ -22,20 +22,45 @@ pub trait DiscreteNonlinearModel<T> {
     /// Output dimension.
     fn output_dim(&self) -> usize;
     /// Evaluates the transition `x[k+1] = f(x[k], u[k])`.
+    ///
+    /// Args:
+    ///   state: Current state slice with length `state_dim()`.
+    ///   input: Current input slice with length `input_dim()`.
+    ///   next_state: Output buffer with length `state_dim()` written with the
+    ///     next state.
     fn transition(&self, state: &[T], input: &[T], next_state: &mut [T]);
     /// Evaluates the output `y[k] = h(x[k], u[k])`.
+    ///
+    /// Args:
+    ///   state: Current state slice with length `state_dim()`.
+    ///   input: Current input slice with length `input_dim()`.
+    ///   output: Output buffer with length `output_dim()` written with the
+    ///     model output in measurement units.
     fn output(&self, state: &[T], input: &[T], output: &mut [T]);
 }
 
 /// EKF-specific nonlinear model with explicit Jacobians.
 pub trait DiscreteExtendedKalmanModel<T>: DiscreteNonlinearModel<T> {
     /// Evaluates the transition Jacobian `∂f/∂x`.
+    ///
+    /// Args:
+    ///   state: Current state slice with length `state_dim()`.
+    ///   input: Current input slice with length `input_dim()`.
+    ///   jacobian: Output matrix with shape `(state_dim(), state_dim())`.
     fn transition_jacobian(&self, state: &[T], input: &[T], jacobian: &mut Matrix<T>);
     /// Evaluates the output Jacobian `∂h/∂x`.
+    ///
+    /// Args:
+    ///   state: Current state slice with length `state_dim()`.
+    ///   input: Current input slice with length `input_dim()`.
+    ///   jacobian: Output matrix with shape `(output_dim(), state_dim())`.
     fn output_jacobian(&self, state: &[T], input: &[T], jacobian: &mut Matrix<T>);
 }
 
 /// One EKF prediction stage.
+///
+/// Each field is a prediction-stage quantity with state shape `(nx, 1)`,
+/// covariance shape `(nx, nx)`, or output shape `(ny, 1)`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExtendedKalmanPrediction<T> {
     /// Predicted state estimate.
@@ -47,6 +72,10 @@ pub struct ExtendedKalmanPrediction<T> {
 }
 
 /// One EKF update stage.
+///
+/// Each field is an update-stage quantity with innovation shape `(ny, 1)`,
+/// gain shape `(nx, ny)`, state shape `(nx, 1)`, covariance shape `(nx, nx)`,
+/// or output shape `(ny, 1)`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExtendedKalmanUpdate<T> {
     /// Innovation `y - h(x^-, u)`.
@@ -127,6 +156,17 @@ where
     M: DiscreteExtendedKalmanModel<T>,
 {
     /// Creates a validated dynamic-size EKF runtime.
+    ///
+    /// Args:
+    ///   model: Nonlinear model with `nx = state_dim()` states and `ny =
+    ///     output_dim()` outputs.
+    ///   w: Process-noise covariance with shape `(nx, nx)`.
+    ///   v: Measurement-noise covariance with shape `(ny, ny)`.
+    ///   x_hat: Initial posterior state estimate with shape `(nx, 1)`.
+    ///   p: Initial posterior covariance with shape `(nx, nx)`.
+    ///
+    /// Returns:
+    ///   A validated EKF runtime with reusable internal scratch for `step()`.
     pub fn new(
         model: M,
         w: Matrix<T>,
@@ -182,18 +222,31 @@ where
     }
 
     /// Returns the current posterior state estimate.
+    ///
+    /// Returns:
+    ///   The current state estimate with shape `(nx, 1)`.
     #[must_use]
     pub fn state_estimate(&self) -> &Vector<T> {
         &self.x_hat
     }
 
     /// Returns the current posterior covariance.
+    ///
+    /// Returns:
+    ///   The current covariance matrix with shape `(nx, nx)`.
     #[must_use]
     pub fn covariance(&self) -> &Matrix<T> {
         &self.p
     }
 
     /// Computes the non-mutating prediction stage.
+    ///
+    /// Args:
+    ///   input: Input slice with length `input_dim()`.
+    ///
+    /// Returns:
+    ///   Prediction-stage state `(nx, 1)`, covariance `(nx, nx)`, and output
+    ///   `(ny, 1)`.
     pub fn predict(&self, input: &[T]) -> Result<ExtendedKalmanPrediction<T>, EmbeddedError> {
         validate_input_dim(&self.model, input)?;
 
@@ -222,6 +275,17 @@ where
     }
 
     /// Computes the non-mutating measurement update.
+    ///
+    /// Args:
+    ///   prediction: Prediction-stage result computed from the same sample.
+    ///   input: Input slice with length `input_dim()` used by the output map.
+    ///   measurement: Measurement slice with length `output_dim()` in the same
+    ///     units as the model output.
+    ///
+    /// Returns:
+    ///   Update-stage innovation `(ny, 1)`, gain `(nx, ny)`, posterior state
+    ///   `(nx, 1)`, posterior covariance `(nx, nx)`, and posterior output
+    ///   `(ny, 1)`.
     pub fn update(
         &self,
         prediction: &ExtendedKalmanPrediction<T>,
@@ -279,6 +343,14 @@ where
     }
 
     /// Runs one full EKF step and stores the posterior estimate.
+    ///
+    /// Args:
+    ///   input: Input slice with length `input_dim()`.
+    ///   measurement: Measurement slice with length `output_dim()` in output
+    ///     units.
+    ///
+    /// Returns:
+    ///   The full update-stage result for the sample.
     pub fn step(
         &mut self,
         input: &[T],

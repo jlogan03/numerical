@@ -13,6 +13,9 @@ pub type Matrix<T, const R: usize, const C: usize> = MatrixStorage<T, R, C>;
 pub type Vector<T, const N: usize> = VectorStorage<T, N>;
 
 /// Fixed-size discrete-time state-space realization.
+///
+/// The realized dynamics are
+/// `x[k+1] = A x[k] + B u[k]` and `y[k] = C x[k] + D u[k]`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DiscreteStateSpace<T, const NX: usize, const NU: usize, const NY: usize> {
     a: Matrix<T, NX, NX>,
@@ -27,6 +30,17 @@ where
     T: Float + Copy,
 {
     /// Creates a discrete-time state-space realization.
+    ///
+    /// Args:
+    ///   a: State matrix with shape `(NX, NX)`.
+    ///   b: Input matrix with shape `(NX, NU)`.
+    ///   c: Output matrix with shape `(NY, NX)`.
+    ///   d: Feedthrough matrix with shape `(NY, NU)`.
+    ///   sample_time: Discrete sample interval in seconds or the caller's
+    ///     chosen base time unit. It must be finite and positive.
+    ///
+    /// Returns:
+    ///   A validated fixed-size discrete-time realization.
     pub fn new(
         a: Matrix<T, NX, NX>,
         b: Matrix<T, NX, NU>,
@@ -47,48 +61,87 @@ where
     }
 
     /// Returns the state matrix.
+    ///
+    /// Returns:
+    ///   The `A` matrix with shape `(NX, NX)`.
     #[must_use]
     pub fn a(&self) -> &Matrix<T, NX, NX> {
         &self.a
     }
 
     /// Returns the input matrix.
+    ///
+    /// Returns:
+    ///   The `B` matrix with shape `(NX, NU)`.
     #[must_use]
     pub fn b(&self) -> &Matrix<T, NX, NU> {
         &self.b
     }
 
     /// Returns the output matrix.
+    ///
+    /// Returns:
+    ///   The `C` matrix with shape `(NY, NX)`.
     #[must_use]
     pub fn c(&self) -> &Matrix<T, NY, NX> {
         &self.c
     }
 
     /// Returns the feedthrough matrix.
+    ///
+    /// Returns:
+    ///   The `D` matrix with shape `(NY, NU)`.
     #[must_use]
     pub fn d(&self) -> &Matrix<T, NY, NU> {
         &self.d
     }
 
     /// Returns the stored sample interval.
+    ///
+    /// Returns:
+    ///   The sample interval in the same time unit that was supplied to
+    ///   [`Self::new`].
     #[must_use]
     pub fn sample_time(&self) -> T {
         self.sample_time
     }
 
     /// Evaluates the current output `C x + D u`.
+    ///
+    /// Args:
+    ///   x: Current state vector with shape `(NX,)`.
+    ///   u: Current input vector with shape `(NU,)`.
+    ///
+    /// Returns:
+    ///   The output vector with shape `(NY,)`, in the output units implied by
+    ///   `C x + D u`.
     #[must_use]
     pub fn output(&self, x: &Vector<T, NX>, u: &Vector<T, NU>) -> Vector<T, NY> {
         vec_add(&mat_vec_mul(&self.c, x), &mat_vec_mul(&self.d, u))
     }
 
     /// Evaluates the next state `A x + B u`.
+    ///
+    /// Args:
+    ///   x: Current state vector with shape `(NX,)`.
+    ///   u: Current input vector with shape `(NU,)`.
+    ///
+    /// Returns:
+    ///   The next state vector with shape `(NX,)`.
     #[must_use]
     pub fn next_state(&self, x: &Vector<T, NX>, u: &Vector<T, NU>) -> Vector<T, NX> {
         vec_add(&mat_vec_mul(&self.a, x), &mat_vec_mul(&self.b, u))
     }
 
     /// Advances one discrete timestep in place and returns the output.
+    ///
+    /// Args:
+    ///   x: In-place state vector with shape `(NX,)`. On entry it is `x[k]`;
+    ///     on return it is overwritten with `x[k+1]`.
+    ///   u: Input vector with shape `(NU,)` applied over one sample interval.
+    ///
+    /// Returns:
+    ///   The output vector `y[k]` with shape `(NY,)`.
     pub fn step(&self, x: &mut Vector<T, NX>, u: Vector<T, NU>) -> Vector<T, NY> {
         let y = self.output(x, &u);
         *x = self.next_state(x, &u);
@@ -102,6 +155,10 @@ where
     T: Float + Copy + faer_traits::RealField,
 {
     /// Returns the steady-state gain `G(1) = C (I - A)^-1 B + D`.
+    ///
+    /// Returns:
+    ///   The DC gain matrix with shape `(NY, NU)`, mapping constant inputs to
+    ///   constant outputs in units of output per unit input.
     pub fn dc_gain(&self) -> Result<Matrix<T, NY, NU>, EmbeddedError> {
         use faer::Mat;
         use faer::linalg::solvers::Solve;
@@ -139,6 +196,13 @@ where
 
     /// Converts a dynamic control-side state-space model into a fixed-size
     /// embedded representation when the dimensions match.
+    ///
+    /// Args:
+    ///   value: Dynamic discrete-time state-space model with `NX` states,
+    ///     `NU` inputs, and `NY` outputs, plus a positive sample interval.
+    ///
+    /// Returns:
+    ///   The same realization copied into fixed-size storage.
     fn try_from(value: &crate::control::lti::DiscreteStateSpace<T>) -> Result<Self, Self::Error> {
         if value.nstates() != NX {
             return Err(EmbeddedError::DimensionMismatch {

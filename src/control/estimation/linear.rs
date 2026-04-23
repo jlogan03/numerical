@@ -71,6 +71,14 @@ use num_traits::{Float, Zero};
 /// steady-state error covariance returned by the dual Riccati equation. On the
 /// discrete-time `DLQE` path this is the steady-state a-priori covariance
 /// `P^-`, because the dual DARE directly yields the predictor-form solution.
+///
+/// Returns:
+///   `gain`: Observer gain with shape `(nx, ny)`.
+///   `covariance`: Steady-state error covariance with shape `(nx, nx)`.
+///   `estimator_a`: Closed-loop estimator matrix with shape `(nx, nx)`.
+///   `residual_norm`: Riccati residual norm in squared-state units.
+///   `stabilizing`: Whether the computed Riccati solution passed the
+///     stabilizing check.
 #[derive(Clone, Debug)]
 pub struct LqeSolve<T: CompensatedField>
 where
@@ -92,6 +100,11 @@ where
 }
 
 /// Prediction stage of the discrete linear Kalman filter.
+///
+/// Returns:
+///   `state`: Predicted state estimate with shape `(nx, 1)`.
+///   `covariance`: Predicted covariance with shape `(nx, nx)`.
+///   `output`: Predicted output with shape `(ny, 1)`.
 #[derive(Clone, Debug)]
 pub struct KalmanPrediction<T: CompensatedField>
 where
@@ -112,6 +125,18 @@ where
 }
 
 /// Update result of one discrete linear Kalman filter measurement step.
+///
+/// Returns:
+///   `innovation`: Measurement innovation with shape `(ny, 1)`.
+///   `innovation_norm`: Euclidean norm of the innovation in output units.
+///   `innovation_covariance`: Innovation covariance with shape `(ny, ny)`.
+///   `normalized_innovation_norm`: Square root of the innovation energy in
+///     whitened measurement coordinates.
+///   `gain`: Kalman gain with shape `(nx, ny)`.
+///   `predicted_output`: Predicted output with shape `(ny, 1)`.
+///   `state`: Posterior state estimate with shape `(nx, 1)`.
+///   `covariance`: Posterior covariance with shape `(nx, nx)`.
+///   `output`: Posterior output with shape `(ny, 1)`.
 #[derive(Clone, Debug)]
 pub struct KalmanUpdate<T: CompensatedField>
 where
@@ -157,6 +182,10 @@ impl Default for CovarianceUpdate {
 }
 
 /// Prediction stage of the fixed-gain steady-state discrete observer.
+///
+/// Returns:
+///   `state`: Predicted state estimate with shape `(nx, 1)`.
+///   `output`: Predicted output with shape `(ny, 1)`.
 #[derive(Clone, Debug)]
 pub struct SteadyStateKalmanPrediction<T: CompensatedField>
 where
@@ -175,6 +204,12 @@ where
 }
 
 /// Update result of the fixed-gain steady-state discrete observer.
+///
+/// Returns:
+///   `innovation`: Measurement innovation with shape `(ny, 1)`.
+///   `innovation_norm`: Euclidean norm of the innovation in output units.
+///   `state`: Posterior state estimate with shape `(nx, 1)`.
+///   `output`: Posterior output with shape `(ny, 1)`.
 #[derive(Clone, Debug)]
 pub struct SteadyStateKalmanUpdate<T: CompensatedField>
 where
@@ -191,6 +226,13 @@ where
 }
 
 /// Runtime derivative information for a continuous fixed-gain observer.
+///
+/// Returns:
+///   `output`: Estimated output with shape `(ny, 1)`.
+///   `innovation`: Measurement innovation with shape `(ny, 1)`.
+///   `innovation_norm`: Euclidean norm of the innovation in output units.
+///   `state_derivative`: Observer state derivative with shape `(nx, 1)`, in
+///     state units per unit time.
 #[derive(Clone, Debug)]
 pub struct ContinuousObserverDerivative<T: CompensatedField>
 where
@@ -336,6 +378,19 @@ where
 /// This is the estimator-side dual of continuous-time LQR. The implementation
 /// solves the CARE on `(A^H, C^H, W, V)` and converts the resulting dual gain
 /// back into the observer gain `L`.
+///
+/// Args:
+///   a: State matrix with shape `(nx, nx)`, in units of state per state per
+///     unit time.
+///   c: Output matrix with shape `(ny, nx)`, in units of output per state.
+///   w: Process-noise covariance with shape `(nx, nx)`, in state-noise units
+///     squared per unit time.
+///   v: Measurement-noise covariance with shape `(ny, ny)`, in output-noise
+///     units squared.
+///
+/// Returns:
+///   The steady-state observer gain, covariance, and residual data for the
+///   continuous-time estimator design.
 pub fn lqe_dense<T>(
     a: MatRef<'_, T>,
     c: MatRef<'_, T>,
@@ -372,6 +427,16 @@ where
 /// This is the estimator-side dual of DLQR. The implementation solves the
 /// DARE on `(A^H, C^H, W, V)` and converts the resulting dual gain into the
 /// predictor-form observer gain `L`.
+///
+/// Args:
+///   a: State transition matrix with shape `(nx, nx)`.
+///   c: Output matrix with shape `(ny, nx)`.
+///   w: Per-sample process-noise covariance with shape `(nx, nx)`.
+///   v: Per-sample measurement-noise covariance with shape `(ny, ny)`.
+///
+/// Returns:
+///   The steady-state observer gain, a-priori covariance, and residual data
+///   for the discrete-time estimator design.
 pub fn dlqe_dense<T>(
     a: MatRef<'_, T>,
     c: MatRef<'_, T>,
@@ -406,6 +471,15 @@ where
     T::Real: Float + Copy + RealField,
 {
     /// Designs the dense steady-state continuous-time LQE observer.
+    ///
+    /// Args:
+    ///   w: Process-noise covariance with shape `(nx, nx)` in state-noise
+    ///     units squared per unit time.
+    ///   v: Measurement-noise covariance with shape `(ny, ny)` in
+    ///     output-noise units squared.
+    ///
+    /// Returns:
+    ///   The steady-state observer design for this continuous-time plant.
     pub fn lqe(&self, w: MatRef<'_, T>, v: MatRef<'_, T>) -> Result<LqeSolve<T>, EstimatorError> {
         lqe_dense(self.a(), self.c(), w, v)
     }
@@ -417,11 +491,27 @@ where
     T::Real: Float + Copy + RealField,
 {
     /// Designs the dense steady-state discrete-time DLQE observer.
+    ///
+    /// Args:
+    ///   w: Per-sample process-noise covariance with shape `(nx, nx)`.
+    ///   v: Per-sample measurement-noise covariance with shape `(ny, ny)`.
+    ///
+    /// Returns:
+    ///   The steady-state observer design for this discrete-time plant.
     pub fn dlqe(&self, w: MatRef<'_, T>, v: MatRef<'_, T>) -> Result<LqeSolve<T>, EstimatorError> {
         dlqe_dense(self.a(), self.c(), w, v)
     }
 
     /// Builds a fixed-gain steady-state discrete observer from `DLQE`.
+    ///
+    /// Args:
+    ///   w: Per-sample process-noise covariance with shape `(nx, nx)`.
+    ///   v: Per-sample measurement-noise covariance with shape `(ny, ny)`.
+    ///   x_hat: Initial state estimate with shape `(nx, 1)`.
+    ///
+    /// Returns:
+    ///   A fixed-gain discrete observer using the steady-state filter-form
+    ///   gain implied by the DLQE solution.
     pub fn steady_state_kalman(
         &self,
         w: MatRef<'_, T>,
@@ -438,6 +528,16 @@ where
     T::Real: Float + Copy + RealField,
 {
     /// Builds a fixed-gain continuous observer from `LQE`.
+    ///
+    /// Args:
+    ///   w: Process-noise covariance with shape `(nx, nx)` in state-noise
+    ///     units squared per unit time.
+    ///   v: Measurement-noise covariance with shape `(ny, ny)` in
+    ///     output-noise units squared.
+    ///   x_hat: Initial state estimate with shape `(nx, 1)`.
+    ///
+    /// Returns:
+    ///   A continuous fixed-gain observer driven by the LQE gain.
     pub fn observer(
         &self,
         w: MatRef<'_, T>,
@@ -455,6 +555,19 @@ where
 {
     /// Builds a discrete Kalman filter from explicit model and covariance
     /// matrices.
+    ///
+    /// Args:
+    ///   a: State transition matrix with shape `(nx, nx)`.
+    ///   b: Input matrix with shape `(nx, nu)`.
+    ///   c: Output matrix with shape `(ny, nx)`.
+    ///   d: Feedthrough matrix with shape `(ny, nu)`.
+    ///   w: Per-sample process-noise covariance with shape `(nx, nx)`.
+    ///   v: Per-sample measurement-noise covariance with shape `(ny, ny)`.
+    ///   x_hat: Initial posterior state estimate with shape `(nx, 1)`.
+    ///   p: Initial posterior covariance with shape `(nx, nx)`.
+    ///
+    /// Returns:
+    ///   A recursive discrete-time Kalman filter.
     pub fn new(
         a: Mat<T>,
         b: Mat<T>,
@@ -470,6 +583,21 @@ where
 
     /// Builds a discrete Kalman filter with an explicit covariance-update
     /// policy.
+    ///
+    /// Args:
+    ///   a: State transition matrix with shape `(nx, nx)`.
+    ///   b: Input matrix with shape `(nx, nu)`.
+    ///   c: Output matrix with shape `(ny, nx)`.
+    ///   d: Feedthrough matrix with shape `(ny, nu)`.
+    ///   w: Per-sample process-noise covariance with shape `(nx, nx)`.
+    ///   v: Per-sample measurement-noise covariance with shape `(ny, ny)`.
+    ///   x_hat: Initial posterior state estimate with shape `(nx, 1)`.
+    ///   p: Initial posterior covariance with shape `(nx, nx)`.
+    ///   covariance_update: Covariance update law used after each
+    ///     measurement correction.
+    ///
+    /// Returns:
+    ///   A recursive discrete-time Kalman filter.
     pub fn new_with_covariance_update(
         a: Mat<T>,
         b: Mat<T>,
@@ -506,6 +634,17 @@ where
 
     /// Builds a discrete Kalman filter from a validated discrete state-space
     /// model plus initial estimate data.
+    ///
+    /// Args:
+    ///   system: Discrete-time state-space model with `nx` states, `nu`
+    ///     inputs, and `ny` outputs.
+    ///   w: Per-sample process-noise covariance with shape `(nx, nx)`.
+    ///   v: Per-sample measurement-noise covariance with shape `(ny, ny)`.
+    ///   x_hat: Initial posterior state estimate with shape `(nx, 1)`.
+    ///   p: Initial posterior covariance with shape `(nx, nx)`.
+    ///
+    /// Returns:
+    ///   A recursive discrete-time Kalman filter.
     pub fn from_state_space(
         system: &DiscreteStateSpace<T>,
         w: Mat<T>,
@@ -528,6 +667,19 @@ where
 
     /// Builds a discrete Kalman filter from a validated state-space model with
     /// an explicit covariance-update policy.
+    ///
+    /// Args:
+    ///   system: Discrete-time state-space model with `nx` states, `nu`
+    ///     inputs, and `ny` outputs.
+    ///   w: Per-sample process-noise covariance with shape `(nx, nx)`.
+    ///   v: Per-sample measurement-noise covariance with shape `(ny, ny)`.
+    ///   x_hat: Initial posterior state estimate with shape `(nx, 1)`.
+    ///   p: Initial posterior covariance with shape `(nx, nx)`.
+    ///   covariance_update: Covariance update law used after each
+    ///     measurement correction.
+    ///
+    /// Returns:
+    ///   A recursive discrete-time Kalman filter.
     pub fn from_state_space_with_covariance_update(
         system: &DiscreteStateSpace<T>,
         w: Mat<T>,
@@ -557,6 +709,17 @@ where
     /// posterior covariance `P^+`, so this constructor converts the Riccati
     /// solution to the corresponding posterior fixed point before seeding the
     /// recursion.
+    ///
+    /// Args:
+    ///   system: Discrete-time state-space model with `nx` states, `nu`
+    ///     inputs, and `ny` outputs.
+    ///   w: Per-sample process-noise covariance with shape `(nx, nx)`.
+    ///   v: Per-sample measurement-noise covariance with shape `(ny, ny)`.
+    ///   x_hat: Initial posterior state estimate with shape `(nx, 1)`.
+    ///
+    /// Returns:
+    ///   A recursive Kalman filter seeded from the steady-state DLQE fixed
+    ///   point.
     pub fn from_dlqe(
         system: &DiscreteStateSpace<T>,
         w: MatRef<'_, T>,
@@ -589,12 +752,18 @@ where
     }
 
     /// Returns the current posterior state estimate.
+    ///
+    /// Returns:
+    ///   The current state estimate with shape `(nx, 1)`.
     #[must_use]
     pub fn state_estimate(&self) -> MatRef<'_, T> {
         self.x_hat.as_ref()
     }
 
     /// Returns the current posterior covariance.
+    ///
+    /// Returns:
+    ///   The current covariance with shape `(nx, nx)`.
     #[must_use]
     pub fn covariance(&self) -> MatRef<'_, T> {
         self.p.as_ref()
@@ -608,6 +777,14 @@ where
 
     /// Computes the prediction step for the supplied input without mutating the
     /// filter state.
+    ///
+    /// Args:
+    ///   input: Input column vector with shape `(nu, 1)` applied over one
+    ///     sample interval.
+    ///
+    /// Returns:
+    ///   Prediction-stage state `(nx, 1)`, covariance `(nx, nx)`, and output
+    ///   `(ny, 1)`.
     pub fn predict(&self, input: MatRef<'_, T>) -> Result<KalmanPrediction<T>, EstimatorError> {
         validate_column_vector("input", input, self.b.ncols())?;
 
@@ -658,6 +835,18 @@ where
     /// used during [`predict`](Self::predict). To keep the innovation
     /// consistent with the supplied update input, this method recomputes the
     /// measurement-side predicted output `C x^- + D u`.
+    ///
+    /// Args:
+    ///   prediction: Prediction-stage result with state `(nx, 1)`,
+    ///     covariance `(nx, nx)`, and output `(ny, 1)`.
+    ///   input: Measurement-side input column vector with shape `(nu, 1)`.
+    ///   measurement: Measurement column vector with shape `(ny, 1)` in output
+    ///     units.
+    ///
+    /// Returns:
+    ///   Update-stage innovation `(ny, 1)`, gain `(nx, ny)`, posterior state
+    ///   `(nx, 1)`, posterior covariance `(nx, nx)`, and posterior output
+    ///   `(ny, 1)`.
     pub fn update(
         &self,
         prediction: &KalmanPrediction<T>,
@@ -777,6 +966,14 @@ where
     /// measurement feedthrough. Callers that need a different update-side
     /// input should use the split [`predict`](Self::predict) and
     /// [`update`](Self::update) methods.
+    ///
+    /// Args:
+    ///   input: Input column vector with shape `(nu, 1)`.
+    ///   measurement: Measurement column vector with shape `(ny, 1)` in output
+    ///     units.
+    ///
+    /// Returns:
+    ///   The full update-stage result for the sample.
     pub fn step(
         &mut self,
         input: MatRef<'_, T>,
@@ -805,6 +1002,19 @@ where
     /// `x^+ = x^- + K (y - y^-)`
     ///
     /// rather than the predictor-form `DLQE` observer gain used in `A - L C`.
+    ///
+    /// Args:
+    ///   a: State transition matrix with shape `(nx, nx)`.
+    ///   b: Input matrix with shape `(nx, nu)`.
+    ///   c: Output matrix with shape `(ny, nx)`.
+    ///   d: Feedthrough matrix with shape `(ny, nu)`.
+    ///   gain: Filter-form steady-state gain with shape `(nx, ny)`.
+    ///   x_hat: Initial state estimate with shape `(nx, 1)`.
+    ///   steady_state_covariance: Optional steady-state covariance with shape
+    ///     `(nx, nx)`.
+    ///
+    /// Returns:
+    ///   A fixed-gain steady-state observer.
     pub fn new(
         a: Mat<T>,
         b: Mat<T>,
@@ -844,6 +1054,17 @@ where
     /// `x^+ = x^- + K (y - y^-)`
     ///
     /// not the predictor-form `DLQE` gain used in `A - L C`.
+    ///
+    /// Args:
+    ///   system: Discrete-time state-space model with `nx` states, `nu`
+    ///     inputs, and `ny` outputs.
+    ///   gain: Filter-form steady-state gain with shape `(nx, ny)`.
+    ///   x_hat: Initial state estimate with shape `(nx, 1)`.
+    ///   steady_state_covariance: Optional steady-state covariance with shape
+    ///     `(nx, nx)`.
+    ///
+    /// Returns:
+    ///   A fixed-gain steady-state observer.
     pub fn from_filter_gain(
         system: &DiscreteStateSpace<T>,
         gain: Mat<T>,
@@ -873,6 +1094,16 @@ where
     /// [`dlqe_dense`] or [`DiscreteStateSpace::dlqe`]. Use
     /// [`Self::from_filter_gain`] only when the supplied gain is already in the
     /// filter-form correction equation `x^+ = x^- + K (y - y^-)`.
+    ///
+    /// Args:
+    ///   system: Discrete-time state-space model with `nx` states, `nu`
+    ///     inputs, and `ny` outputs.
+    ///   w: Per-sample process-noise covariance with shape `(nx, nx)`.
+    ///   v: Per-sample measurement-noise covariance with shape `(ny, ny)`.
+    ///   x_hat: Initial state estimate with shape `(nx, 1)`.
+    ///
+    /// Returns:
+    ///   A fixed-gain steady-state observer derived from the DLQE solution.
     pub fn from_dlqe(
         system: &DiscreteStateSpace<T>,
         w: MatRef<'_, T>,
@@ -885,18 +1116,27 @@ where
     }
 
     /// Returns the current state estimate.
+    ///
+    /// Returns:
+    ///   The current state estimate with shape `(nx, 1)`.
     #[must_use]
     pub fn state_estimate(&self) -> MatRef<'_, T> {
         self.x_hat.as_ref()
     }
 
     /// Returns the fixed observer gain.
+    ///
+    /// Returns:
+    ///   The steady-state gain matrix with shape `(nx, ny)`.
     #[must_use]
     pub fn gain(&self) -> MatRef<'_, T> {
         self.gain.as_ref()
     }
 
     /// Returns the stored steady-state covariance when available.
+    ///
+    /// Returns:
+    ///   The optional steady-state covariance with shape `(nx, nx)`.
     #[must_use]
     pub fn steady_state_covariance(&self) -> Option<MatRef<'_, T>> {
         self.steady_state_covariance.as_ref().map(|p| p.as_ref())
@@ -908,6 +1148,12 @@ where
     /// discrete Kalman filter, but without covariance evolution:
     ///
     /// `x^- = A x + B u`
+    ///
+    /// Args:
+    ///   input: Input column vector with shape `(nu, 1)`.
+    ///
+    /// Returns:
+    ///   Prediction-stage state `(nx, 1)` and output `(ny, 1)`.
     pub fn predict(
         &self,
         input: MatRef<'_, T>,
@@ -942,6 +1188,17 @@ where
     /// measurement-side predicted output is recomputed from the supplied
     /// update input so callers can use a different feedthrough context than
     /// the one used during prediction.
+    ///
+    /// Args:
+    ///   prediction: Prediction-stage result with state `(nx, 1)` and output
+    ///     `(ny, 1)`.
+    ///   input: Measurement-side input column vector with shape `(nu, 1)`.
+    ///   measurement: Measurement column vector with shape `(ny, 1)` in output
+    ///     units.
+    ///
+    /// Returns:
+    ///   Innovation `(ny, 1)`, posterior state `(nx, 1)`, and posterior
+    ///   output `(ny, 1)`.
     pub fn update(
         &self,
         prediction: &SteadyStateKalmanPrediction<T>,
@@ -1005,6 +1262,14 @@ where
     /// measurement feedthrough. Callers that need a different update-side
     /// input should use the split [`predict`](Self::predict) and
     /// [`update`](Self::update) methods.
+    ///
+    /// Args:
+    ///   input: Input column vector with shape `(nu, 1)`.
+    ///   measurement: Measurement column vector with shape `(ny, 1)` in output
+    ///     units.
+    ///
+    /// Returns:
+    ///   The full fixed-gain update result for the sample.
     pub fn step(
         &mut self,
         input: MatRef<'_, T>,
@@ -1023,6 +1288,20 @@ where
     T::Real: Float + Copy + RealField,
 {
     /// Builds a fixed-gain continuous observer from explicit matrices.
+    ///
+    /// Args:
+    ///   a: State matrix with shape `(nx, nx)`, in state-per-state per unit
+    ///     time.
+    ///   b: Input matrix with shape `(nx, nu)`, in state-per-input per unit
+    ///     time.
+    ///   c: Output matrix with shape `(ny, nx)`, in output per state.
+    ///   d: Feedthrough matrix with shape `(ny, nu)`, in output per input.
+    ///   gain: Observer gain with shape `(nx, ny)`, in state-per-output per
+    ///     unit time.
+    ///   x_hat: Initial state estimate with shape `(nx, 1)`.
+    ///
+    /// Returns:
+    ///   A continuous fixed-gain observer.
     pub fn new(
         a: Mat<T>,
         b: Mat<T>,
@@ -1051,6 +1330,15 @@ where
 
     /// Builds a fixed-gain continuous observer from a validated state-space
     /// model and an explicit observer gain.
+    ///
+    /// Args:
+    ///   system: Continuous-time state-space model with `nx` states, `nu`
+    ///     inputs, and `ny` outputs.
+    ///   gain: Observer gain with shape `(nx, ny)`.
+    ///   x_hat: Initial state estimate with shape `(nx, 1)`.
+    ///
+    /// Returns:
+    ///   A continuous fixed-gain observer.
     pub fn from_gain(
         system: &ContinuousStateSpace<T>,
         gain: Mat<T>,
@@ -1071,6 +1359,18 @@ where
     /// Unlike the discrete steady-state wrapper, this path does not need a
     /// predictor-to-filter gain conversion. The continuous `LQE` gain already
     /// appears directly in the observer differential equation.
+    ///
+    /// Args:
+    ///   system: Continuous-time state-space model with `nx` states, `nu`
+    ///     inputs, and `ny` outputs.
+    ///   w: Process-noise covariance with shape `(nx, nx)` in state-noise
+    ///     units squared per unit time.
+    ///   v: Measurement-noise covariance with shape `(ny, ny)` in
+    ///     output-noise units squared.
+    ///   x_hat: Initial state estimate with shape `(nx, 1)`.
+    ///
+    /// Returns:
+    ///   A continuous fixed-gain observer driven by the LQE gain.
     pub fn from_lqe(
         system: &ContinuousStateSpace<T>,
         w: MatRef<'_, T>,
@@ -1082,12 +1382,18 @@ where
     }
 
     /// Returns the current state estimate.
+    ///
+    /// Returns:
+    ///   The current state estimate with shape `(nx, 1)`.
     #[must_use]
     pub fn state_estimate(&self) -> MatRef<'_, T> {
         self.x_hat.as_ref()
     }
 
     /// Returns the fixed observer gain.
+    ///
+    /// Returns:
+    ///   The observer gain with shape `(nx, ny)`.
     #[must_use]
     pub fn gain(&self) -> MatRef<'_, T> {
         self.gain.as_ref()
@@ -1099,6 +1405,16 @@ where
     /// This returns the derivative data rather than stepping time internally so
     /// callers can integrate it with whatever ODE scheme they are already
     /// using.
+    ///
+    /// Args:
+    ///   input: Input column vector with shape `(nu, 1)`.
+    ///   measurement: Measurement column vector with shape `(ny, 1)` in output
+    ///     units.
+    ///
+    /// Returns:
+    ///   Estimated output `(ny, 1)`, innovation `(ny, 1)`, innovation norm in
+    ///   output units, and state derivative `(nx, 1)` in state units per unit
+    ///   time.
     pub fn derivative(
         &self,
         input: MatRef<'_, T>,
@@ -1321,6 +1637,16 @@ where
 ///
 /// This helper keeps that conversion on the allocating design side so runtime
 /// fixed-gain observers can be constructed separately from the Riccati solve.
+///
+/// Args:
+///   c: Output matrix with shape `(ny, nx)`.
+///   v: Per-sample measurement-noise covariance with shape `(ny, ny)`.
+///   prior_covariance: Steady-state a-priori covariance `P^-` with shape
+///     `(nx, nx)`.
+///
+/// Returns:
+///   A tuple containing the filter-form steady-state gain `K` with shape
+///   `(nx, ny)` and the innovation covariance `S` with shape `(ny, ny)`.
 pub fn steady_state_filter_gain_dense<T>(
     c: MatRef<'_, T>,
     v: MatRef<'_, T>,

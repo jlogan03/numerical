@@ -21,6 +21,10 @@ use faer_traits::RealField;
 use num_traits::Float;
 
 /// One UKF prediction stage.
+///
+/// Each field is a prediction-stage quantity with state shape `(nx, 1)`,
+/// covariance shape `(nx, nx)`, or sigma-point collection length
+/// `2 * nx + 1`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UnscentedKalmanPrediction<T> {
     /// Predicted state estimate.
@@ -32,6 +36,10 @@ pub struct UnscentedKalmanPrediction<T> {
 }
 
 /// One UKF update stage.
+///
+/// Each field is an update-stage quantity with innovation shape `(ny, 1)`,
+/// gain shape `(nx, ny)`, state shape `(nx, 1)`, covariance shape `(nx, nx)`,
+/// or predicted-output shape `(ny, 1)`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct UnscentedKalmanUpdate<T> {
     /// Innovation `y - y^-`.
@@ -119,6 +127,18 @@ where
     M: DiscreteNonlinearModel<T>,
 {
     /// Creates a validated SPD-only UKF runtime.
+    ///
+    /// Args:
+    ///   model: Nonlinear model with `nx = state_dim()` states and `ny =
+    ///     output_dim()` outputs.
+    ///   w: Process-noise covariance with shape `(nx, nx)`.
+    ///   v: Measurement-noise covariance with shape `(ny, ny)`.
+    ///   x_hat: Initial posterior state estimate with shape `(nx, 1)`.
+    ///   p: Initial posterior covariance with shape `(nx, nx)`.
+    ///
+    /// Returns:
+    ///   A validated UKF runtime with reusable sigma-point scratch for
+    ///   `step()`.
     pub fn new(
         model: M,
         w: Matrix<T>,
@@ -177,6 +197,18 @@ where
     }
 
     /// Overrides the sigma-point spread parameters.
+    ///
+    /// Args:
+    ///   alpha: Primary sigma-point spread parameter. It is dimensionless and
+    ///     must be finite and positive.
+    ///   beta: Prior-knowledge parameter. It is dimensionless and must be
+    ///     finite and nonnegative.
+    ///   kappa: Secondary spread parameter. It is dimensionless and must be
+    ///     finite.
+    ///
+    /// Returns:
+    ///   The same filter instance configured with the supplied sigma-point
+    ///   parameters.
     pub fn with_sigma_parameters(
         mut self,
         alpha: T,
@@ -205,18 +237,32 @@ where
     }
 
     /// Returns the current posterior estimate.
+    ///
+    /// Returns:
+    ///   The current state estimate with shape `(nx, 1)`.
     #[must_use]
     pub fn state_estimate(&self) -> &Vector<T> {
         &self.x_hat
     }
 
     /// Returns the current posterior covariance.
+    ///
+    /// Returns:
+    ///   The current covariance matrix with shape `(nx, nx)`.
     #[must_use]
     pub fn covariance(&self) -> &Matrix<T> {
         &self.p
     }
 
     /// Computes the non-mutating sigma-point prediction stage.
+    ///
+    /// Args:
+    ///   input: Input slice with length `input_dim()`.
+    ///
+    /// Returns:
+    ///   Prediction-stage state `(nx, 1)`, covariance `(nx, nx)`, and the
+    ///   propagated sigma-point set with `2 * nx + 1` vectors of shape
+    ///   `(nx, 1)`.
     pub fn predict(&self, input: &[T]) -> Result<UnscentedKalmanPrediction<T>, EmbeddedError> {
         validate_input_dim(&self.model, input)?;
         let weights = sigma_weights(self.model.state_dim(), self.alpha, self.beta, self.kappa)?;
@@ -253,6 +299,17 @@ where
     }
 
     /// Computes the non-mutating UKF measurement update.
+    ///
+    /// Args:
+    ///   prediction: Prediction-stage result computed from the same sample.
+    ///   input: Input slice with length `input_dim()` used by the output map.
+    ///   measurement: Measurement slice with length `output_dim()` in the same
+    ///     units as the model output.
+    ///
+    /// Returns:
+    ///   Update-stage innovation `(ny, 1)`, gain `(nx, ny)`, posterior state
+    ///   `(nx, 1)`, posterior covariance `(nx, nx)`, and predicted output
+    ///   `(ny, 1)`.
     pub fn update(
         &self,
         prediction: &UnscentedKalmanPrediction<T>,
@@ -336,6 +393,14 @@ where
     }
 
     /// Runs one full UKF step and stores the posterior estimate.
+    ///
+    /// Args:
+    ///   input: Input slice with length `input_dim()`.
+    ///   measurement: Measurement slice with length `output_dim()` in output
+    ///     units.
+    ///
+    /// Returns:
+    ///   The full update-stage result for the sample.
     pub fn step(
         &mut self,
         input: &[T],

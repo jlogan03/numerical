@@ -24,6 +24,9 @@ impl Default for CovarianceUpdate {
 }
 
 /// One non-mutating prediction stage.
+///
+/// Each field is a prediction-stage quantity derived from `x[k|k]`,
+/// `P[k|k]`, and the supplied input at sample `k`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct KalmanPrediction<T, const NX: usize, const NY: usize> {
     /// Predicted state estimate.
@@ -35,6 +38,9 @@ pub struct KalmanPrediction<T, const NX: usize, const NY: usize> {
 }
 
 /// One non-mutating measurement update stage.
+///
+/// Each field is an update-stage quantity derived from a prediction, the
+/// supplied measurement, and the configured noise covariances.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct KalmanUpdate<T, const NX: usize, const NY: usize> {
     /// Innovation `y - (C x^- + D u)`.
@@ -58,6 +64,9 @@ pub struct KalmanUpdate<T, const NX: usize, const NY: usize> {
 }
 
 /// Fixed-size recursive discrete-time Kalman filter.
+///
+/// The filter assumes process noise is already expressed in state coordinates,
+/// so the covariance prediction is `P^- = A P A^T + W`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct DiscreteKalmanFilter<T, const NX: usize, const NU: usize, const NY: usize> {
     /// Discrete-time plant model.
@@ -75,6 +84,9 @@ pub struct DiscreteKalmanFilter<T, const NX: usize, const NU: usize, const NY: u
 }
 
 /// Fixed-gain steady-state discrete-time observer.
+///
+/// This is the deployment form used after a steady-state Kalman gain has
+/// already been designed offline.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SteadyStateKalmanFilter<T, const NX: usize, const NU: usize, const NY: usize> {
     /// Discrete-time plant model.
@@ -92,6 +104,18 @@ where
     T: Float + Copy,
 {
     /// Creates a fixed-size discrete Kalman filter.
+    ///
+    /// Args:
+    ///   system: Discrete-time plant realization with `NX` states, `NU`
+    ///     inputs, `NY` outputs, and a stored sample interval.
+    ///   w: Process-noise covariance with shape `(NX, NX)`.
+    ///   v: Measurement-noise covariance with shape `(NY, NY)`.
+    ///   x_hat: Initial posterior state estimate with shape `(NX,)`.
+    ///   p: Initial posterior covariance with shape `(NX, NX)`.
+    ///
+    /// Returns:
+    ///   A recursive fixed-size Kalman filter initialized at the supplied
+    ///   posterior estimate.
     pub fn new(
         system: DiscreteStateSpace<T, NX, NU, NY>,
         w: Matrix<T, NX, NX>,
@@ -104,6 +128,19 @@ where
 
     /// Creates a fixed-size discrete Kalman filter with an explicit covariance
     /// update policy.
+    ///
+    /// Args:
+    ///   system: Discrete-time plant realization with `NX` states, `NU`
+    ///     inputs, `NY` outputs, and a stored sample interval.
+    ///   w: Process-noise covariance with shape `(NX, NX)`.
+    ///   v: Measurement-noise covariance with shape `(NY, NY)`.
+    ///   x_hat: Initial posterior state estimate with shape `(NX,)`.
+    ///   p: Initial posterior covariance with shape `(NX, NX)`.
+    ///   covariance_update: Covariance update law used after each
+    ///     measurement correction.
+    ///
+    /// Returns:
+    ///   A recursive fixed-size Kalman filter.
     pub fn new_with_covariance_update(
         system: DiscreteStateSpace<T, NX, NU, NY>,
         w: Matrix<T, NX, NX>,
@@ -123,18 +160,32 @@ where
     }
 
     /// Returns the current posterior estimate.
+    ///
+    /// Returns:
+    ///   The current state estimate with shape `(NX,)`.
     #[must_use]
     pub fn state_estimate(&self) -> &Vector<T, NX> {
         &self.x_hat
     }
 
     /// Returns the current posterior covariance.
+    ///
+    /// Returns:
+    ///   The current covariance matrix with shape `(NX, NX)`.
     #[must_use]
     pub fn covariance(&self) -> &Matrix<T, NX, NX> {
         &self.p
     }
 
     /// Computes the non-mutating prediction stage.
+    ///
+    /// Args:
+    ///   input: Input vector with shape `(NU,)` applied over one sample
+    ///     interval.
+    ///
+    /// Returns:
+    ///   Prediction-stage state, covariance, and output terms, with shapes
+    ///   `(NX,)`, `(NX, NX)`, and `(NY,)`.
     pub fn predict(
         &self,
         input: Vector<T, NU>,
@@ -156,6 +207,19 @@ where
     }
 
     /// Computes the non-mutating measurement update.
+    ///
+    /// Args:
+    ///   prediction: Prediction-stage state, covariance, and output computed
+    ///     from the same sample.
+    ///   input: Input vector with shape `(NU,)` used for the measurement-side
+    ///     feedthrough term `D u`.
+    ///   measurement: Measurement vector with shape `(NY,)` in the same units
+    ///     as the plant output.
+    ///
+    /// Returns:
+    ///   Update-stage innovation, gain, posterior state, posterior covariance,
+    ///   and posterior output, with shapes `(NY,)`, `(NX, NY)`, `(NX,)`,
+    ///   `(NX, NX)`, and `(NY,)`.
     pub fn update(
         &self,
         prediction: &KalmanPrediction<T, NX, NY>,
@@ -211,6 +275,13 @@ where
 
     /// Runs one full recursive predict/update cycle and stores the posterior
     /// estimate.
+    ///
+    /// Args:
+    ///   input: Input vector with shape `(NU,)`.
+    ///   measurement: Measurement vector with shape `(NY,)` in output units.
+    ///
+    /// Returns:
+    ///   The full update-stage result for the sample.
     pub fn step(
         &mut self,
         input: Vector<T, NU>,
@@ -231,10 +302,17 @@ where
     /// Creates a fixed-gain steady-state observer from an explicit filter-form
     /// correction gain.
     ///
-    /// This is the runtime-side counterpart to
-    /// [`crate::control::steady_state_filter_gain_dense`]. The supplied `gain`
-    /// must already be the filter-form steady-state correction gain `K` used
-    /// in `x^+ = x^- + K (y - y^-)`.
+    /// Args:
+    ///   system: Discrete-time plant realization with `NX` states, `NU`
+    ///     inputs, `NY` outputs, and a stored sample interval.
+    ///   gain: Steady-state correction gain `K` with shape `(NX, NY)` used in
+    ///     `x^+ = x^- + K (y - y^-)`.
+    ///   x_hat: Initial state estimate with shape `(NX,)`.
+    ///   steady_state_covariance: Optional steady-state covariance with shape
+    ///     `(NX, NX)`.
+    ///
+    /// Returns:
+    ///   A fixed-gain observer that reuses the supplied gain at each sample.
     pub fn from_filter_gain(
         system: DiscreteStateSpace<T, NX, NU, NY>,
         gain: Matrix<T, NX, NY>,
@@ -250,17 +328,35 @@ where
     }
 
     /// Returns the current state estimate.
+    ///
+    /// Returns:
+    ///   The current state estimate with shape `(NX,)`.
     #[must_use]
     pub fn state_estimate(&self) -> &Vector<T, NX> {
         &self.x_hat
     }
 
     /// Computes the predictor stage `A x + B u`.
+    ///
+    /// Args:
+    ///   input: Input vector with shape `(NU,)`.
+    ///
+    /// Returns:
+    ///   The predicted state vector with shape `(NX,)`.
     pub fn predict(&self, input: Vector<T, NU>) -> Vector<T, NX> {
         self.system.next_state(&self.x_hat, &input)
     }
 
     /// Applies one fixed-gain update from an externally supplied prediction.
+    ///
+    /// Args:
+    ///   prediction_state: Predicted state vector with shape `(NX,)`.
+    ///   input: Input vector with shape `(NU,)` used for the feedthrough term.
+    ///   measurement: Measurement vector with shape `(NY,)` in output units.
+    ///
+    /// Returns:
+    ///   A tuple containing the innovation `(NY,)`, updated state `(NX,)`, and
+    ///   updated output `(NY,)`.
     pub fn update(
         &self,
         prediction_state: Vector<T, NX>,
@@ -275,6 +371,13 @@ where
     }
 
     /// Runs one full fixed-gain observer step and stores the new estimate.
+    ///
+    /// Args:
+    ///   input: Input vector with shape `(NU,)`.
+    ///   measurement: Measurement vector with shape `(NY,)` in output units.
+    ///
+    /// Returns:
+    ///   The updated output estimate with shape `(NY,)`.
     pub fn step(&mut self, input: Vector<T, NU>, measurement: Vector<T, NY>) -> Vector<T, NY> {
         let prediction = self.predict(input);
         let (_innovation, state, output) = self.update(prediction, input, measurement);
@@ -348,6 +451,17 @@ where
 {
     /// Builds a fixed-size embedded Kalman filter from the dynamic control-side
     /// state-space model and covariance data.
+    ///
+    /// Args:
+    ///   system: Dynamic discrete-time plant model with `NX` states, `NU`
+    ///     inputs, and `NY` outputs.
+    ///   w: Process-noise covariance with shape `(NX, NX)`.
+    ///   v: Measurement-noise covariance with shape `(NY, NY)`.
+    ///   x_hat: Initial posterior state estimate with shape `(NX,)`.
+    ///   p: Initial posterior covariance with shape `(NX, NX)`.
+    ///
+    /// Returns:
+    ///   A fixed-size recursive Kalman filter using copied model data.
     pub fn from_control_state_space(
         system: &crate::control::lti::DiscreteStateSpace<T>,
         w: Matrix<T, NX, NX>,
