@@ -1,17 +1,17 @@
 //! Simplified SPD-only dynamic-size discrete-time unscented Kalman filtering.
 
+use super::core::{
+    normalized_innovation_norm, updated_covariance_ukf, weighted_covariance,
+    weighted_cross_covariance, weighted_mean,
+};
 use super::dense::{
     cholesky_lower, col_as_slice, col_as_slice_mut, column_matrix_to_vector, llt_solve,
     mat_mul_vec, scale_matrix, vec_add, vec_as_slice, vec_as_slice_mut, vec_norm, vec_sub,
     vector_as_column_matrix, vector_from_slice, vectors_as_columns, zero_matrix, zero_vector,
 };
 use super::ekf::DiscreteNonlinearModel;
-use super::{map_nonlinear_error, validate_input_dim, validate_output_dim};
+use super::{validate_input_dim, validate_output_dim};
 use crate::control::estimation::CovarianceUpdate;
-use crate::control::estimation::nonlinear_core::{
-    normalized_innovation_norm, updated_covariance_ukf, weighted_covariance,
-    weighted_cross_covariance, weighted_mean,
-};
 use crate::embedded::EmbeddedError;
 use crate::embedded::alloc::{Matrix, Vector};
 use crate::sparse::compensated::CompensatedField;
@@ -318,16 +318,14 @@ where
             cross_covariance.as_ref(),
             self.v.as_ref(),
             innovation_covariance.as_ref(),
-        )
-        .map_err(map_nonlinear_error)?;
+        )?;
 
         Ok(UnscentedKalmanUpdate {
             innovation_norm: vec_norm(&innovation),
             normalized_innovation_norm: normalized_innovation_norm(
                 vector_as_column_matrix(&innovation).as_ref(),
                 innovation_covariance.as_ref(),
-            )
-            .map_err(map_nonlinear_error)?,
+            )?,
             innovation,
             innovation_covariance,
             gain,
@@ -427,8 +425,7 @@ where
             cross_covariance.as_ref(),
             self.v.as_ref(),
             innovation_covariance.as_ref(),
-        )
-        .map_err(map_nonlinear_error)?;
+        )?;
 
         self.x_hat = state.clone();
         self.p = covariance.clone();
@@ -438,8 +435,7 @@ where
             normalized_innovation_norm: normalized_innovation_norm(
                 vector_as_column_matrix(&innovation).as_ref(),
                 innovation_covariance.as_ref(),
-            )
-            .map_err(map_nonlinear_error)?,
+            )?,
             innovation,
             innovation_covariance,
             gain,

@@ -1,14 +1,12 @@
 //! Simplified dynamic-size discrete-time extended Kalman filtering.
 
+use super::core::{normalized_innovation_norm, predict_covariance, updated_covariance};
 use super::dense::{
     llt_solve, mat_mul, mat_mul_vec, vec_add, vec_as_slice, vec_as_slice_mut, vec_norm, vec_sub,
     vector_as_column_matrix, vector_from_slice, zero_matrix, zero_vector,
 };
-use super::{map_nonlinear_error, validate_input_dim, validate_output_dim};
+use super::{validate_input_dim, validate_output_dim};
 use crate::control::estimation::CovarianceUpdate;
-use crate::control::estimation::nonlinear_core::{
-    normalized_innovation_norm, predict_covariance, updated_covariance,
-};
 use crate::embedded::EmbeddedError;
 use crate::embedded::alloc::{Matrix, Vector};
 use crate::sparse::compensated::CompensatedField;
@@ -69,6 +67,43 @@ pub struct ExtendedKalmanUpdate<T> {
     pub output: Vector<T>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+struct EkfScratch<T> {
+    f: Matrix<T>,
+    h: Matrix<T>,
+    state: Vector<T>,
+    output: Vector<T>,
+}
+
+impl<T> EkfScratch<T>
+where
+    T: Float + Copy,
+{
+    fn new(state_dim: usize, output_dim: usize) -> Self {
+        Self {
+            f: zero_matrix(state_dim, state_dim),
+            h: zero_matrix(output_dim, state_dim),
+            state: zero_vector(state_dim),
+            output: zero_vector(output_dim),
+        }
+    }
+
+    fn ensure_dims(&mut self, state_dim: usize, output_dim: usize) {
+        if self.f.nrows() != state_dim || self.f.ncols() != state_dim {
+            self.f = zero_matrix(state_dim, state_dim);
+        }
+        if self.h.nrows() != output_dim || self.h.ncols() != state_dim {
+            self.h = zero_matrix(output_dim, state_dim);
+        }
+        if self.state.nrows() != state_dim {
+            self.state = zero_vector(state_dim);
+        }
+        if self.output.nrows() != output_dim {
+            self.output = zero_vector(output_dim);
+        }
+    }
+}
+
 /// Dynamic-size extended Kalman filter runtime.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ExtendedKalmanFilter<T, M> {
@@ -82,6 +117,7 @@ pub struct ExtendedKalmanFilter<T, M> {
     pub x_hat: Vector<T>,
     /// Current posterior covariance.
     pub p: Matrix<T>,
+    scratch: EkfScratch<T>,
 }
 
 impl<T, M> ExtendedKalmanFilter<T, M>
@@ -141,6 +177,7 @@ where
             v,
             x_hat,
             p,
+            scratch: EkfScratch::new(nx, ny),
         })
     }
 
@@ -231,8 +268,7 @@ where
             normalized_innovation_norm: normalized_innovation_norm(
                 vector_as_column_matrix(&innovation).as_ref(),
                 innovation_covariance.as_ref(),
-            )
-            .map_err(map_nonlinear_error)?,
+            )?,
             innovation,
             innovation_covariance,
             gain,
@@ -248,11 +284,84 @@ where
         input: &[T],
         measurement: &[T],
     ) -> Result<ExtendedKalmanUpdate<T>, EmbeddedError> {
-        let prediction = self.predict(input)?;
-        let update = self.update(&prediction, input, measurement)?;
-        self.x_hat = update.state.clone();
-        self.p = update.covariance.clone();
-        Ok(update)
+        validate_input_dim(&self.model, input)?;
+        validate_output_dim(&self.model, measurement)?;
+
+        let nx = self.model.state_dim();
+        let ny = self.model.output_dim();
+        self.scratch.ensure_dims(nx, ny);
+
+        self.model
+            .transition_jacobian(vec_as_slice(&self.x_hat), input, &mut self.scratch.f);
+        self.model.transition(
+            vec_as_slice(&self.x_hat),
+            input,
+            vec_as_slice_mut(&mut self.scratch.state),
+        );
+
+        let prediction_covariance =
+            predict_covariance(self.scratch.f.as_ref(), self.p.as_ref(), self.w.as_ref());
+
+        self.model.output(
+            vec_as_slice(&self.scratch.state),
+            input,
+            vec_as_slice_mut(&mut self.scratch.output),
+        );
+        let innovation = vec_sub(&vector_from_slice(measurement), &self.scratch.output)?;
+
+        self.model.output_jacobian(
+            vec_as_slice(&self.scratch.state),
+            input,
+            &mut self.scratch.h,
+        );
+        let innovation_covariance = predict_covariance(
+            self.scratch.h.as_ref(),
+            prediction_covariance.as_ref(),
+            self.v.as_ref(),
+        );
+        let h_t = self.scratch.h.transpose().to_owned();
+        let cross_covariance = mat_mul(&prediction_covariance, &h_t)?;
+        let cross_t = cross_covariance.transpose().to_owned();
+        let gain = llt_solve(
+            &innovation_covariance,
+            &cross_t,
+            "embedded.alloc.ekf.innovation_covariance",
+        )?
+        .transpose()
+        .to_owned();
+        let state = vec_add(&self.scratch.state, &mat_mul_vec(&gain, &innovation)?)?;
+        let covariance = updated_covariance(
+            CovarianceUpdate::Joseph,
+            prediction_covariance.as_ref(),
+            gain.as_ref(),
+            self.scratch.h.as_ref(),
+            self.v.as_ref(),
+            innovation_covariance.as_ref(),
+        );
+
+        self.model.output(
+            vec_as_slice(&state),
+            input,
+            vec_as_slice_mut(&mut self.scratch.output),
+        );
+        let output = self.scratch.output.clone();
+
+        self.x_hat = state.clone();
+        self.p = covariance.clone();
+
+        Ok(ExtendedKalmanUpdate {
+            innovation_norm: vec_norm(&innovation),
+            normalized_innovation_norm: normalized_innovation_norm(
+                vector_as_column_matrix(&innovation).as_ref(),
+                innovation_covariance.as_ref(),
+            )?,
+            innovation,
+            innovation_covariance,
+            gain,
+            state,
+            covariance,
+            output,
+        })
     }
 }
 

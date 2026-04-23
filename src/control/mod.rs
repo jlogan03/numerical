@@ -5,7 +5,7 @@
 //! - `lti` provides model representations, analysis, and filtering
 //! - `matrix_equations` provides reusable Lyapunov, Stein, and Riccati solvers
 //! - `reduction` provides HSVD and balanced truncation
-//! - `estimation` provides linear and nonlinear state estimation
+//! - `estimation` provides linear estimator design and runtime filtering
 //! - `synthesis` provides controller design and practical runtime controllers
 //!
 //! The public surface is dense-first for higher-level model manipulation, with
@@ -32,9 +32,7 @@
 //! - **ERA / OKID:** Data-driven realization and identification algorithms.
 //! - **HSVD / BT:** Hankel singular value decomposition and balanced
 //!   truncation.
-//! - **EKF / UKF:** Extended and unscented Kalman filters for nonlinear
-//!   estimation.
-//!
+//! //!
 //! # Mathematical Formulation
 //!
 //! The dominant model form throughout the subsystem is state space:
@@ -68,7 +66,7 @@
 //! | `reduction` | HSVD and balanced truncation | yes | partial | yes | yes |
 //! | `realization` | Markov and Hankel data structures | yes | n/a | no | yes |
 //! | `identification` | ERA and OKID | yes | no | no | yes |
-//! | `estimation` | LQE/Kalman/EKF/UKF | yes | no | partial | yes |
+//! | `estimation` | LQE/Kalman/observer design | yes | no | partial | yes |
 //! | `synthesis` | LQR/LQG/PID/pole placement | yes | no | yes | yes |
 
 pub(crate) mod dense_ops;
@@ -81,13 +79,10 @@ pub mod reduction;
 pub mod synthesis;
 
 pub use estimation::{
-    ContinuousObserver, ContinuousObserverDerivative, CovarianceUpdate,
-    DiscreteExtendedKalmanModel, DiscreteKalmanFilter, DiscreteNonlinearModel, EstimatorError,
-    ExtendedKalmanFilter, KalmanPrediction, KalmanUpdate, LqeSolve, NonlinearEstimatorError,
-    NonlinearKalmanPrediction, NonlinearKalmanUpdate, SigmaPointProvider, SigmaPointSet,
-    SigmaPointStrategy, SteadyStateKalmanFilter, SteadyStateKalmanPrediction,
-    SteadyStateKalmanUpdate, UkfStage, UnscentedKalmanFilter, UnscentedParams, dlqe_dense,
-    lqe_dense, steady_state_filter_gain_dense,
+    ContinuousObserver, ContinuousObserverDerivative, CovarianceUpdate, DiscreteKalmanFilter,
+    EstimatorError, KalmanPrediction, KalmanUpdate, LqeSolve, SteadyStateKalmanFilter,
+    SteadyStateKalmanPrediction, SteadyStateKalmanUpdate, dlqe_dense, lqe_dense,
+    steady_state_filter_gain_dense,
 };
 pub use identification::{
     EraError, EraInternals, EraInternalsLevel, EraParams, EraResult, OkidError, OkidParams,

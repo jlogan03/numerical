@@ -57,9 +57,6 @@ mod ekf;
 #[path = "ukf.rs"]
 mod ukf;
 
-pub use ekf::ExtendedKalmanFilter;
-pub use ukf::UnscentedKalmanFilter;
-
 use alloc::{boxed::Box, vec::Vec};
 use core::fmt;
 use faer::{Mat, MatRef};

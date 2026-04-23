@@ -1,11 +1,12 @@
 use crate::demo_signal::{colored_signal, gaussianish_signal};
 use crate::plot_helpers::{LineSeries, build_line_plot};
 use crate::plotly_support::use_plotly_chart;
-use faer::{Mat, MatRef};
+use faer::{Col, Mat};
 use leptos::prelude::*;
-use numerical::control::estimation::{
-    DiscreteExtendedKalmanModel, DiscreteKalmanFilter, DiscreteNonlinearModel,
-    ExtendedKalmanFilter, UnscentedKalmanFilter, UnscentedParams,
+use numerical::control::estimation::DiscreteKalmanFilter;
+use numerical::embedded::alloc::estimation::{
+    DiscreteExtendedKalmanModel, DiscreteNonlinearModel, ExtendedKalmanFilter,
+    UnscentedKalmanFilter,
 };
 use numerical::control::lti::DiscreteStateSpace;
 use plotly::Plot;
@@ -398,50 +399,43 @@ struct RangeTrackingModel {
 }
 
 impl DiscreteNonlinearModel<f64> for RangeTrackingModel {
-    fn nstates(&self) -> usize {
+    fn state_dim(&self) -> usize {
         2
     }
 
-    fn ninputs(&self) -> usize {
+    fn input_dim(&self) -> usize {
         1
     }
 
-    fn noutputs(&self) -> usize {
+    fn output_dim(&self) -> usize {
         1
     }
 
-    fn transition(&self, x: MatRef<'_, f64>, u: MatRef<'_, f64>) -> Mat<f64> {
+    fn transition(&self, x: &[f64], u: &[f64], next_state: &mut [f64]) {
         let dt = self.dt;
-        let acceleration = u[(0, 0)];
-        Mat::from_fn(2, 1, |row, _| match row {
-            0 => x[(0, 0)] + dt * x[(1, 0)] + 0.5 * dt * dt * acceleration,
-            1 => x[(1, 0)] + dt * acceleration,
-            _ => 0.0,
-        })
+        let acceleration = u[0];
+        next_state[0] = x[0] + dt * x[1] + 0.5 * dt * dt * acceleration;
+        next_state[1] = x[1] + dt * acceleration;
     }
 
-    fn output(&self, x: MatRef<'_, f64>, _u: MatRef<'_, f64>) -> Mat<f64> {
-        Mat::from_fn(1, 1, |_, _| {
-            measurement_value(self.plant_kind, x[(0, 0)], self.sensor_height)
-        })
+    fn output(&self, x: &[f64], _u: &[f64], output: &mut [f64]) {
+        output[0] = measurement_value(self.plant_kind, x[0], self.sensor_height);
     }
 }
 
 impl DiscreteExtendedKalmanModel<f64> for RangeTrackingModel {
-    fn transition_jacobian(&self, _x: MatRef<'_, f64>, _u: MatRef<'_, f64>) -> Mat<f64> {
+    fn transition_jacobian(&self, _x: &[f64], _u: &[f64], jacobian: &mut Mat<f64>) {
         let dt = self.dt;
-        Mat::from_fn(2, 2, |row, col| match (row, col) {
-            (0, 0) => 1.0,
-            (0, 1) => dt,
-            (1, 0) => 0.0,
-            (1, 1) => 1.0,
-            _ => 0.0,
-        })
+        jacobian[(0, 0)] = 1.0;
+        jacobian[(0, 1)] = dt;
+        jacobian[(1, 0)] = 0.0;
+        jacobian[(1, 1)] = 1.0;
     }
 
-    fn output_jacobian(&self, x: MatRef<'_, f64>, _u: MatRef<'_, f64>) -> Mat<f64> {
-        let slope = measurement_slope(self.plant_kind, x[(0, 0)], self.sensor_height);
-        Mat::from_fn(1, 2, |_, col| if col == 0 { slope } else { 0.0 })
+    fn output_jacobian(&self, x: &[f64], _u: &[f64], jacobian: &mut Mat<f64>) {
+        let slope = measurement_slope(self.plant_kind, x[0], self.sensor_height);
+        jacobian[(0, 0)] = slope;
+        jacobian[(0, 1)] = 0.0;
     }
 }
 
@@ -607,6 +601,11 @@ fn run_nonlinear_estimation_demo(
         1 => -0.15,
         _ => 0.0,
     });
+    let x_hat0_vec = Col::from_fn(2, |row| match row {
+        0 => linear_reference,
+        1 => -0.15,
+        _ => 0.0,
+    });
     let p0 = Mat::from_fn(2, 2, |row, col| {
         if row == col {
             if row == 0 { 6.0 } else { 1.5 }
@@ -627,23 +626,13 @@ fn run_nonlinear_estimation_demo(
         nonlinear_model,
         w.clone(),
         v.clone(),
-        x_hat0.clone(),
+        x_hat0_vec.clone(),
         p0.clone(),
     )
     .map_err(|err| err.to_string())?;
-    let mut ukf = UnscentedKalmanFilter::new_standard(
-        nonlinear_model,
-        w,
-        v,
-        x_hat0,
-        p0,
-        UnscentedParams {
-            alpha: 0.45,
-            beta: 2.0,
-            kappa: 0.0,
-        },
-    )
-    .map_err(|err| err.to_string())?;
+    let mut ukf = UnscentedKalmanFilter::new(nonlinear_model, w, v, x_hat0_vec, p0)
+        .and_then(|filter| filter.with_sigma_parameters(0.45, 2.0, 0.0))
+        .map_err(|err| err.to_string())?;
 
     let n_steps = 110;
     let mut truth = [6.0_f64, -0.25_f64];
@@ -662,24 +651,25 @@ fn run_nonlinear_estimation_demo(
             + true_measurement_noise * measurement_noise;
 
         let input = Mat::from_fn(1, 1, |_, _| command);
-        let measurement_mat = Mat::from_fn(1, 1, |_, _| measurement);
         let linear_measurement = Mat::from_fn(1, 1, |_, _| measurement - linear_measurement_bias);
+        let input_slice = [command];
+        let measurement_slice = [measurement];
 
         let linear_update = linear_kf
             .step(input.as_ref(), linear_measurement.as_ref())
             .map_err(|err| err.to_string())?;
         let ekf_update = ekf
-            .step(input.as_ref(), measurement_mat.as_ref())
+            .step(&input_slice, &measurement_slice)
             .map_err(|err| err.to_string())?;
         let ukf_update = ukf
-            .step(input.as_ref(), measurement_mat.as_ref())
+            .step(&input_slice, &measurement_slice)
             .map_err(|err| err.to_string())?;
 
         times.push(t);
         truth_position.push(truth[0]);
         linear_position.push(linear_update.state[(0, 0)]);
-        ekf_position.push(ekf_update.state[(0, 0)]);
-        ukf_position.push(ukf_update.state[(0, 0)]);
+        ekf_position.push(ekf_update.state[0]);
+        ukf_position.push(ukf_update.state[0]);
 
         let applied_acceleration = command + disturbance;
         truth = [

@@ -529,9 +529,9 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::super::ekf::ExtendedKalmanFilter;
     use super::UnscentedKalmanFilter;
     use crate::control::estimation::DiscreteKalmanFilter;
-    use crate::control::estimation::nonlinear::ExtendedKalmanFilter;
     use crate::control::estimation::nonlinear::{
         DiscreteExtendedKalmanModel, DiscreteNonlinearModel, NonlinearEstimatorError,
         SigmaPointProvider, SigmaPointSet, UkfStage, UnscentedParams,
