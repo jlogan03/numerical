@@ -29,11 +29,20 @@
 //! build the reduced model, and can optionally retain more of the internal
 //! balancing algebra on request.
 //!
+//! Literature:
+//!
+//! - Brunton and Kutz, *Data-Driven Science and Engineering*, 2nd ed.,
+//!   Cambridge University Press, 2022, for a pedagogical treatment of
+//!   balanced coordinates, balanced truncation, and model reduction.
+//!
 //! # Two Intuitions
 //!
 //! 1. **Input-output view.** Balanced truncation removes states that are both
 //!    hard to reach from the inputs and hard to see at the outputs.
-//! 2. **Projection view.** It is also just a carefully chosen pair of left and
+//! 2. **Full-rank view.** Balanced realization changes coordinates without
+//!    changing input-output behavior, but it orders and scales the states so
+//!    controllability and observability energy are directly comparable.
+//! 3. **Projection view.** It is also just a carefully chosen pair of left and
 //!    right projection matrices built from the HSVD core.
 //!
 //! # Glossary
@@ -42,6 +51,10 @@
 //!   observability energies are aligned and diagonalized together.
 //! - **Balanced realization:** Full numerical-rank coordinate change into
 //!   balanced coordinates without an intentional order reduction.
+//! - **Controllability energy:** Input effort associated with reaching a state
+//!   direction, encoded by the controllability Gramian.
+//! - **Observability energy:** Output response strength associated with a state
+//!   direction, encoded by the observability Gramian.
 //! - **Tail bound:** Classical balanced-truncation error bound based on
 //!   discarded Hankel singular values.
 //!
