@@ -183,7 +183,10 @@ where
                 which: "nonfinite_sample",
             });
         }
-        if time.windows(2).any(|window| !(window[1] > window[0])) {
+        if time
+            .windows(2)
+            .any(|window| window[1].partial_cmp(&window[0]) != Some(core::cmp::Ordering::Greater))
+        {
             return Err(PidDesignError::InvalidData {
                 which: "nonmonotone_time",
             });
@@ -237,7 +240,7 @@ pub struct ProcessFitResult<M, R> {
 /// - evaluation patience
 ///
 /// Leaving a field as `None` preserves the solver crate's built-in default.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct ProcessModelFitOptions {
     /// Optional LM tolerance applied through `with_tol(...)`.
     ///
@@ -248,15 +251,6 @@ pub struct ProcessModelFitOptions {
     /// The solver interprets this as a multiplier on the parameter count when
     /// bounding function evaluations.
     pub patience: Option<usize>,
-}
-
-impl Default for ProcessModelFitOptions {
-    fn default() -> Self {
-        Self {
-            tolerance: None,
-            patience: None,
-        }
-    }
 }
 
 /// PID controller family produced by a tuning rule.

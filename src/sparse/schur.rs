@@ -215,7 +215,7 @@ fn subtract_in_place<T: ComplexField + Copy>(mut lhs: MatMut<'_, T>, rhs: MatRef
     assert_eq!(lhs.ncols(), rhs.ncols());
     for col in 0..lhs.ncols() {
         for row in 0..lhs.nrows() {
-            lhs[(row, col)] = lhs[(row, col)] - rhs[(row, col)];
+            lhs[(row, col)] -= rhs[(row, col)];
         }
     }
 }
@@ -318,8 +318,8 @@ mod test {
         let rhs = Mat::from_fn(1, 1, |_, _| 4.0);
         let mut out = Mat::<f64>::zeros(1, 1);
         let mut buffer = MemBuffer::new(schur.apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut buffer);
-        schur.apply(out.as_mut(), rhs.as_ref(), Par::Seq, &mut stack);
+        let stack = MemStack::new(&mut buffer);
+        schur.apply(out.as_mut(), rhs.as_ref(), Par::Seq, stack);
 
         // S = 7 - [3 5] * diag(1/2, 1/4) * [1, 2]^T = 7 - 4 = 3
         assert!((out[(0, 0)] - 12.0).abs() < 1.0e-12);
@@ -338,8 +338,8 @@ mod test {
         let rhs = Mat::from_fn(1, 1, |_, _| c64::new(2.0, -1.0));
         let mut out = Mat::<c64>::zeros(1, 1);
         let mut buffer = MemBuffer::new(schur.apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut buffer);
-        schur.conj_apply(out.as_mut(), rhs.as_ref(), Par::Seq, &mut stack);
+        let stack = MemStack::new(&mut buffer);
+        schur.conj_apply(out.as_mut(), rhs.as_ref(), Par::Seq, stack);
 
         let expected = expected_symbol * rhs[(0, 0)];
         let err = (out[(0, 0)] - expected).abs1();
@@ -358,10 +358,10 @@ mod test {
         let mut expected = Mat::<f64>::zeros(2, 1);
         let mut out = Mat::<f64>::zeros(2, 1);
         let mut buffer = MemBuffer::new(schur.apply_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut buffer);
-        schur.apply(expected.as_mut(), rhs.as_ref(), Par::Seq, &mut stack);
-        let mut stack = MemStack::new(&mut buffer);
-        schur.conj_apply(out.as_mut(), rhs.as_ref(), Par::Seq, &mut stack);
+        let stack = MemStack::new(&mut buffer);
+        schur.apply(expected.as_mut(), rhs.as_ref(), Par::Seq, stack);
+        let stack = MemStack::new(&mut buffer);
+        schur.conj_apply(out.as_mut(), rhs.as_ref(), Par::Seq, stack);
 
         for row in 0..2 {
             assert!((out[(row, 0)] - expected[(row, 0)]).abs() < 1.0e-12);

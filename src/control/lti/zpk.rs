@@ -96,7 +96,7 @@ where
     pub fn to_transfer_function(&self) -> Result<TransferFunction<R, Domain>, LtiError> {
         let mut numerator = real_poly_from_roots(&self.zeros, "zeros")?;
         for coeff in &mut numerator {
-            *coeff = *coeff * self.gain;
+            *coeff *= self.gain;
         }
         let denominator = real_poly_from_roots(&self.poles, "poles")?;
         TransferFunction::new(numerator, denominator, self.domain.clone())

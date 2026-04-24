@@ -345,7 +345,7 @@ impl<I: Index, T: ComplexField> SparseLu<I, T> {
             .symbolic
             .factorize_numeric_lu_scratch::<T>(par, numeric_params);
         let mut buffer = MemBuffer::new(req);
-        let mut stack = MemStack::new(&mut buffer);
+        let stack = MemStack::new(&mut buffer);
         // This is a fresh numeric factorization against a fixed symbolic LU.
         // The symbolic structure, fill-reducing column ordering, and factor
         // storage layout are all reused; only the values and row pivots change.
@@ -353,7 +353,7 @@ impl<I: Index, T: ComplexField> SparseLu<I, T> {
             &mut self.numeric,
             matrix,
             par,
-            &mut stack,
+            stack,
             numeric_params,
         )?;
         self.ready = true;
@@ -422,9 +422,9 @@ impl<I: Index, T: ComplexField> SparseLu<I, T> {
         let rhs_ncols = rhs.ncols();
         let req = self.symbolic.solve_in_place_scratch::<T>(rhs_ncols, par);
         let mut buffer = MemBuffer::new(req);
-        let mut stack = MemStack::new(&mut buffer);
+        let stack = MemStack::new(&mut buffer);
         self.try_lu_ref()?
-            .solve_in_place_with_conj(conj, rhs, par, &mut stack);
+            .solve_in_place_with_conj(conj, rhs, par, stack);
         Ok(())
     }
 

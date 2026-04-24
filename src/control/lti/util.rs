@@ -211,10 +211,10 @@ where
         let mut adjusted = phase;
         let prev = *out.last().unwrap();
         while adjusted - prev > half_turn {
-            adjusted = adjusted - full_turn;
+            adjusted -= full_turn;
         }
         while adjusted - prev < -half_turn {
-            adjusted = adjusted + full_turn;
+            adjusted += full_turn;
         }
         out.push(adjusted);
     }
@@ -440,11 +440,11 @@ fn poly_addsub_aligned<R: Float + Copy + RealField>(
     let mut out = vec![R::zero(); len];
 
     for (idx, &value) in lhs.iter().enumerate() {
-        out[lhs_offset + idx] = out[lhs_offset + idx] + value;
+        out[lhs_offset + idx] += value;
     }
     for (idx, &value) in rhs.iter().enumerate() {
         let value = if subtract_rhs { -value } else { value };
-        out[rhs_offset + idx] = out[rhs_offset + idx] + value;
+        out[rhs_offset + idx] += value;
     }
 
     trim_leading_zeros(&out)

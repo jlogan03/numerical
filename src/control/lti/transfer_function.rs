@@ -640,7 +640,7 @@ where
     while points.len() < count {
         let candidate = match k {
             0 => R::zero(),
-            _ if k % 2 == 1 => R::from((k + 1) / 2).unwrap_or_else(R::one),
+            _ if k % 2 == 1 => R::from(k.div_ceil(2)).unwrap_or_else(R::one),
             _ => -R::from(k / 2).unwrap_or_else(R::one),
         };
         let value = poly_eval(denominator, Complex::new(candidate, R::zero())).abs();

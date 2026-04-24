@@ -487,7 +487,7 @@ where
 
     let norm_inv = norm.recip();
     for value in col_slice_mut(&mut start) {
-        *value = value.mul_real(&norm_inv);
+        *value = value.mul_real(norm_inv);
     }
     Ok(start)
 }

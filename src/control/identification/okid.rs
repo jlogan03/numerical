@@ -53,24 +53,19 @@ pub struct OkidParams {
 }
 
 /// Acceptance policy for the effective numerical rank of the OKID regression.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum OkidRankPolicy {
     /// Accept any regression with at least one retained singular direction.
     ///
     /// This is the default because exact noiseless data from small systems can
     /// produce structurally rank-deficient lifted regressions while still
     /// determining the recovered Markov sequence usefully.
+    #[default]
     AllowDeficient,
     /// Require at least the requested number of retained singular directions.
     RequireAtLeast(usize),
     /// Require full numerical row rank in the lifted regression.
     RequireFullRowRank,
-}
-
-impl Default for OkidRankPolicy {
-    fn default() -> Self {
-        Self::AllowDeficient
-    }
 }
 
 impl OkidParams {

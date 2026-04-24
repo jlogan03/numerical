@@ -397,7 +397,7 @@ where
     let start = normalized_start_vector(start_vector, op.nrows())?;
     let mut vectors = Mat::zeros(op.nrows(), n_requested);
     let mut values = vec![zero::<T>(); n_requested];
-    let mut stack = MemStack::new(scratch);
+    let stack = MemStack::new(scratch);
     let info = partial_self_adjoint_eigen(
         vectors.as_mut(),
         &mut values,
@@ -405,7 +405,7 @@ where
         start.as_ref(),
         tol,
         par,
-        &mut stack,
+        stack,
         partial_eigen_params::<T>(Some(min_dim), Some(max_dim), max_restarts),
     );
 
@@ -446,10 +446,10 @@ where
         });
         let mut out_real = Mat::zeros(op.nrows(), 1);
         let mut out_imag = Mat::zeros(op.nrows(), 1);
-        let mut stack = MemStack::new(scratch);
-        op.apply(out_real.as_mut(), rhs_real.as_ref(), par, &mut stack);
-        let mut stack = MemStack::new(scratch);
-        op.apply(out_imag.as_mut(), rhs_imag.as_ref(), par, &mut stack);
+        let stack = MemStack::new(scratch);
+        op.apply(out_real.as_mut(), rhs_real.as_ref(), par, stack);
+        let stack = MemStack::new(scratch);
+        op.apply(out_imag.as_mut(), rhs_imag.as_ref(), par, stack);
 
         return Col::from_fn(op.nrows(), |i| {
             Complex::new(
@@ -467,8 +467,8 @@ where
         T::from_real_imag(rhs[i.unbound()].re, rhs[i.unbound()].im)
     });
     let mut out_t = Mat::zeros(op.nrows(), 1);
-    let mut stack = MemStack::new(scratch);
-    op.apply(out_t.as_mut(), rhs_t.as_ref(), par, &mut stack);
+    let stack = MemStack::new(scratch);
+    op.apply(out_t.as_mut(), rhs_t.as_ref(), par, stack);
     Col::from_fn(op.nrows(), |i| {
         let value = out_t[(i.unbound(), 0)];
         Complex::new(value.real(), value.imag())
@@ -499,7 +499,7 @@ where
             Complex::<T::Real>::new(<T::Real as Zero>::zero(), <T::Real as Zero>::zero());
             n_requested
         ];
-    let mut stack = MemStack::new(scratch);
+    let stack = MemStack::new(scratch);
     let info = partial_eigen(
         vectors.as_mut(),
         &mut values,
@@ -507,7 +507,7 @@ where
         start.as_ref(),
         tol,
         par,
-        &mut stack,
+        stack,
         partial_eigen_params::<T>(Some(min_dim), Some(max_dim), max_restarts),
     );
 
@@ -550,12 +550,12 @@ where
     for j in 0..values.nrows() {
         // For self-adjoint eigenpairs, one residual relation is enough:
         // `A v - lambda v`.
-        let mut stack = MemStack::new(scratch);
+        let stack = MemStack::new(scratch);
         op.apply(
             residual_vec.as_mut().as_mat_mut(),
             vectors.col(j).as_mat(),
             par,
-            &mut stack,
+            stack,
         );
         for (dst, &value) in col_slice_mut(&mut residual_vec)
             .iter_mut()

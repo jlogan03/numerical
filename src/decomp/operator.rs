@@ -651,16 +651,16 @@ mod tests {
         let op = CompensatedBiLinOp::new(matrix.as_ref());
         let mut scratch = MemBuffer::new(op.apply_scratch(1, Par::Seq));
         let mut plain_mem = MemBuffer::new(StackReq::EMPTY);
-        let mut plain_stack = MemStack::new(&mut plain_mem);
-        let mut compensated_stack = MemStack::new(&mut scratch);
+        let plain_stack = MemStack::new(&mut plain_mem);
+        let compensated_stack = MemStack::new(&mut scratch);
         matrix
             .as_ref()
-            .apply(plain.as_mut(), rhs.as_ref(), Par::Seq, &mut plain_stack);
+            .apply(plain.as_mut(), rhs.as_ref(), Par::Seq, plain_stack);
         op.apply(
             compensated.as_mut(),
             rhs.as_ref(),
             Par::Seq,
-            &mut compensated_stack,
+            compensated_stack,
         );
 
         assert_eq!(plain, compensated);
@@ -685,16 +685,16 @@ mod tests {
         let op = CompensatedBiLinOp::new(matrix.as_ref());
         let mut scratch = MemBuffer::new(op.transpose_apply_scratch(1, Par::Seq));
         let mut plain_mem = MemBuffer::new(StackReq::EMPTY);
-        let mut plain_stack = MemStack::new(&mut plain_mem);
-        let mut compensated_stack = MemStack::new(&mut scratch);
+        let plain_stack = MemStack::new(&mut plain_mem);
+        let compensated_stack = MemStack::new(&mut scratch);
         matrix
             .as_ref()
-            .adjoint_apply(plain.as_mut(), rhs.as_ref(), Par::Seq, &mut plain_stack);
+            .adjoint_apply(plain.as_mut(), rhs.as_ref(), Par::Seq, plain_stack);
         op.adjoint_apply(
             compensated.as_mut(),
             rhs.as_ref(),
             Par::Seq,
-            &mut compensated_stack,
+            compensated_stack,
         );
 
         assert_eq!(plain, compensated);

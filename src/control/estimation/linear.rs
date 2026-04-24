@@ -167,18 +167,13 @@ where
 /// `Simple` is the compact textbook update. `Joseph` is algebraically
 /// equivalent in exact arithmetic, but is usually better at preserving
 /// Hermitian symmetry and positive semidefiniteness in floating point.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CovarianceUpdate {
     /// `P^+ = P^- - K S K^H`
     Simple,
     /// `P^+ = (I - K C) P^- (I - K C)^H + K V K^H`
+    #[default]
     Joseph,
-}
-
-impl Default for CovarianceUpdate {
-    fn default() -> Self {
-        Self::Joseph
-    }
 }
 
 /// Prediction stage of the fixed-gain steady-state discrete observer.

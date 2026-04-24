@@ -1,5 +1,12 @@
 #![doc = include_str!("../README.md")]
 #![no_std]
+#![allow(
+    clippy::large_enum_variant,
+    clippy::needless_range_loop,
+    clippy::result_large_err,
+    clippy::too_many_arguments,
+    clippy::type_complexity
+)]
 
 #[cfg(feature = "alloc")]
 #[macro_use]

@@ -526,7 +526,7 @@ where
             a[(next_state, next_state)] = -filter;
             b[(next_state, 0)] = filter;
             c[(0, next_state)] = -(self.kd * filter);
-            d[(0, 0)] = d[(0, 0)] + self.kd * filter;
+            d[(0, 0)] += self.kd * filter;
         }
 
         Ok((a, b, c, d))

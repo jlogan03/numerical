@@ -529,8 +529,7 @@ where
         let residual_scale = -(shift.real() + shift.real());
         for col in 0..block_cols {
             for row in 0..n {
-                residual_factor[(row, col)] =
-                    residual_factor[(row, col)] + v[(row, col)].mul_real(residual_scale);
+                residual_factor[(row, col)] += v[(row, col)].mul_real(residual_scale);
             }
         }
 

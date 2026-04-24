@@ -244,7 +244,7 @@ fn subtract_in_place<T: ComplexField + Copy>(mut lhs: MatMut<'_, T>, rhs: MatRef
     assert_eq!(lhs.ncols(), rhs.ncols());
     for col in 0..lhs.ncols() {
         for row in 0..lhs.nrows() {
-            lhs[(row, col)] = lhs[(row, col)] - rhs[(row, col)];
+            lhs[(row, col)] -= rhs[(row, col)];
         }
     }
 }
@@ -328,8 +328,8 @@ mod test {
 
         let mut rhs = Mat::from_fn(3, 1, |i, _| [5.0, 7.0, 8.0][i]);
         let mut buffer = MemBuffer::new(precond.apply_in_place_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut buffer);
-        precond.apply_in_place(rhs.as_mut(), Par::Seq, &mut stack);
+        let stack = MemStack::new(&mut buffer);
+        precond.apply_in_place(rhs.as_mut(), Par::Seq, stack);
 
         assert!((rhs[(0, 0)] - 3.0).abs() < 1.0e-12);
         assert!((rhs[(1, 0)] - 3.0).abs() < 1.0e-12);
@@ -349,10 +349,10 @@ mod test {
         let mut expected = rhs.clone();
         let mut out = rhs.clone();
         let mut buffer = MemBuffer::new(precond.apply_in_place_scratch(1, Par::Seq));
-        let mut stack = MemStack::new(&mut buffer);
-        precond.apply_in_place(expected.as_mut(), Par::Seq, &mut stack);
-        let mut stack = MemStack::new(&mut buffer);
-        precond.conj_apply_in_place(out.as_mut(), Par::Seq, &mut stack);
+        let stack = MemStack::new(&mut buffer);
+        precond.apply_in_place(expected.as_mut(), Par::Seq, stack);
+        let stack = MemStack::new(&mut buffer);
+        precond.conj_apply_in_place(out.as_mut(), Par::Seq, stack);
 
         for row in 0..4 {
             assert!((out[(row, 0)] - expected[(row, 0)]).abs() < 1.0e-12);

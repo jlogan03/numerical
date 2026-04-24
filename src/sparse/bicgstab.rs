@@ -1023,10 +1023,12 @@ mod test {
 
         let mut faer_out = Mat::<f64>::zeros(n, 1);
         let identity = IdentityPrecond { dim: n };
-        let mut params = BicgParams::default();
-        params.initial_guess = InitialGuessStatus::Zero;
-        params.rel_tolerance = tol;
-        params.max_iters = 400;
+        let params = BicgParams {
+            initial_guess: InitialGuessStatus::Zero,
+            rel_tolerance: tol,
+            max_iters: 400,
+            ..Default::default()
+        };
 
         let faer_result = faer_bicgstab(
             faer_out.as_mut(),

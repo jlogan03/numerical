@@ -143,7 +143,7 @@ where
     let mut u = Mat::zeros(op.nrows(), n_requested);
     let mut v = Mat::zeros(op.ncols(), n_requested);
     let mut s = vec![zero::<T>(); n_requested];
-    let mut stack = MemStack::new(scratch);
+    let stack = MemStack::new(scratch);
     let info = partial_svd(
         u.as_mut(),
         v.as_mut(),
@@ -152,7 +152,7 @@ where
         start.as_ref(),
         tol,
         par,
-        &mut stack,
+        stack,
         partial_eigen_params::<T>(Some(min_dim), Some(max_dim), max_restarts),
     );
 
@@ -194,8 +194,8 @@ where
     for j in 0..s.nrows() {
         // Check both SVD residual relations so the reported residual reflects
         // the worst mismatch in the returned singular triplet.
-        let mut stack = MemStack::new(scratch);
-        op.apply(av.as_mut().as_mat_mut(), v.col(j).as_mat(), par, &mut stack);
+        let stack = MemStack::new(scratch);
+        op.apply(av.as_mut().as_mat_mut(), v.col(j).as_mat(), par, stack);
         for (dst, &u_value) in col_slice_mut(&mut av)
             .iter_mut()
             .zip(u.col(j).try_as_col_major().unwrap().as_slice())
@@ -207,13 +207,8 @@ where
             max_residual_norm = residual;
         }
 
-        let mut stack = MemStack::new(scratch);
-        op.adjoint_apply(
-            ahu.as_mut().as_mat_mut(),
-            u.col(j).as_mat(),
-            par,
-            &mut stack,
-        );
+        let stack = MemStack::new(scratch);
+        op.adjoint_apply(ahu.as_mut().as_mat_mut(), u.col(j).as_mat(), par, stack);
         for (dst, &v_value) in col_slice_mut(&mut ahu)
             .iter_mut()
             .zip(v.col(j).try_as_col_major().unwrap().as_slice())

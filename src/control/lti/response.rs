@@ -646,7 +646,7 @@ where
 /// Keeping this as a dedicated helper avoids duplicating the same
 /// column-by-column sparse application logic across sparse impulse, sparse
 /// step, and later realization-facing routines.
-fn sparse_apply_columns<T>(a: impl SparseMatVec<T> + Copy, rhs: MatRef<'_, T>) -> Mat<T>
+fn sparse_apply_columns<T>(a: impl SparseMatVec<T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
     T::Real: Float + Copy,

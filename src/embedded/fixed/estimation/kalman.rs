@@ -20,18 +20,13 @@ use crate::embedded::fixed::lti::DiscreteStateSpace;
 use num_traits::Float;
 
 /// Covariance update policy used by [`DiscreteKalmanFilter`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum CovarianceUpdate {
     /// `P^+ = P^- - K S K^T`
     Simple,
     /// `P^+ = (I - K C) P^- (I - K C)^T + K V K^T`
+    #[default]
     Joseph,
-}
-
-impl Default for CovarianceUpdate {
-    fn default() -> Self {
-        Self::Joseph
-    }
 }
 
 /// One non-mutating prediction stage.

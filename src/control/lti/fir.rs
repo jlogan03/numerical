@@ -448,7 +448,7 @@ fn validate_savgol_spec<R>(
 where
     R: Float + Copy + RealField,
 {
-    if window_len == 0 || window_len % 2 == 0 {
+    if window_len == 0 || window_len.is_multiple_of(2) {
         return Err(LtiError::InvalidSavGolSpec {
             which: "window_len",
         });

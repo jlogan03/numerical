@@ -431,7 +431,7 @@ where
             return Ok(FilteredSignal { output: Vec::new() });
         }
 
-        let equivalent_sections = (self.nstates() + 1) / 2;
+        let equivalent_sections = self.nstates().div_ceil(2);
         let pad_len = resolve_pad_len(input.len(), params, 6 * equivalent_sections);
         let total_len = input.len() + 2 * pad_len;
 
@@ -735,9 +735,7 @@ where
     let den_order = 2 - den_start;
 
     let mut a = [R::zero(); 3];
-    for idx in 0..=den_order {
-        a[idx] = denominator[den_start + idx];
-    }
+    a[..(den_order + 1)].copy_from_slice(&denominator[den_start..(den_start + den_order + 1)]);
 
     let mut b = [R::zero(); 3];
     if let Some(num_start) = numerator.iter().position(|&value| value != R::zero()) {
@@ -745,9 +743,8 @@ where
         let delay = den_order
             .checked_sub(num_order)
             .expect("SOS numerator order must not exceed denominator order");
-        for idx in 0..=num_order {
-            b[delay + idx] = numerator[num_start + idx];
-        }
+        b[delay..(delay + num_order + 1)]
+            .copy_from_slice(&numerator[num_start..(num_start + num_order + 1)]);
     }
 
     (b, a)

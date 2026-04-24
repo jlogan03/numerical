@@ -135,7 +135,7 @@ where
     pub fn dc_gain(&self) -> Result<Complex<R>, LtiError> {
         let mut gain = self.gain;
         for section in &self.sections {
-            gain = gain * delta_section_dc_gain(*section);
+            gain *= delta_section_dc_gain(*section);
         }
 
         let gain = Complex::new(gain, R::zero());
@@ -365,10 +365,10 @@ where
     // section coefficients directly.
     let scale = denominator[0].recip();
     for value in &mut numerator {
-        *value = *value * scale;
+        *value *= scale;
     }
     for value in &mut denominator {
-        *value = *value * scale;
+        *value *= scale;
     }
 
     if numerator.len() > denominator.len() {

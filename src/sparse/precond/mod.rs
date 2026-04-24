@@ -56,6 +56,6 @@ pub(crate) fn apply_precond_to_col<T, P>(
     // The solver owns the buffer so repeated preconditioner application inside
     // the iteration does not allocate.
     copy_col(out, rhs);
-    let mut stack = MemStack::new(buffer);
-    precond.apply_in_place(out.as_mat_mut(), Par::Seq, &mut stack);
+    let stack = MemStack::new(buffer);
+    precond.apply_in_place(out.as_mat_mut(), Par::Seq, stack);
 }

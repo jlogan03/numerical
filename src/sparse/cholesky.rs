@@ -327,14 +327,14 @@ impl<I: Index, T: ComplexField> SparseLlt<I, T> {
             .symbolic
             .factorize_numeric_llt_scratch::<T>(par, numeric_params);
         let mut buffer = MemBuffer::new(req);
-        let mut stack = MemStack::new(&mut buffer);
+        let stack = MemStack::new(&mut buffer);
         self.symbolic.factorize_numeric_llt(
             &mut self.l_values,
             matrix,
             self.side,
             regularization,
             par,
-            &mut stack,
+            stack,
             numeric_params,
         )?;
         self.ready = true;
@@ -390,9 +390,9 @@ impl<I: Index, T: ComplexField> SparseLlt<I, T> {
         let rhs_ncols = rhs.ncols();
         let req = self.symbolic.solve_in_place_scratch::<T>(rhs_ncols, par);
         let mut buffer = MemBuffer::new(req);
-        let mut stack = MemStack::new(&mut buffer);
+        let stack = MemStack::new(&mut buffer);
         self.try_llt_ref()?
-            .solve_in_place_with_conj(conj, rhs, par, &mut stack);
+            .solve_in_place_with_conj(conj, rhs, par, stack);
         Ok(())
     }
 
@@ -677,14 +677,14 @@ impl<I: Index, T: ComplexField> SparseLdlt<I, T> {
             .symbolic
             .factorize_numeric_ldlt_scratch::<T>(par, numeric_params);
         let mut buffer = MemBuffer::new(req);
-        let mut stack = MemStack::new(&mut buffer);
+        let stack = MemStack::new(&mut buffer);
         self.symbolic.factorize_numeric_ldlt(
             &mut self.l_values,
             matrix,
             self.side,
             regularization,
             par,
-            &mut stack,
+            stack,
             numeric_params,
         )?;
         self.ready = true;
@@ -740,9 +740,9 @@ impl<I: Index, T: ComplexField> SparseLdlt<I, T> {
         let rhs_ncols = rhs.ncols();
         let req = self.symbolic.solve_in_place_scratch::<T>(rhs_ncols, par);
         let mut buffer = MemBuffer::new(req);
-        let mut stack = MemStack::new(&mut buffer);
+        let stack = MemStack::new(&mut buffer);
         self.try_ldlt_ref()?
-            .solve_in_place_with_conj(conj, rhs, par, &mut stack);
+            .solve_in_place_with_conj(conj, rhs, par, stack);
         Ok(())
     }
 

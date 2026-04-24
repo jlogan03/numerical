@@ -796,7 +796,7 @@ where
     let mut acc = T::Real::zero();
     for row in 0..matrix.nrows() {
         let value = matrix[(row, col)].abs();
-        acc = acc + value * value;
+        acc += value * value;
     }
     acc
 }

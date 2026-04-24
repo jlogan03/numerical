@@ -864,7 +864,7 @@ where
     Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
         let mut acc = T::zero();
         for k in 0..lhs.ncols() {
-            acc = acc + lhs[(row, k)] * rhs[(k, col)];
+            acc += lhs[(row, k)] * rhs[(k, col)];
         }
         acc
     })
@@ -878,7 +878,7 @@ where
     let mut acc = <T::Real as Zero>::zero();
     for col in 0..matrix.ncols() {
         for row in 0..matrix.nrows() {
-            acc = acc + matrix[(row, col)].abs2();
+            acc += matrix[(row, col)].abs2();
         }
     }
     acc.sqrt()
