@@ -2,6 +2,7 @@
 #![no_std]
 #![allow(
     clippy::large_enum_variant,
+    clippy::manual_memcpy,
     clippy::needless_range_loop,
     clippy::result_large_err,
     clippy::too_many_arguments,

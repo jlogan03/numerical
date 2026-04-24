@@ -638,7 +638,9 @@ where
         acc.add(system.b()[(row, 0)] * input);
         next_state[row] = acc.finish();
     }
-    state.copy_from_slice(next_state);
+    for idx in 0..state.len() {
+        state[idx] = next_state[idx];
+    }
     output
 }
 
@@ -735,7 +737,9 @@ where
     let den_order = 2 - den_start;
 
     let mut a = [R::zero(); 3];
-    a[..(den_order + 1)].copy_from_slice(&denominator[den_start..(den_start + den_order + 1)]);
+    for idx in 0..=den_order {
+        a[idx] = denominator[den_start + idx];
+    }
 
     let mut b = [R::zero(); 3];
     if let Some(num_start) = numerator.iter().position(|&value| value != R::zero()) {
@@ -743,8 +747,9 @@ where
         let delay = den_order
             .checked_sub(num_order)
             .expect("SOS numerator order must not exceed denominator order");
-        b[delay..(delay + num_order + 1)]
-            .copy_from_slice(&numerator[num_start..(num_start + num_order + 1)]);
+        for idx in 0..=num_order {
+            b[delay + idx] = numerator[num_start + idx];
+        }
     }
 
     (b, a)

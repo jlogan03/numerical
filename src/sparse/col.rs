@@ -24,5 +24,10 @@ pub(crate) fn col_slice_mut<T>(col: &mut Col<T>) -> &mut [T] {
 
 #[inline]
 pub(crate) fn copy_col<T: Copy>(dst: &mut Col<T>, src: &Col<T>) {
-    col_slice_mut(dst).copy_from_slice(col_slice(src));
+    debug_assert_eq!(dst.nrows(), src.nrows());
+    let src = col_slice(src);
+    let dst = col_slice_mut(dst);
+    for idx in 0..dst.len() {
+        dst[idx] = src[idx];
+    }
 }

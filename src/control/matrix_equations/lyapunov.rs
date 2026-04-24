@@ -306,7 +306,10 @@ impl<I: Index, T: ComplexField + Copy> ShiftedCscMatrix<I, T> {
 
     fn apply_shift(&mut self, shift: T) {
         let values = self.matrix.val_mut();
-        values.copy_from_slice(&self.base_values);
+        debug_assert_eq!(values.len(), self.base_values.len());
+        for idx in 0..values.len() {
+            values[idx] = self.base_values[idx];
+        }
         for &diag_idx in &self.diag_positions {
             values[diag_idx] += shift;
         }
