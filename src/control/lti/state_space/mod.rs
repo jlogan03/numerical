@@ -1032,6 +1032,9 @@ where
             let value = matrix[(row, col)];
             let _: U::Real = NumCast::from(value.real())
                 .ok_or(StateSpaceError::ScalarConversionFailed { which })?;
+            if U::IS_REAL && value.imag() != <T::Real as Zero>::zero() {
+                return Err(StateSpaceError::ScalarConversionFailed { which });
+            }
             let _: U::Real = NumCast::from(value.imag())
                 .ok_or(StateSpaceError::ScalarConversionFailed { which })?;
         }
@@ -1655,6 +1658,26 @@ mod tests {
         assert!((cast.c()[(0, 0)] - 1.0f32).abs() <= 1.0e-6);
         assert!((cast.c()[(0, 1)] + 0.3f32).abs() <= 1.0e-6);
         assert!((cast.d()[(0, 0)] - 0.125f32).abs() <= 1.0e-6);
+    }
+
+    #[test]
+    fn state_space_try_cast_rejects_complex_to_real_data_loss() {
+        let sys = ContinuousStateSpace::new(
+            Mat::from_fn(1, 1, |_, _| c64::new(-1.0, 0.25)),
+            Mat::from_fn(1, 1, |_, _| c64::new(1.0, 0.0)),
+            Mat::from_fn(1, 1, |_, _| c64::new(1.0, 0.0)),
+            Mat::from_fn(1, 1, |_, _| c64::new(0.0, 0.0)),
+        )
+        .unwrap();
+
+        let err = sys.try_cast::<f64>().unwrap_err();
+
+        assert_eq!(
+            err,
+            StateSpaceError::ScalarConversionFailed {
+                which: "state_space.a"
+            }
+        );
     }
 
     #[test]

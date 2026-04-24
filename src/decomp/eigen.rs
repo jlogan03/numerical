@@ -437,6 +437,28 @@ where
     A: LinOp<T>,
 {
     let par = get_global_parallelism();
+    if T::IS_REAL {
+        let rhs_real = Mat::from_fn(op.ncols(), 1, |i, _| {
+            T::from_real_imag(rhs[i.unbound()].re, <T::Real as Zero>::zero())
+        });
+        let rhs_imag = Mat::from_fn(op.ncols(), 1, |i, _| {
+            T::from_real_imag(rhs[i.unbound()].im, <T::Real as Zero>::zero())
+        });
+        let mut out_real = Mat::zeros(op.nrows(), 1);
+        let mut out_imag = Mat::zeros(op.nrows(), 1);
+        let mut stack = MemStack::new(scratch);
+        op.apply(out_real.as_mut(), rhs_real.as_ref(), par, &mut stack);
+        let mut stack = MemStack::new(scratch);
+        op.apply(out_imag.as_mut(), rhs_imag.as_ref(), par, &mut stack);
+
+        return Col::from_fn(op.nrows(), |i| {
+            Complex::new(
+                out_real[(i.unbound(), 0)].real(),
+                out_imag[(i.unbound(), 0)].real(),
+            )
+        });
+    }
+
     // The matrix-free operator is still defined over `T`, so the complex
     // residual check routes each complex vector through `T::from_real_imag`
     // before applying the operator and lifting the result back into the
@@ -911,8 +933,10 @@ mod tests {
     use crate::decomp::{DenseDecompParams, SparseDecompParams};
     use alloc::vec::Vec;
     use faer::complex::Complex;
+    use faer::dyn_stack::MemBuffer;
+    use faer::matrix_free::LinOp;
     use faer::sparse::{SparseColMat, Triplet};
-    use faer::{Col, Mat, Unbind};
+    use faer::{Col, Mat, Par, Unbind};
     use nalgebra::ComplexField;
 
     #[test]
@@ -1050,5 +1074,28 @@ mod tests {
         assert!(eig.values[2].abs() >= eig.values[3].abs());
         assert!(eig.info.n_converged <= 4);
         assert!(eig.values.iter().all(|value| value.im.abs() < 1e-10));
+    }
+
+    #[test]
+    fn real_operator_complex_vector_application_preserves_imaginary_part() {
+        let matrix = Mat::from_fn(2, 2, |row, col| match (row.unbound(), col.unbound()) {
+            (0, 1) => -1.0,
+            (1, 0) => 1.0,
+            _ => 0.0,
+        });
+        let op = matrix.as_ref();
+        let rhs = [
+            Complex::<f64>::new(1.0, 0.0),
+            Complex::<f64>::new(0.0, -1.0),
+        ];
+        let mut scratch = MemBuffer::new(op.apply_scratch(1, Par::Seq));
+
+        let out: Col<Complex<f64>> =
+            super::apply_operator_to_complex_vector(&op, &rhs, &mut scratch);
+
+        assert!(out[0].re.abs() < 1.0e-12);
+        assert!((out[0].im - 1.0).abs() < 1.0e-12);
+        assert!((out[1].re - 1.0).abs() < 1.0e-12);
+        assert!(out[1].im.abs() < 1.0e-12);
     }
 }
