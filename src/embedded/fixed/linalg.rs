@@ -163,6 +163,34 @@ where
 }
 
 /// Solves `A X = B` for one fixed-size right-hand side block.
+///
+/// This routine is the small, no-allocation dense solve used by fixed-size
+/// embedded code when an `alloc`-backed solver is unavailable or unnecessary.
+/// It performs Gauss-Jordan elimination with partial pivoting:
+///
+/// - each step selects the largest available pivot in the active column,
+/// - swaps the pivot row into place in both `A` and `B`,
+/// - scales the pivot row to make the pivot equal to one,
+/// - eliminates that column from every other row.
+///
+/// After the last column, the working copy of `A` has been reduced to the
+/// identity and the working copy of `B` contains `X = A^-1 B`. Multiple
+/// right-hand sides are handled at the same time by treating `B` as an `N x M`
+/// block.
+///
+/// The singularity test is deliberately conservative: a pivot whose magnitude
+/// is at or below `sqrt(epsilon)` is rejected before division. That avoids
+/// accepting clearly ill-conditioned solves in embedded paths that cannot fall
+/// back to iterative refinement. The final finite-value check catches overflow,
+/// invalid arithmetic, and non-finite inputs that survive the pivot tests.
+///
+/// Args:
+///   a: Coefficient matrix with shape `(N, N)`.
+///   b: Right-hand side block with shape `(N, M)`.
+///   which: Error context returned with singular or non-finite failures.
+///
+/// Returns:
+///   Solution block `X` with shape `(N, M)`.
 pub(crate) fn solve_linear_system<T, const N: usize, const M: usize>(
     a: &Matrix<T, N, N>,
     b: &Matrix<T, N, M>,
@@ -176,6 +204,8 @@ where
     let epsilon = T::epsilon().sqrt();
 
     for k in 0..N {
+        // Partial pivoting keeps the largest remaining entry in the active
+        // column on the diagonal before dividing by it.
         let mut pivot_row = k;
         let mut pivot_abs = a[k][k].abs();
         for row in (k + 1)..N {
@@ -191,10 +221,14 @@ where
         }
 
         if pivot_row != k {
+            // The same row operation must be applied to the right-hand side so
+            // the augmented system `[A | B]` remains equivalent.
             a.swap(k, pivot_row);
             b.swap(k, pivot_row);
         }
 
+        // Normalize the pivot row first; subsequent elimination can then use
+        // the pivot-column entry directly as the multiplier.
         let diag = a[k][k];
         for j in k..N {
             a[k][j] = a[k][j] / diag;
@@ -203,6 +237,8 @@ where
             b[k][rhs_col] = b[k][rhs_col] / diag;
         }
 
+        // Gauss-Jordan elimination clears the pivot column in every other row,
+        // so no separate back-substitution pass is required.
         for i in 0..N {
             if i != k {
                 let factor = a[i][k];

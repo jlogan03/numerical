@@ -149,24 +149,20 @@ where
     ///   The DC gain matrix with shape `(NY, NU)`, mapping constant inputs to
     ///   constant outputs in units of output per unit input.
     pub fn dc_gain(&self) -> Result<Matrix<T, NY, NU>, EmbeddedError> {
-        use faer::Mat;
-        use faer::linalg::solvers::Solve;
-
-        let lhs = Mat::from_fn(NX, NX, |row, col| {
-            if row == col {
-                T::one() - self.a[row][col]
-            } else {
-                -self.a[row][col]
-            }
-        });
-        let rhs = Mat::from_fn(NX, NU, |row, col| self.b[row][col]);
-        let solved = lhs.as_ref().partial_piv_lu().solve(rhs.as_ref());
-        let state_gain = core::array::from_fn(|row| {
+        let lhs = core::array::from_fn(|row| {
             core::array::from_fn(|col| {
-                let value = solved[(row, col)];
-                if value.is_nan() { T::zero() } else { value }
+                if row == col {
+                    T::one() - self.a[row][col]
+                } else {
+                    -self.a[row][col]
+                }
             })
         });
+        let state_gain = crate::embedded::fixed::linalg::solve_linear_system(
+            &lhs,
+            &self.b,
+            "state_space.dc_gain",
+        )?;
 
         Ok(crate::embedded::fixed::linalg::mat_add(
             &crate::embedded::fixed::linalg::mat_mul(&self.c, &state_gain),
@@ -244,5 +240,38 @@ where
         }
 
         Self::new(a, b, c, d, value.sample_time())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DiscreteStateSpace;
+    use crate::embedded::error::EmbeddedError;
+
+    #[test]
+    fn dc_gain_rejects_unit_pole() {
+        let system =
+            DiscreteStateSpace::<f64, 1, 1, 1>::new([[1.0]], [[1.0]], [[1.0]], [[0.0]], 0.1)
+                .unwrap();
+
+        let err = system.dc_gain().unwrap_err();
+
+        assert_eq!(
+            err,
+            EmbeddedError::SingularMatrix {
+                which: "state_space.dc_gain"
+            }
+        );
+    }
+
+    #[test]
+    fn dc_gain_matches_scalar_finite_reference() {
+        let system =
+            DiscreteStateSpace::<f64, 1, 1, 1>::new([[0.5]], [[2.0]], [[3.0]], [[4.0]], 0.1)
+                .unwrap();
+
+        let gain = system.dc_gain().unwrap();
+
+        assert!((gain[0][0] - 16.0).abs() < 1.0e-12);
     }
 }
