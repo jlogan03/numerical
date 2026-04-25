@@ -84,7 +84,7 @@ use num_traits::Float;
 #[derive(Clone, Debug)]
 pub struct DenseLyapunovSolve<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Dense Lyapunov solution matrix.
     pub solution: Mat<T>,
@@ -143,7 +143,7 @@ impl<T> ShiftStrategy<T> {
 #[derive(Clone, Debug)]
 pub struct LowRankFactor<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Dense low-rank basis accumulated by ADI.
     pub z: Mat<T>,
@@ -151,7 +151,7 @@ where
 
 impl<T: CompensatedField> LowRankFactor<T>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Column count of the factor.
     #[must_use]
@@ -173,7 +173,7 @@ where
 #[derive(Clone, Debug)]
 pub struct LowRankLyapunovSolve<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Final low-rank factor.
     pub factor: LowRankFactor<T>,
@@ -335,7 +335,7 @@ pub fn solve_continuous_lyapunov_dense<T>(
 ) -> Result<DenseLyapunovSolve<T>, LyapunovError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     validate_square("a", a.nrows(), a.ncols())?;
     validate_dims("q", q.nrows(), q.ncols(), a.nrows(), a.ncols())?;
@@ -390,7 +390,7 @@ pub fn controllability_gramian_low_rank<I, T, ViewT>(
 where
     I: Index,
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     ViewT: Conjugate<Canonical = T>,
 {
     validate_square("a", a.nrows().unbound(), a.ncols().unbound())?;
@@ -413,7 +413,7 @@ pub fn controllability_gramian_dense<T>(
 ) -> Result<DenseLyapunovSolve<T>, LyapunovError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     validate_square("a", a.nrows(), a.ncols())?;
     validate_dims("b", b.nrows(), b.ncols(), a.nrows(), b.ncols())?;
@@ -435,7 +435,7 @@ pub fn observability_gramian_low_rank<I, T, ViewT>(
 where
     I: Index,
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     ViewT: Conjugate<Canonical = T>,
 {
     validate_square("a", a.nrows().unbound(), a.ncols().unbound())?;
@@ -464,7 +464,7 @@ pub fn observability_gramian_dense<T>(
 ) -> Result<DenseLyapunovSolve<T>, LyapunovError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     validate_square("a", a.nrows(), a.ncols())?;
     validate_dims("c", c.nrows(), c.ncols(), c.nrows(), a.ncols())?;
@@ -483,7 +483,7 @@ fn low_rank_adi_core<I, T>(
 where
     I: Index,
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let shifts = shifts.as_slice();
     if shifts.is_empty() {
@@ -650,7 +650,7 @@ fn unvectorize_square<T: ComplexField + Copy>(values: MatRef<'_, T>, n: usize) -
 fn hermitianize_in_place<T>(matrix: &mut Mat<T>)
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let half = T::Real::one() / (T::Real::one() + T::Real::one());
     for col in 0..matrix.ncols() {
@@ -665,7 +665,7 @@ where
 fn dense_mul_with_adjoint_rhs<T>(lhs: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let nrows = lhs.nrows();
     let ncols = lhs.nrows();
@@ -681,7 +681,7 @@ where
 fn dense_mul_adjoint_lhs<T>(rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let nrows = rhs.ncols();
     let ncols = rhs.ncols();
@@ -697,7 +697,7 @@ where
 fn low_rank_gramian<T>(z: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     Mat::from_fn(z.nrows(), z.nrows(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
@@ -711,7 +711,7 @@ where
 fn continuous_residual<T>(a: MatRef<'_, T>, x: MatRef<'_, T>, q: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let n = a.nrows();
     Mat::from_fn(n, n, |row, col| {
@@ -730,7 +730,7 @@ where
 fn residual_factor_norm_upper_bound<T>(factor: MatRef<'_, T>) -> T::Real
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let w_norm = frobenius_norm(factor);
     w_norm * w_norm
@@ -739,7 +739,7 @@ where
 fn frobenius_norm<T>(matrix: MatRef<'_, T>) -> T::Real
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut acc: Option<TwoSum<T::Real>> = None;
     for col in 0..matrix.ncols() {
@@ -776,7 +776,7 @@ mod test {
     fn diagonal_solution_from_q<T>(diag: &[T], q: &Mat<T>) -> Mat<T>
     where
         T: super::CompensatedField,
-        T::Real: num_traits::Float + Copy,
+        T::Real: num_traits::Float,
     {
         Mat::from_fn(diag.len(), diag.len(), |row, col| {
             -q[(row, col)] / (diag[row] + diag[col].conj())
@@ -786,7 +786,7 @@ mod test {
     fn assert_close<T>(lhs: &Mat<T>, rhs: &Mat<T>, tol: T::Real)
     where
         T: super::CompensatedField,
-        T::Real: num_traits::Float + Copy,
+        T::Real: num_traits::Float,
     {
         assert_eq!(lhs.nrows(), rhs.nrows());
         assert_eq!(lhs.ncols(), rhs.ncols());
@@ -804,7 +804,7 @@ mod test {
     fn assert_factor_close<T>(factor: &LowRankFactor<T>, expected: &Mat<T>, tol: T::Real)
     where
         T: super::CompensatedField,
-        T::Real: num_traits::Float + Copy,
+        T::Real: num_traits::Float,
     {
         let dense = factor.to_dense();
         assert_close(&dense, expected, tol);

@@ -73,7 +73,7 @@ use num_traits::Float;
 #[derive(Clone, Debug)]
 pub struct PolePlacementSolve<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// State-feedback or observer gain.
     pub gain: Mat<T>,
@@ -169,7 +169,7 @@ pub fn place_poles_dense<T>(
 ) -> Result<PolePlacementSolve<T>, PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     place_state_feedback_impl(a, b, desired_poles)
 }
@@ -185,7 +185,7 @@ pub fn dplace_poles_dense<T>(
 ) -> Result<PolePlacementSolve<T>, PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     place_state_feedback_impl(a, b, desired_poles)
 }
@@ -204,7 +204,7 @@ pub fn place_observer_poles_dense<T>(
 ) -> Result<PolePlacementSolve<T>, PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     place_observer_impl(a, c, desired_poles)
 }
@@ -222,7 +222,7 @@ pub fn dplace_observer_poles_dense<T>(
 ) -> Result<PolePlacementSolve<T>, PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     place_observer_impl(a, c, desired_poles)
 }
@@ -230,7 +230,7 @@ where
 impl<T> ContinuousStateSpace<T>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Places the poles of the dense real continuous-time system.
     ///
@@ -259,7 +259,7 @@ where
 impl<T> DiscreteStateSpace<T>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Places the poles of the dense real discrete-time system.
     ///
@@ -290,7 +290,7 @@ fn place_state_feedback_impl<T>(
 ) -> Result<PolePlacementSolve<T>, PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     validate_state_feedback_dims(a, b, desired_poles.len())?;
 
@@ -321,7 +321,7 @@ fn place_observer_impl<T>(
 ) -> Result<PolePlacementSolve<T>, PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     validate_observer_dims(a, c, desired_poles.len())?;
 
@@ -357,7 +357,7 @@ fn place_state_feedback_siso_ackermann<T>(
 ) -> Result<PolePlacementSolve<T>, PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     let coeffs = real_monic_polynomial_from_roots(desired_poles)?;
     let ctrb = controllability_matrix(a, b);
@@ -390,7 +390,7 @@ fn place_state_feedback_mimo_real<T>(
 ) -> Result<PolePlacementSolve<T>, PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     let n = a.nrows();
     let m = b.ncols();
@@ -544,7 +544,7 @@ fn validate_observer_dims<T>(
 fn controllability_matrix<T>(a: MatRef<'_, T>, b: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let n = a.nrows();
     let m = b.ncols();
@@ -570,7 +570,7 @@ fn nullspace_basis<T>(
 ) -> Result<Mat<T>, PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     let n = a.nrows();
     let m = b.ncols();
@@ -613,7 +613,7 @@ fn complement_direction<T>(
 ) -> Result<Mat<T>, PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     let n = columns[0].nrows();
     let k = columns.len().saturating_sub(1);
@@ -637,7 +637,7 @@ where
 fn numerical_rank<T>(matrix: MatRef<'_, T>) -> Result<usize, PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let svd = dense_svd(matrix, &DenseDecompParams::default())?;
     if svd.s.nrows() == 0 {
@@ -654,7 +654,7 @@ fn real_monic_polynomial_from_roots<T>(
 ) -> Result<Vec<T>, PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut coeffs = vec![Complex::<T::Real>::new(T::Real::one(), T::Real::zero())];
     for &root in roots {
@@ -689,7 +689,7 @@ fn evaluate_real_monic_polynomial_at_matrix<T>(
 ) -> Result<Mat<T>, PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let n = a.nrows();
     let mut out = Mat::from_fn(
@@ -725,7 +725,7 @@ fn achieved_pole_diagnostics<T>(
 ) -> Result<(Vec<Complex<T::Real>>, T::Real), PolePlacementError>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut achieved = dense_eigenvalues(placed)?
         .try_as_col_major()
@@ -746,7 +746,7 @@ where
     Ok((achieved, residual))
 }
 
-fn compare_poles<R: Float + Copy>(lhs: Complex<R>, rhs: Complex<R>) -> core::cmp::Ordering {
+fn compare_poles<R: Float>(lhs: Complex<R>, rhs: Complex<R>) -> core::cmp::Ordering {
     let rhs_abs2 = rhs.re * rhs.re + rhs.im * rhs.im;
     let lhs_abs2 = lhs.re * lhs.re + lhs.im * lhs.im;
     rhs_abs2
@@ -767,7 +767,7 @@ fn compare_poles<R: Float + Copy>(lhs: Complex<R>, rhs: Complex<R>) -> core::cmp
 fn all_finite<T>(matrix: MatRef<'_, T>) -> bool
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     (0..matrix.ncols()).all(|col| (0..matrix.nrows()).all(|row| matrix[(row, col)].is_finite()))
 }
@@ -775,7 +775,7 @@ where
 fn gram_matrix<T>(matrix: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let cols = matrix.ncols();
     let rows = matrix.nrows();
@@ -791,7 +791,7 @@ where
 fn vector_norm_sq<T>(matrix: MatRef<'_, T>, col: usize) -> T::Real
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut acc = T::Real::zero();
     for row in 0..matrix.nrows() {
@@ -804,7 +804,7 @@ where
 fn normalize_column<T>(matrix: MatRef<'_, T>, col: usize) -> Mat<T>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let norm = vector_norm_sq(matrix, col).sqrt();
     scale_column(matrix, col, T::Real::one() / norm)
@@ -813,7 +813,7 @@ where
 fn scale_column<T>(matrix: MatRef<'_, T>, col: usize, scale: T::Real) -> Mat<T>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     Mat::from_fn(matrix.nrows(), 1, |row, _| {
         matrix[(row, col)] * T::from_real_imag(scale, T::Real::zero())
@@ -823,7 +823,7 @@ where
 fn scale_matrix<T>(matrix: MatRef<'_, T>, scale: T::Real) -> Mat<T>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
         matrix[(row, col)] * T::from_real_imag(scale, T::Real::zero())
@@ -833,7 +833,7 @@ where
 fn assemble_columns<T>(columns: &[Mat<T>]) -> Mat<T>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     Mat::from_fn(columns[0].nrows(), columns.len(), |row, col| {
         columns[col][(row, 0)]
@@ -843,7 +843,7 @@ where
 fn pole_tol<T>(scale: T::Real) -> T::Real
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     from_f64::<T::Real>(256.0) * eps::<T::Real>().sqrt() * scale.abs().max(T::Real::one())
 }

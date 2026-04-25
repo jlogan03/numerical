@@ -161,7 +161,7 @@ pub struct StepResponseData<R> {
 
 impl<R> StepResponseData<R>
 where
-    R: Float + Copy,
+    R: Float,
 {
     /// Creates validated step-response data.
     pub fn new(time: Vec<R>, input: Vec<R>, output: Vec<R>) -> Result<Self, PidDesignError> {
@@ -279,7 +279,7 @@ pub struct SimcPidParams<R> {
 
 impl<R> SimcPidParams<R>
 where
-    R: Float + Copy,
+    R: Float,
 {
     /// Creates validated tuning parameters.
     pub fn new(
@@ -365,7 +365,7 @@ pub struct FrequencyPidParams<R> {
 
 impl<R> FrequencyPidParams<R>
 where
-    R: Float + Copy,
+    R: Float,
 {
     /// Creates validated frequency-domain tuning parameters.
     pub fn new(
@@ -458,7 +458,7 @@ pub struct StepOptimizationPidParams<R> {
 
 impl<R> StepOptimizationPidParams<R>
 where
-    R: Float + Copy,
+    R: Float,
 {
     /// Creates validated discrete-time step-optimization tuning parameters.
     pub fn new(
@@ -545,7 +545,7 @@ pub struct SampledIoData<R> {
 
 impl<R> SampledIoData<R>
 where
-    R: Float + Copy,
+    R: Float,
 {
     /// Creates validated sampled SISO input/output data.
     pub fn new(sample_time: R, input: Vec<R>, output: Vec<R>) -> Result<Self, PidDesignError> {
@@ -682,7 +682,7 @@ pub fn design_pid_from_fopdt<R>(
     params: SimcPidParams<R>,
 ) -> Result<ProcessPidDesign<R, FopdtModel<R>>, PidDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     validate_process_gain(model.gain)?;
     validate_positive(model.time_constant, "time_constant")?;
@@ -724,7 +724,7 @@ pub fn design_pid_from_sopdt<R>(
     params: SimcPidParams<R>,
 ) -> Result<ProcessPidDesign<R, SopdtModel<R>>, PidDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     validate_process_gain(model.gain)?;
     validate_positive(model.time_constant_1, "time_constant_1")?;
@@ -1776,7 +1776,7 @@ fn interpolate_crossing<R>(
     start_index: usize,
 ) -> Option<R>
 where
-    R: Float + Copy,
+    R: Float,
 {
     if direction == R::zero() {
         return None;
@@ -1874,7 +1874,7 @@ fn positive_floor(scale: f64) -> f64 {
 /// Rejects zero or nonfinite process gains before applying a tuning rule.
 fn validate_process_gain<R>(gain: R) -> Result<(), PidDesignError>
 where
-    R: Float + Copy,
+    R: Float,
 {
     if gain.is_finite() && gain != R::zero() {
         Ok(())
@@ -1886,7 +1886,7 @@ where
 /// Validates a strictly positive tuning or process parameter.
 fn validate_positive<R>(value: R, which: &'static str) -> Result<(), PidDesignError>
 where
-    R: Float + Copy,
+    R: Float,
 {
     if value.is_finite() && value > R::zero() {
         Ok(())
@@ -1898,7 +1898,7 @@ where
 /// Validates a nonnegative tuning or process parameter.
 fn validate_nonnegative<R>(value: R, which: &'static str) -> Result<(), PidDesignError>
 where
-    R: Float + Copy,
+    R: Float,
 {
     if value.is_finite() && value >= R::zero() {
         Ok(())
@@ -1910,7 +1910,7 @@ where
 /// Scalar minimum helper that keeps the generic tuning formulas readable.
 fn min_value<R>(lhs: R, rhs: R) -> R
 where
-    R: Float + Copy,
+    R: Float,
 {
     if lhs < rhs { lhs } else { rhs }
 }
@@ -1918,7 +1918,7 @@ where
 /// Returns the scalar constant `2`.
 fn two<R>() -> R
 where
-    R: Float + Copy,
+    R: Float,
 {
     R::from(2.0).unwrap()
 }
@@ -1926,7 +1926,7 @@ where
 /// Returns the scalar constant `4`.
 fn four<R>() -> R
 where
-    R: Float + Copy,
+    R: Float,
 {
     R::from(4.0).unwrap()
 }

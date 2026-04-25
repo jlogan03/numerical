@@ -52,7 +52,7 @@ pub struct PoleZeroData<R> {
 
 impl<R> ContinuousTransferFunction<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Evaluates bode magnitude and phase on an angular-frequency grid.
     ///
@@ -77,7 +77,7 @@ where
 
 impl<R> DiscreteTransferFunction<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Evaluates bode magnitude and phase on an angular-frequency grid.
     ///
@@ -105,7 +105,7 @@ where
 
 impl<R> ContinuousZpk<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Evaluates bode magnitude and phase on an angular-frequency grid.
     pub fn bode_data(&self, angular_frequencies: &[R]) -> Result<BodeData<R>, LtiError> {
@@ -126,7 +126,7 @@ where
 
 impl<R> DiscreteZpk<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Evaluates bode magnitude and phase on an angular-frequency grid.
     pub fn bode_data(&self, angular_frequencies: &[R]) -> Result<BodeData<R>, LtiError> {
@@ -149,7 +149,7 @@ where
 
 impl<R> ContinuousSos<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Evaluates bode magnitude and phase on an angular-frequency grid.
     pub fn bode_data(&self, angular_frequencies: &[R]) -> Result<BodeData<R>, LtiError> {
@@ -166,7 +166,7 @@ where
 
 impl<R> DiscreteSos<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Evaluates bode magnitude and phase on an angular-frequency grid.
     pub fn bode_data(&self, angular_frequencies: &[R]) -> Result<BodeData<R>, LtiError> {
@@ -185,7 +185,7 @@ where
 
 impl<R> ContinuousStateSpace<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Evaluates bode magnitude and phase for a dense real SISO model.
     ///
@@ -216,7 +216,7 @@ where
 
 impl<R> DiscreteStateSpace<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Evaluates bode magnitude and phase for a dense real SISO model.
     ///
@@ -252,7 +252,7 @@ fn bode_from_evaluator<R, F>(
     mut evaluate: F,
 ) -> Result<BodeData<R>, LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
     F: FnMut(R) -> Result<Complex<R>, LtiError>,
 {
     // Keep the plotting layer opinionated but minimal: validate the grid, turn

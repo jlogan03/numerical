@@ -63,7 +63,7 @@ pub struct Pid<T, const LANES: usize> {
 
 impl<T, const LANES: usize> PidState<T, LANES>
 where
-    T: Float + Copy,
+    T: Float,
 {
     /// Returns the zero-initialized runtime state.
     #[must_use]
@@ -82,7 +82,7 @@ where
 
 impl<T, const LANES: usize> Default for PidState<T, LANES>
 where
-    T: Float + Copy,
+    T: Float,
 {
     fn default() -> Self {
         Self::zeros()
@@ -91,7 +91,7 @@ where
 
 impl<T, const LANES: usize> Pid<T, LANES>
 where
-    T: Float + Copy,
+    T: Float,
 {
     /// Creates a validated sampled PID/PIDF controller.
     pub fn new(
@@ -318,7 +318,7 @@ where
 #[cfg(feature = "alloc")]
 impl<T, const LANES: usize> Pid<T, LANES>
 where
-    T: Float + Copy + faer_traits::RealField,
+    T: Float + faer_traits::RealField,
 {
     /// Builds a fixed-size embedded PID from the dynamic control-side runtime
     /// controller and an explicit sample interval.

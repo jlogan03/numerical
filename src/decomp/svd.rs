@@ -50,7 +50,7 @@ use num_traits::{Float, Zero};
 fn dense_full_svd<T>(a: MatRef<'_, T>) -> Result<PartialSvd<T>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let full = a.thin_svd()?;
     let u_ref = full.U();
@@ -81,7 +81,7 @@ fn validated_sparse_target<T, A>(
 ) -> Result<usize, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: BiLinOp<T>,
 {
     let full_rank = op.nrows().min(op.ncols());
@@ -133,7 +133,7 @@ fn partial_svd_impl<T, A>(
 ) -> Result<PartialSvd<T>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: BiLinOp<T>,
 {
     let par = get_global_parallelism();
@@ -183,7 +183,7 @@ fn svd_info<T, A>(
 ) -> DecompInfo<T::Real>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: BiLinOp<T>,
 {
     let par = get_global_parallelism();
@@ -238,7 +238,7 @@ where
 fn truncate_svd<T, A>(op: &A, svd: PartialSvd<T>, n_requested: usize) -> PartialSvd<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: BiLinOp<T>,
 {
     let u = Mat::from_fn(op.nrows(), n_requested, |i, j| svd.u[(i, j)]);
@@ -267,7 +267,7 @@ pub fn sparse_svd_scratch_req<T, A>(
 ) -> Result<StackReq, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: BiLinOp<T>,
 {
     let n_requested = validated_sparse_target(op, params)?;
@@ -297,7 +297,7 @@ pub fn sparse_svd_with_scratch<T, A>(
 ) -> Result<PartialSvd<T>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: BiLinOp<T>,
 {
     let n_requested = validated_sparse_target(op, params)?;
@@ -324,7 +324,7 @@ pub fn sparse_svd<T, A>(
 ) -> Result<PartialSvd<T>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: BiLinOp<T>,
 {
     let req = sparse_svd_scratch_req(op, params)?;
@@ -345,7 +345,7 @@ pub fn dense_svd<T>(
 ) -> Result<PartialSvd<T>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let full_rank = a.nrows().min(a.ncols());
     match params.n_components {

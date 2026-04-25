@@ -16,7 +16,7 @@ use num_traits::{Float, One};
 pub(crate) fn default_tolerance<T>() -> T::Real
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     T::Real::epsilon().sqrt()
 }
@@ -30,7 +30,7 @@ pub(crate) fn solve_left_checked<T, E, F>(
 ) -> Result<Mat<T>, E>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy,
+    T::Real: Float,
     F: Fn() -> E,
 {
     let solution = lhs.full_piv_lu().solve(rhs);
@@ -60,7 +60,7 @@ pub(crate) fn solve_right_checked<T, E, F>(
 ) -> Result<Mat<T>, E>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy,
+    T::Real: Float,
     F: Fn() -> E + Copy,
 {
     let solved_t = solve_left_checked(lhs_right.transpose(), rhs_left.transpose(), tol, err)?;

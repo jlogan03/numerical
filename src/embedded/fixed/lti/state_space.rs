@@ -31,7 +31,7 @@ pub struct DiscreteStateSpace<T, const NX: usize, const NU: usize, const NY: usi
 
 impl<T, const NX: usize, const NU: usize, const NY: usize> DiscreteStateSpace<T, NX, NU, NY>
 where
-    T: Float + Copy,
+    T: Float,
 {
     /// Creates a discrete-time state-space realization.
     ///
@@ -140,7 +140,7 @@ where
 
 impl<T, const NX: usize, const NU: usize, const NY: usize> DiscreteStateSpace<T, NX, NU, NY>
 where
-    T: Float + Copy,
+    T: Float,
 {
     /// Returns the steady-state gain `G(1) = C (I - A)^-1 B + D`.
     ///
@@ -174,7 +174,7 @@ where
 impl<T, const NX: usize, const NU: usize, const NY: usize>
     TryFrom<&crate::control::lti::DiscreteStateSpace<T>> for DiscreteStateSpace<T, NX, NU, NY>
 where
-    T: Float + Copy + faer_traits::RealField,
+    T: Float + faer_traits::RealField,
 {
     type Error = EmbeddedError;
 

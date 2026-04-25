@@ -75,7 +75,7 @@ pub struct AnalogFilterSpec<R> {
 
 impl<R> AnalogFilterSpec<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates and validates an analog filter specification.
     pub fn new(
@@ -108,7 +108,7 @@ pub struct AnalogOrderSelectionSpec<R> {
 
 impl<R> AnalogOrderSelectionSpec<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates and validates an analog filter-order-selection specification.
     pub fn new(
@@ -154,7 +154,7 @@ pub struct DigitalFilterSpec<R> {
 
 impl<R> DigitalFilterSpec<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates and validates a digital filter specification.
     pub fn new(
@@ -206,7 +206,7 @@ pub struct DigitalOrderSelectionSpec<R> {
 
 impl<R> DigitalOrderSelectionSpec<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates and validates a digital filter-order-selection specification.
     pub fn new(
@@ -243,7 +243,7 @@ where
     }
 }
 
-fn validate_common<R: Float + Copy + RealField>(
+fn validate_common<R: Float + RealField>(
     order: usize,
     shape: FilterShape<R>,
 ) -> Result<(), FilterDesignError> {
@@ -253,7 +253,7 @@ fn validate_common<R: Float + Copy + RealField>(
     validate_shape(shape)
 }
 
-pub(super) fn validate_shape<R: Float + Copy + RealField>(
+pub(super) fn validate_shape<R: Float + RealField>(
     shape: FilterShape<R>,
 ) -> Result<(), FilterDesignError> {
     match shape {
@@ -278,7 +278,7 @@ pub(super) fn validate_shape<R: Float + Copy + RealField>(
     }
 }
 
-fn validate_analog_family<R: Float + Copy + RealField>(
+fn validate_analog_family<R: Float + RealField>(
     family: AnalogFilterFamily<R>,
 ) -> Result<(), FilterDesignError> {
     match family {
@@ -287,7 +287,7 @@ fn validate_analog_family<R: Float + Copy + RealField>(
     }
 }
 
-fn validate_digital_family<R: Float + Copy + RealField>(
+fn validate_digital_family<R: Float + RealField>(
     family: DigitalFilterFamily<R>,
 ) -> Result<(), FilterDesignError> {
     match family {
@@ -296,7 +296,7 @@ fn validate_digital_family<R: Float + Copy + RealField>(
     }
 }
 
-pub(super) fn validate_digital_shape<R: Float + Copy + RealField>(
+pub(super) fn validate_digital_shape<R: Float + RealField>(
     shape: FilterShape<R>,
     sample_rate: R,
 ) -> Result<(), FilterDesignError> {
@@ -324,7 +324,7 @@ pub(super) fn validate_digital_shape<R: Float + Copy + RealField>(
     }
 }
 
-fn validate_positive_cutoff<R: Float + Copy + RealField>(
+fn validate_positive_cutoff<R: Float + RealField>(
     cutoff: R,
     which: &'static str,
 ) -> Result<(), FilterDesignError> {
@@ -335,9 +335,7 @@ fn validate_positive_cutoff<R: Float + Copy + RealField>(
     }
 }
 
-pub(super) fn validate_ripple<R: Float + Copy + RealField>(
-    ripple_db: R,
-) -> Result<(), FilterDesignError> {
+pub(super) fn validate_ripple<R: Float + RealField>(ripple_db: R) -> Result<(), FilterDesignError> {
     if !ripple_db.is_finite() || ripple_db <= R::zero() {
         Err(FilterDesignError::InvalidRipple)
     } else {
@@ -345,7 +343,7 @@ pub(super) fn validate_ripple<R: Float + Copy + RealField>(
     }
 }
 
-pub(super) fn validate_attenuation<R: Float + Copy + RealField>(
+pub(super) fn validate_attenuation<R: Float + RealField>(
     attenuation_db: R,
 ) -> Result<(), FilterDesignError> {
     if !attenuation_db.is_finite() || attenuation_db <= R::zero() {

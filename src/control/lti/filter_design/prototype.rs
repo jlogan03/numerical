@@ -29,7 +29,7 @@ pub(super) fn analog_lowpass_prototype_zpk<R>(
     family: AnalogFilterFamily<R>,
 ) -> Result<ContinuousZpk<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     match family {
         AnalogFilterFamily::Butterworth => butterworth_prototype(order),
@@ -40,7 +40,7 @@ where
 
 fn butterworth_prototype<R>(order: usize) -> Result<ContinuousZpk<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let n = R::from(order).unwrap();
     let two = R::from(2.0).unwrap();
@@ -62,7 +62,7 @@ fn chebyshev1_prototype<R>(
     ripple_db: R,
 ) -> Result<ContinuousZpk<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let n = R::from(order).unwrap();
     // Type-I Chebyshev prototypes are parameterized by passband ripple via the
@@ -95,7 +95,7 @@ where
 
 fn bessel_prototype<R>(order: usize) -> Result<ContinuousZpk<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     // Reverse Bessel polynomials are tabulated in coefficient form. Their
     // roots are the classical delay-normalized Bessel poles, so they must be
@@ -115,7 +115,7 @@ where
 
 fn reverse_bessel_denominator<R>(order: usize) -> Vec<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let mut ascending = Vec::with_capacity(order + 1);
     for k in 0..=order {
@@ -132,7 +132,7 @@ fn factorial_f64(n: usize) -> f64 {
 
 fn bessel_cutoff_normalization<R>(gain: R, poles: &[Complex<R>]) -> Result<R, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let target = R::one() / R::from(2.0).unwrap().sqrt();
     let mut lower = R::zero();
@@ -168,7 +168,7 @@ where
 
 fn zpk_magnitude_at<R>(gain: R, poles: &[Complex<R>], omega: R) -> Result<R, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let s = Complex::new(R::zero(), omega);
     let denominator = poles
@@ -193,7 +193,7 @@ fn gain_for_dc_target<R>(
     target: R,
 ) -> Result<R, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     // The prototype builders naturally determine poles, but not always the
     // real scalar gain convention we want. Normalize here so the lowpass
@@ -212,7 +212,7 @@ where
 
 fn real_scalar<R>(value: Complex<R>, which: &'static str) -> Result<R, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let scale = R::one().max(value.re.abs()).max(value.im.abs());
     let tol = R::from(128.0).unwrap() * R::epsilon() * scale;

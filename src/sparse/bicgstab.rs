@@ -256,9 +256,9 @@ impl<T: ComplexField + Copy, A: SparseMatVec<T>, P: Precond<T>> fmt::Debug for B
     }
 }
 
-impl<T: ComplexField + CompensatedField, A: SparseMatVec<T>> BiCGSTAB<T, A, IdentityPrecond>
+impl<T: CompensatedField, A: SparseMatVec<T>> BiCGSTAB<T, A, IdentityPrecond>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Initializes a solver with a fresh residual estimate.
     ///
@@ -313,9 +313,9 @@ where
     }
 }
 
-impl<T: ComplexField + CompensatedField, A: SparseMatVec<T>, P: Precond<T>> BiCGSTAB<T, A, P>
+impl<T: CompensatedField, A: SparseMatVec<T>, P: Precond<T>> BiCGSTAB<T, A, P>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Initializes a solver with a fresh residual estimate and preconditioner.
     ///
@@ -677,15 +677,14 @@ mod test {
     use faer::matrix_free::bicgstab::{BicgParams, bicgstab as faer_bicgstab, bicgstab_scratch};
     use faer::sparse::{SparseColMat, SparseRowMat, Triplet};
     use faer::{Col, Mat, Par, c32, c64};
-    use faer_traits::ComplexField;
     use num_traits::Float;
     use std::println;
     use std::time::Instant;
 
     fn apply_to_col<T, A>(a: A, x: &[T]) -> Col<T>
     where
-        T: ComplexField + CompensatedField,
-        T::Real: Float + Copy,
+        T: CompensatedField,
+        T::Real: Float,
         A: SparseMatVec<T>,
     {
         let mut out = crate::sparse::col::zero_col::<T>(a.nrows());
@@ -695,8 +694,8 @@ mod test {
 
     fn assert_solution_close<T, A>(a: A, x_true: &[T], x0: &[T], tol: T::Real)
     where
-        T: ComplexField + CompensatedField,
-        T::Real: Float + Copy,
+        T: CompensatedField,
+        T::Real: Float,
         A: SparseMatVec<T>,
     {
         let b = apply_to_col(a, x_true);
@@ -718,8 +717,8 @@ mod test {
 
     fn residual_norm<T, A>(a: A, x: &[T], b: &[T]) -> T::Real
     where
-        T: ComplexField + CompensatedField,
-        T::Real: Float + Copy,
+        T: CompensatedField,
+        T::Real: Float,
         A: SparseMatVec<T>,
     {
         let ax = apply_to_col(a, x);

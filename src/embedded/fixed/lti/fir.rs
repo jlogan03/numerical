@@ -30,7 +30,7 @@ pub struct FirState<T, const TAPS: usize, const LANES: usize> {
 
 impl<T, const TAPS: usize, const LANES: usize> FirState<T, TAPS, LANES>
 where
-    T: Float + Copy,
+    T: Float,
 {
     /// Returns the zero-initialized FIR history.
     #[must_use]
@@ -65,7 +65,7 @@ where
 
 impl<T, const TAPS: usize, const LANES: usize> Default for FirState<T, TAPS, LANES>
 where
-    T: Float + Copy,
+    T: Float,
 {
     fn default() -> Self {
         Self::zeros()
@@ -74,7 +74,7 @@ where
 
 impl<T, const TAPS: usize, const LANES: usize> Fir<T, TAPS, LANES>
 where
-    T: Float + Copy,
+    T: Float,
 {
     /// Creates a fixed-size FIR bank.
     pub fn new(taps: [T; TAPS], sample_time: T) -> Result<Self, EmbeddedError> {
@@ -153,7 +153,7 @@ where
     /// Casts taps and sample time to another scalar dtype.
     pub fn try_cast<S>(&self) -> Result<Fir<S, TAPS, LANES>, EmbeddedError>
     where
-        S: Float + Copy + NumCast,
+        S: Float,
     {
         let mut taps = [S::zero(); TAPS];
         for (idx, &tap) in self.taps.iter().enumerate() {
@@ -172,11 +172,7 @@ where
 impl<T, const TAPS: usize, const LANES: usize> TryFrom<&crate::control::lti::Fir<T>>
     for Fir<T, TAPS, LANES>
 where
-    T: Float
-        + Copy
-        + num_traits::NumCast
-        + faer_traits::RealField
-        + crate::sparse::CompensatedField,
+    T: Float + faer_traits::RealField + crate::sparse::CompensatedField,
 {
     type Error = EmbeddedError;
 
@@ -202,7 +198,7 @@ where
 /// Pushes one new sample into the newest-first history buffer.
 fn shift_history<T, const TAPS: usize>(history: &mut [T; TAPS], input: T)
 where
-    T: Float + Copy,
+    T: Float,
 {
     for idx in (1..TAPS).rev() {
         history[idx] = history[idx - 1];
@@ -213,7 +209,7 @@ where
 /// Computes one FIR dot product against newest-first sample history.
 fn dot_taps<T, const TAPS: usize>(taps: &[T; TAPS], history: &[T; TAPS]) -> T
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut acc = T::zero();
     for idx in 0..TAPS {

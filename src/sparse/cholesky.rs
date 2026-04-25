@@ -893,7 +893,7 @@ mod test {
     fn residual_norm<T, A>(a: A, x: &[T], b: &[T]) -> T::Real
     where
         T: crate::sparse::CompensatedField,
-        T::Real: num_traits::Float + Copy,
+        T::Real: num_traits::Float,
         A: SparseMatVec<T>,
     {
         let mut ax = vec![faer_traits::math_utils::zero::<T>(); a.nrows()];

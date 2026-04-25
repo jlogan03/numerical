@@ -76,7 +76,7 @@ pub struct FopdtStepResponseJacobian<R> {
 
 impl<R> FopdtModel<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Evaluates the continuous-time transfer map
     /// `K * exp(-Ls) / (tau s + 1)`.
@@ -251,7 +251,7 @@ pub struct SopdtStepResponseJacobian<R> {
 
 impl<R> SopdtModel<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Evaluates the continuous-time transfer map
     /// `K * exp(-Ls) / ((tau1 s + 1)(tau2 s + 1))`.
@@ -392,7 +392,7 @@ where
 
 fn validate_step_grid<R>(sample_times: &[R]) -> Result<(), LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if sample_times.is_empty()
         || sample_times
@@ -412,7 +412,7 @@ fn validate_frequency_grid<R>(
     which: &'static str,
 ) -> Result<(), LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if angular_frequencies.is_empty()
         || angular_frequencies
@@ -429,14 +429,14 @@ where
 
 fn second_order_lag_step<R>(time: R, tau1: R, tau2: R) -> R
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     second_order_lag_step_jacobian(time, tau1, tau2).0
 }
 
 fn second_order_lag_step_jacobian<R>(time: R, tau1: R, tau2: R) -> (R, R, R, R)
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     // Near a repeated pole, the distinct-lag formula loses accuracy through
     // subtraction. Switch to the repeated-pole limit in that regime.
@@ -472,7 +472,7 @@ where
 
 fn complex_exp<R>(value: Complex<R>) -> Complex<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let scale = value.re.exp();
     Complex::new(scale * value.im.cos(), scale * value.im.sin())

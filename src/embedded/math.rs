@@ -6,7 +6,7 @@ use num_traits::Float;
 /// Returns `value` if it is finite, otherwise reports a named runtime error.
 pub(crate) fn ensure_finite<T>(value: T, which: &'static str) -> Result<T, EmbeddedError>
 where
-    T: Float + Copy,
+    T: Float,
 {
     if value.is_finite() {
         Ok(value)
@@ -18,7 +18,7 @@ where
 /// Clamps one scalar into the inclusive range `[low, high]`.
 pub(crate) fn clamp_value<T>(value: T, low: T, high: T) -> T
 where
-    T: Float + Copy,
+    T: Float,
 {
     if value < low {
         low

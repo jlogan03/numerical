@@ -16,7 +16,7 @@ use num_traits::Float;
 /// Returns the all-zero dense matrix with the requested shape.
 pub(super) fn zero_matrix<T>(nrows: usize, ncols: usize) -> Matrix<T>
 where
-    T: Float + Copy,
+    T: Float,
 {
     Mat::from_fn(nrows, ncols, |_, _| T::zero())
 }
@@ -25,7 +25,7 @@ where
 /// Returns the identity matrix of order `n`.
 pub(super) fn identity_matrix<T>(n: usize) -> Matrix<T>
 where
-    T: Float + Copy,
+    T: Float,
 {
     Mat::from_fn(
         n,
@@ -37,7 +37,7 @@ where
 /// Returns the all-zero dense vector of length `n`.
 pub(super) fn zero_vector<T>(n: usize) -> Vector<T>
 where
-    T: Float + Copy,
+    T: Float,
 {
     Col::from_fn(n, |_| T::zero())
 }
@@ -87,7 +87,7 @@ pub(super) fn vectors_as_columns<T>(
     which: &'static str,
 ) -> Result<Matrix<T>, EmbeddedError>
 where
-    T: Float + Copy,
+    T: Float,
 {
     if vectors.is_empty() {
         return Ok(zero_matrix(0, 0));
@@ -144,7 +144,7 @@ pub(super) fn col_as_slice_mut<T>(column: ColMut<'_, T>) -> &mut [T] {
 /// Returns the scalar-scaled matrix `alpha * matrix`.
 pub(super) fn scale_matrix<T>(matrix: &Matrix<T>, alpha: T) -> Matrix<T>
 where
-    T: Float + Copy,
+    T: Float,
 {
     Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
         alpha * matrix[(row, col)]
@@ -154,7 +154,7 @@ where
 /// Returns the matrix product `lhs * rhs`.
 pub(super) fn mat_mul<T>(lhs: &Matrix<T>, rhs: &Matrix<T>) -> Result<Matrix<T>, EmbeddedError>
 where
-    T: Float + Copy,
+    T: Float,
 {
     if lhs.ncols() != rhs.nrows() {
         return Err(EmbeddedError::DimensionMismatch {
@@ -181,7 +181,7 @@ pub(super) fn mat_mul_vec<T>(
     vector: &Vector<T>,
 ) -> Result<Vector<T>, EmbeddedError>
 where
-    T: Float + Copy,
+    T: Float,
 {
     if matrix.ncols() != vector.nrows() {
         return Err(EmbeddedError::LengthMismatch {
@@ -203,7 +203,7 @@ where
 /// Returns the Euclidean norm of one dense vector.
 pub(super) fn vec_norm<T>(vector: &Vector<T>) -> T
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut sum = T::zero();
     for idx in 0..vector.nrows() {
@@ -215,7 +215,7 @@ where
 /// Returns `lhs + rhs` for dense vectors.
 pub(super) fn vec_add<T>(lhs: &Vector<T>, rhs: &Vector<T>) -> Result<Vector<T>, EmbeddedError>
 where
-    T: Float + Copy,
+    T: Float,
 {
     if lhs.nrows() != rhs.nrows() {
         return Err(EmbeddedError::LengthMismatch {
@@ -233,7 +233,7 @@ where
 /// Returns `lhs - rhs` for dense vectors.
 pub(super) fn vec_sub<T>(lhs: &Vector<T>, rhs: &Vector<T>) -> Result<Vector<T>, EmbeddedError>
 where
-    T: Float + Copy,
+    T: Float,
 {
     if lhs.nrows() != rhs.nrows() {
         return Err(EmbeddedError::LengthMismatch {
@@ -255,7 +255,7 @@ pub(super) fn llt_solve<T>(
     which: &'static str,
 ) -> Result<Matrix<T>, EmbeddedError>
 where
-    T: ComplexField<Real = T> + Float + Copy,
+    T: ComplexField<Real = T> + Float,
 {
     if matrix.nrows() != matrix.ncols() {
         return Err(EmbeddedError::DimensionMismatch {
@@ -295,7 +295,7 @@ pub(super) fn cholesky_lower<T>(
     which: &'static str,
 ) -> Result<Matrix<T>, EmbeddedError>
 where
-    T: Float + Copy,
+    T: Float,
 {
     if matrix.nrows() != matrix.ncols() {
         return Err(EmbeddedError::DimensionMismatch {

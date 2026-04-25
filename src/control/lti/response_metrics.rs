@@ -60,7 +60,7 @@ pub struct StepResponseMetricParams<R> {
 
 impl<R> Default for StepResponseMetricParams<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     fn default() -> Self {
         // Match the usual "stepinfo"-style defaults: 10-90% rise time and a
@@ -250,7 +250,7 @@ fn step_metrics_from_samples<R>(
     which: &'static str,
 ) -> Result<StepResponseMetrics<R>, LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     validate_metric_inputs(sample_times, values, params, which)?;
 
@@ -322,7 +322,7 @@ fn validate_metric_inputs<R>(
     which: &'static str,
 ) -> Result<(), LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if sample_times.is_empty() || sample_times.len() != values.len() {
         return Err(LtiError::InvalidSampleGrid { which });
@@ -354,7 +354,7 @@ where
 
 fn direction_peak<R>(sample_times: &[R], values: &[R], delta: R) -> (R, R)
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let mut best_idx = 0usize;
     for idx in 1..values.len() {
@@ -372,7 +372,7 @@ where
 
 fn opposite_extremum<R>(values: &[R], delta: R) -> R
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let mut best = values[0];
     for &value in &values[1..] {
@@ -390,7 +390,7 @@ where
 
 fn first_crossing_time<R>(sample_times: &[R], values: &[R], target: R, rising: bool) -> Option<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     for idx in 0..values.len().saturating_sub(1) {
         let y0 = values[idx];
@@ -424,7 +424,7 @@ where
 
 fn settling_time<R>(sample_times: &[R], values: &[R], steady: R, band: R) -> Option<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     // Settling time is the first sample after the last band violation. This is
     // deliberately sample-grid based rather than an exact continuous solve.
@@ -444,7 +444,7 @@ where
 
 fn interpolate_time<R>(t0: R, t1: R, y0: R, y1: R, target: R) -> R
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if approx_reached(y0, y1) {
         return t0;
@@ -455,7 +455,7 @@ where
 
 fn approx_reached<R>(lhs: R, rhs: R) -> bool
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     // Scale the comparison so near-zero and large-magnitude traces both behave
     // reasonably under the same metric-extraction code.

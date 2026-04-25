@@ -54,7 +54,7 @@ use num_traits::Float;
 #[derive(Clone, Debug)]
 pub struct LqrSolve<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// State-feedback gain.
     pub gain: Mat<T>,
@@ -105,7 +105,7 @@ pub fn lqr_dense<T>(
 ) -> Result<LqrSolve<T>, LqrError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     // LQR is intentionally thin over the Riccati layer: solve CARE once, then
     // package the controller-oriented quantities callers actually need.
@@ -135,7 +135,7 @@ pub fn dlqr_dense<T>(
 ) -> Result<LqrSolve<T>, LqrError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     // DLQR is the same packaging step on top of the discrete Riccati solve.
     let riccati = solve_dare_dense(a, b, q, r)?;
@@ -151,7 +151,7 @@ where
 fn closed_loop_matrix<T>(a: MatRef<'_, T>, b: MatRef<'_, T>, k: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let bk = dense_mul(b, k);
     Mat::from_fn(a.nrows(), a.ncols(), |row, col| {
@@ -173,7 +173,7 @@ mod test {
     fn assert_close<T>(lhs: &Mat<T>, rhs: &Mat<T>, tol: T::Real)
     where
         T: crate::sparse::compensated::CompensatedField,
-        T::Real: num_traits::Float + Copy,
+        T::Real: num_traits::Float,
     {
         assert_eq!(lhs.nrows(), rhs.nrows());
         assert_eq!(lhs.ncols(), rhs.ncols());

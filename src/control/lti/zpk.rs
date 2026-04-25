@@ -27,7 +27,7 @@ pub type DiscreteZpk<R> = Zpk<R, DiscreteTime<R>>;
 
 impl<R, Domain> Zpk<R, Domain>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
     Domain: Clone,
 {
     /// Creates a zero/pole/gain representation.
@@ -113,7 +113,7 @@ where
 
 impl<R, Domain> Zpk<R, Domain>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
     Domain: CompositionDomain<R>,
 {
     /// Forms the parallel composition `self + rhs`.
@@ -181,7 +181,7 @@ where
 
 impl<R> ContinuousZpk<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates a continuous-time zero/pole/gain representation.
     pub fn continuous(
@@ -220,7 +220,7 @@ where
     /// Real and imaginary parts of each root are converted independently.
     pub fn try_cast<S>(&self) -> Result<ContinuousZpk<S>, LtiError>
     where
-        S: Float + Copy + RealField + NumCast,
+        S: Float + RealField + NumCast,
     {
         ContinuousZpk::continuous(
             self.zeros()
@@ -250,7 +250,7 @@ where
 
 impl<R> DiscreteZpk<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates a discrete-time zero/pole/gain representation.
     pub fn discrete(
@@ -307,7 +307,7 @@ where
     /// storage type.
     pub fn try_cast<S>(&self) -> Result<DiscreteZpk<S>, LtiError>
     where
-        S: Float + Copy + RealField + NumCast,
+        S: Float + RealField + NumCast,
     {
         DiscreteZpk::discrete(
             self.zeros()

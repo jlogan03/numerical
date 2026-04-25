@@ -234,7 +234,7 @@ pub struct DenseDecompParams<T: ComplexField> {
 impl<T> Default for DenseDecompParams<T>
 where
     T: crate::sparse::CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     fn default() -> Self {
         Self {
@@ -251,7 +251,7 @@ where
 impl<T> DenseDecompParams<T>
 where
     T: crate::sparse::CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Creates parameters with documented defaults.
     #[must_use]
@@ -328,7 +328,7 @@ pub struct SparseDecompParams<T: ComplexField> {
 impl<T> SparseDecompParams<T>
 where
     T: crate::sparse::CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Creates sparse decomposition parameters with the required target count.
     #[must_use]
@@ -442,7 +442,7 @@ pub(crate) fn partial_eigen_params<T: CompensatedField>(
     max_restarts: usize,
 ) -> PartialEigenParams
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     PartialEigenParams {
         min_dim: min_dim.unwrap_or(0),
@@ -464,7 +464,7 @@ pub(crate) fn normalized_start_vector<T>(
 ) -> Result<Col<T>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut start = match start_vector {
         Some(start) => {
@@ -495,7 +495,7 @@ where
 fn default_start_vector<T>(len: usize) -> Col<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // Use a deterministic alternating-sign pattern instead of hidden
     // randomness. That keeps results reproducible while avoiding the
@@ -516,7 +516,7 @@ where
 pub(crate) fn sorted_order_descending_by_abs<T>(values: ColRef<'_, T>) -> Vec<usize>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut order: Vec<_> = (0..values.nrows()).collect();
     order.sort_by(|&lhs, &rhs| {
@@ -546,7 +546,7 @@ pub(crate) fn permute_mat_cols<T: Clone>(matrix: MatRef<'_, T>, order: &[usize])
 pub(crate) fn orthogonality_error<T>(vectors: MatRef<'_, T>) -> T::Real
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let k = vectors.ncols();
     let mut max_error = T::Real::zero();

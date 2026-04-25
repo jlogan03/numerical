@@ -25,7 +25,7 @@ pub trait SparseMatVec<T: ComplexField + Copy>: Copy + Debug {
 impl<T, I, ViewT> SparseMatVec<T> for SparseRowMatRef<'_, I, ViewT>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     I: Index,
     ViewT: Conjugate<Canonical = T>,
 {
@@ -97,7 +97,7 @@ where
 impl<T, I, ViewT> SparseMatVec<T> for SparseColMatRef<'_, I, ViewT>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     I: Index,
     ViewT: Conjugate<Canonical = T>,
 {

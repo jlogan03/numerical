@@ -20,7 +20,7 @@ pub fn lagrange_fractional_delay_taps<const TAPS: usize, T>(
     delay: T,
 ) -> Result<[T; TAPS], EmbeddedError>
 where
-    T: Float + Copy + NumCast,
+    T: Float,
 {
     if TAPS < 2 {
         return Err(EmbeddedError::InvalidParameter {
@@ -65,7 +65,7 @@ pub fn lagrange_fractional_delay<const TAPS: usize, const LANES: usize, T>(
     sample_time: T,
 ) -> Result<Fir<T, TAPS, LANES>, EmbeddedError>
 where
-    T: Float + Copy + NumCast,
+    T: Float,
 {
     Fir::new(
         lagrange_fractional_delay_taps::<TAPS, T>(delay)?,
@@ -76,7 +76,7 @@ where
 /// Casts one compile-time index into the target scalar type.
 fn cast_index<T>(value: usize, which: &'static str) -> Result<T, EmbeddedError>
 where
-    T: Float + Copy + NumCast,
+    T: Float,
 {
     NumCast::from(value).ok_or(EmbeddedError::InvalidParameter { which })
 }

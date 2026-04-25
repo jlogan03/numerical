@@ -117,7 +117,7 @@ struct EkfScratch<T> {
 
 impl<T> EkfScratch<T>
 where
-    T: Float + Copy,
+    T: Float,
 {
     fn new(state_dim: usize, output_dim: usize) -> Self {
         Self {
@@ -163,7 +163,7 @@ pub struct ExtendedKalmanFilter<T, M> {
 impl<T, M> ExtendedKalmanFilter<T, M>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     M: DiscreteExtendedKalmanModel<T>,
 {
     /// Creates a validated dynamic-size EKF runtime.

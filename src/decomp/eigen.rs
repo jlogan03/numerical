@@ -64,7 +64,7 @@ use num_traits::{Float, Zero};
 fn dense_full_self_adjoint_eigen<T>(a: MatRef<'_, T>) -> Result<PartialEigen<T>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     if a.nrows() != a.ncols() {
         return Err(DecompError::DimensionMismatch {
@@ -100,7 +100,7 @@ where
 fn dense_full_eigen<T>(a: MatRef<'_, T>) -> Result<PartialEigen<Complex<T::Real>>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     if a.nrows() != a.ncols() {
         return Err(DecompError::DimensionMismatch {
@@ -134,7 +134,7 @@ fn dense_full_generalized_eigen<T>(
 ) -> Result<PartialGeneralizedEigen<Complex<T::Real>>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     if a.nrows() != a.ncols() {
         return Err(DecompError::DimensionMismatch {
@@ -183,7 +183,7 @@ where
 
 fn complexify_scalar<T: CompensatedField>(value: T) -> Complex<T::Real>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     Complex::new(value.real(), value.imag())
 }
@@ -194,7 +194,7 @@ fn dense_apply_complex<T>(
 ) -> Mat<Complex<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // `faer`'s dense general eigen returns complex Ritz data even for real
     // input matrices. The residual checks therefore need a small local dense
@@ -220,7 +220,7 @@ fn dense_general_eigen_info<T>(
 ) -> DecompInfo<T::Real>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut max_residual_norm = <T::Real as Zero>::zero();
     for j in 0..values.nrows() {
@@ -254,7 +254,7 @@ fn dense_generalized_eigen_info<T>(
 ) -> DecompInfo<T::Real>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut max_residual_norm = <T::Real as Zero>::zero();
     for j in 0..alpha.nrows() {
@@ -285,7 +285,7 @@ fn truncate_general_eigen<T>(
 ) -> PartialEigen<Complex<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // The dense general path computes the full factorization and
     // truncates afterward. Recompute diagnostics on the truncated window rather
@@ -302,7 +302,7 @@ where
     }
 }
 
-fn generalized_eigenvalue_abs<R: Float + Copy>(alpha: Complex<R>, beta: Complex<R>) -> R {
+fn generalized_eigenvalue_abs<R: Float>(alpha: Complex<R>, beta: Complex<R>) -> R {
     if beta.re == R::zero() && beta.im == R::zero() {
         R::infinity()
     } else {
@@ -311,7 +311,7 @@ fn generalized_eigenvalue_abs<R: Float + Copy>(alpha: Complex<R>, beta: Complex<
     }
 }
 
-fn sorted_generalized_order_descending_by_abs<R: Float + Copy>(
+fn sorted_generalized_order_descending_by_abs<R: Float>(
     alpha: faer::ColRef<'_, Complex<R>>,
     beta: faer::ColRef<'_, Complex<R>>,
 ) -> Vec<usize> {
@@ -330,7 +330,7 @@ fn validated_sparse_target<T, A>(
 ) -> Result<usize, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: LinOp<T>,
 {
     if op.nrows() != op.ncols() {
@@ -389,7 +389,7 @@ fn partial_self_adjoint_eigen_impl<T, A>(
 ) -> Result<PartialEigen<T>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: LinOp<T>,
 {
     let par = get_global_parallelism();
@@ -433,7 +433,7 @@ fn apply_operator_to_complex_vector<T, A>(
 ) -> Col<Complex<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: LinOp<T>,
 {
     let par = get_global_parallelism();
@@ -487,7 +487,7 @@ fn partial_eigen_impl<T, A>(
 ) -> Result<PartialEigen<Complex<T::Real>>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: LinOp<T>,
 {
     let par = get_global_parallelism();
@@ -540,7 +540,7 @@ fn eigen_info<T, A>(
 ) -> DecompInfo<T::Real>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: LinOp<T>,
 {
     let par = get_global_parallelism();
@@ -587,7 +587,7 @@ fn general_eigen_info<T, A>(
 ) -> DecompInfo<T::Real>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: LinOp<T>,
 {
     let mut max_residual_norm = <T::Real as Zero>::zero();
@@ -618,7 +618,7 @@ where
 fn truncate_eigen<T, A>(op: &A, eig: PartialEigen<T>, n_requested: usize) -> PartialEigen<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: LinOp<T>,
 {
     let values = Col::from_fn(n_requested, |i| eig.values[i]);
@@ -650,7 +650,7 @@ pub fn sparse_self_adjoint_eigen_scratch_req<T, A>(
 ) -> Result<StackReq, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: LinOp<T>,
 {
     let n_requested = validated_sparse_target(op, params)?;
@@ -676,7 +676,7 @@ pub fn sparse_self_adjoint_eigen_with_scratch<T, A>(
 ) -> Result<PartialEigen<T>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: LinOp<T>,
 {
     let n_requested = validated_sparse_target(op, params)?;
@@ -703,7 +703,7 @@ pub fn sparse_self_adjoint_eigen<T, A>(
 ) -> Result<PartialEigen<T>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: LinOp<T>,
 {
     let req = sparse_self_adjoint_eigen_scratch_req(op, params)?;
@@ -722,7 +722,7 @@ pub fn sparse_eigen_scratch_req<T, A>(
 ) -> Result<StackReq, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: LinOp<T>,
 {
     let n_requested = validated_sparse_target(op, params)?;
@@ -749,7 +749,7 @@ pub fn sparse_eigen_with_scratch<T, A>(
 ) -> Result<PartialEigen<Complex<T::Real>>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: LinOp<T>,
 {
     let n_requested = validated_sparse_target(op, params)?;
@@ -776,7 +776,7 @@ pub fn sparse_eigen<T, A>(
 ) -> Result<PartialEigen<Complex<T::Real>>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: LinOp<T>,
 {
     let req = sparse_eigen_scratch_req(op, params)?;
@@ -796,7 +796,7 @@ pub fn dense_self_adjoint_eigen<T>(
 ) -> Result<PartialEigen<T>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     if a.nrows() != a.ncols() {
         return Err(DecompError::DimensionMismatch {
@@ -855,7 +855,7 @@ pub fn dense_eigen<T>(
 ) -> Result<PartialEigen<Complex<T::Real>>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     if a.nrows() != a.ncols() {
         return Err(DecompError::DimensionMismatch {
@@ -891,7 +891,7 @@ where
 pub fn dense_eigenvalues<T>(a: MatRef<'_, T>) -> Result<Col<Complex<T::Real>>, DecompError>
 where
     T: ComplexField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     if a.nrows() != a.ncols() {
         return Err(DecompError::DimensionMismatch {
@@ -918,7 +918,7 @@ pub fn dense_generalized_eigen<T>(
 ) -> Result<PartialGeneralizedEigen<Complex<T::Real>>, DecompError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     dense_full_generalized_eigen(a, b)
 }

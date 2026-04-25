@@ -50,7 +50,7 @@ pub struct DeltaSosState<T, const SECTIONS: usize, const LANES: usize> {
 
 impl<T, const SECTIONS: usize, const LANES: usize> DeltaSosState<T, SECTIONS, LANES>
 where
-    T: Float + Copy,
+    T: Float,
 {
     /// Returns the zero-initialized delta state.
     #[must_use]
@@ -68,7 +68,7 @@ where
 
 impl<T, const SECTIONS: usize, const LANES: usize> Default for DeltaSosState<T, SECTIONS, LANES>
 where
-    T: Float + Copy,
+    T: Float,
 {
     fn default() -> Self {
         Self::zeros()
@@ -77,7 +77,7 @@ where
 
 impl<T, const SECTIONS: usize, const LANES: usize> DeltaSos<T, SECTIONS, LANES>
 where
-    T: Float + Copy,
+    T: Float,
 {
     /// Creates a fixed-size delta-SOS cascade.
     ///
@@ -209,7 +209,7 @@ where
     /// Casts the stored coefficients and sample time to another scalar dtype.
     pub fn try_cast<S>(&self) -> Result<DeltaSos<S, SECTIONS, LANES>, EmbeddedError>
     where
-        S: Float + Copy + NumCast,
+        S: Float,
     {
         let sections = self.sections.map(|section| match section {
             DeltaSection::Direct { d } => Ok(DeltaSection::Direct {
@@ -274,7 +274,7 @@ where
 impl<T, const SECTIONS: usize, const LANES: usize> TryFrom<&crate::control::lti::DeltaSos<T>>
     for DeltaSos<T, SECTIONS, LANES>
 where
-    T: Float + Copy + faer_traits::RealField,
+    T: Float + faer_traits::RealField,
 {
     type Error = EmbeddedError;
 

@@ -35,7 +35,7 @@ pub type DiscreteTransferFunction<R> = TransferFunction<R, DiscreteTime<R>>;
 
 impl<R, Domain> TransferFunction<R, Domain>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
     Domain: Clone,
 {
     /// Creates a normalized transfer function from numerator/denominator
@@ -93,7 +93,7 @@ where
 
 impl<R, Domain> TransferFunction<R, Domain>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
     Domain: CompositionDomain<R>,
 {
     /// Forms the parallel composition `self + rhs`.
@@ -211,7 +211,7 @@ where
 
 impl<R> ContinuousTransferFunction<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates a continuous-time transfer function.
     pub fn continuous(
@@ -256,7 +256,7 @@ where
     /// cannot be represented in the requested dtype.
     pub fn try_cast<S>(&self) -> Result<ContinuousTransferFunction<S>, LtiError>
     where
-        S: Float + Copy + RealField + NumCast,
+        S: Float + RealField + NumCast,
     {
         ContinuousTransferFunction::continuous(
             self.numerator()
@@ -275,7 +275,7 @@ where
 
 impl<R> DiscreteTransferFunction<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates a discrete-time transfer function with explicit sample time.
     pub fn discrete(
@@ -339,7 +339,7 @@ where
     /// design has already been computed in a higher-precision dtype.
     pub fn try_cast<S>(&self) -> Result<DiscreteTransferFunction<S>, LtiError>
     where
-        S: Float + Copy + RealField + NumCast,
+        S: Float + RealField + NumCast,
     {
         DiscreteTransferFunction::discrete(
             self.numerator()
@@ -359,7 +359,7 @@ where
 
 impl<R> ContinuousStateSpace<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Converts the dense real SISO continuous-time state-space model into
     /// coefficient form.
@@ -398,7 +398,7 @@ where
 
 impl<R> DiscreteStateSpace<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Converts the dense real SISO discrete-time state-space model into
     /// coefficient form.
@@ -466,7 +466,7 @@ fn companion_realization<R>(
     denominator: &[R],
 ) -> Result<(Mat<R>, Mat<R>, Mat<R>, Mat<R>), LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let numerator = trim_leading_zeros(numerator);
     let denominator = trim_leading_zeros(denominator);
@@ -548,7 +548,7 @@ fn state_space_to_transfer_function<R, Domain>(
     domain: Domain,
 ) -> Result<TransferFunction<R, Domain>, LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
     Domain: Clone,
 {
     if a.nrows() == 0 {
@@ -579,7 +579,7 @@ fn interpolate_numerator<R>(
     denominator: &[R],
 ) -> Result<Vec<R>, LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let degree = denominator.len() - 1;
     let points = interpolation_points(denominator, degree + 1);
@@ -618,7 +618,7 @@ where
 /// Returns the identity transfer function `1`.
 fn unit_transfer<R, Domain>(domain: Domain) -> Result<TransferFunction<R, Domain>, LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
     Domain: Clone,
 {
     // Using the ordinary constructor keeps the same normalization and domain
@@ -633,7 +633,7 @@ where
 /// reconstruction does not divide by a nearly singular transfer evaluation.
 fn interpolation_points<R>(denominator: &[R], count: usize) -> Vec<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let mut points = Vec::with_capacity(count);
     let mut k = 0usize;
@@ -667,7 +667,7 @@ fn dense_transfer_siso<R>(
     point: Complex<R>,
 ) -> Result<Complex<R>, LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let a = Mat::from_fn(a.nrows(), a.ncols(), |row, col| {
         Complex::new(a[(row, col)], R::zero())
@@ -702,7 +702,7 @@ where
 }
 
 /// Checks whether every entry in a dense real matrix is finite.
-fn all_finite_real<R: Float + Copy + RealField>(matrix: MatRef<'_, R>) -> bool {
+fn all_finite_real<R: Float + RealField>(matrix: MatRef<'_, R>) -> bool {
     for col in 0..matrix.ncols() {
         for row in 0..matrix.nrows() {
             if !matrix[(row, col)].is_finite() {
@@ -721,7 +721,7 @@ fn all_finite_real<R: Float + Copy + RealField>(matrix: MatRef<'_, R>) -> bool {
 /// degree before the result is normalized into a `TransferFunction`.
 fn trim_small_leading_coeffs<R>(coeffs: &[R]) -> Vec<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let scale = coeffs
         .iter()

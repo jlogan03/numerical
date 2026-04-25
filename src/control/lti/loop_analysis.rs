@@ -154,7 +154,7 @@ struct PhaseCrossover<R> {
 
 impl<R> ContinuousTransferFunction<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Returns the unity-feedback sensitivity transfer function
     /// `S = 1 / (1 + L)`.
@@ -254,7 +254,7 @@ where
 
 impl<R> DiscreteTransferFunction<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Returns the unity-feedback sensitivity transfer function
     /// `S = 1 / (1 + L)`.
@@ -340,7 +340,7 @@ where
 
 impl<R> ContinuousZpk<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Returns the unity-feedback sensitivity transfer function
     /// `S = 1 / (1 + L)`.
@@ -422,7 +422,7 @@ where
 
 impl<R> DiscreteZpk<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Returns the unity-feedback sensitivity transfer function
     /// `S = 1 / (1 + L)`.
@@ -512,7 +512,7 @@ where
 
 impl<R> ContinuousSos<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Returns the unity-feedback sensitivity transfer function
     /// `S = 1 / (1 + L)`.
@@ -594,7 +594,7 @@ where
 
 impl<R> DiscreteSos<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Returns the unity-feedback sensitivity transfer function
     /// `S = 1 / (1 + L)`.
@@ -684,7 +684,7 @@ where
 
 impl<R> ContinuousStateSpace<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Returns the unity-feedback sensitivity transfer function
     /// `S = 1 / (1 + L)` for the represented SISO loop transfer.
@@ -776,7 +776,7 @@ where
 
 impl<R> DiscreteStateSpace<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Returns the unity-feedback sensitivity transfer function
     /// `S = 1 / (1 + L)` for the represented SISO loop transfer.
@@ -876,7 +876,7 @@ where
 
 fn identity_transfer<R, Domain>(domain: Domain) -> Result<TransferFunction<R, Domain>, LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
     Domain: Clone,
 {
     TransferFunction::new(vec![R::one()], vec![R::one()], domain)
@@ -902,7 +902,7 @@ fn loop_samples_from_evaluator<R, F>(
     mut evaluate: F,
 ) -> Result<LoopSamples<R>, LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
     F: FnMut(R) -> Result<Complex<R>, LtiError>,
 {
     validate_frequency_grid(angular_frequencies, which, require_monotone)?;
@@ -942,7 +942,7 @@ fn validate_frequency_grid<R>(
     require_monotone: bool,
 ) -> Result<(), LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if require_monotone {
         validate_nonnegative_monotone_grid(angular_frequencies, which)
@@ -958,7 +958,7 @@ where
 
 fn loop_crossovers_from_samples<R>(samples: &LoopSamples<R>) -> Result<LoopCrossovers<R>, LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     Ok(LoopCrossovers {
         gain_crossovers: gain_crossovers(
@@ -982,7 +982,7 @@ where
 
 fn loop_margins_from_samples<R>(samples: &LoopSamples<R>) -> Result<LoopMargins<R>, LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     // Classical gain and phase margins are defined from the first unity-gain
     // and `-180 deg` crossings, respectively, so we derive both crossover sets
@@ -1025,7 +1025,7 @@ fn gain_crossovers<R>(
     phase_deg_unwrapped: &[R],
 ) -> Vec<GainCrossover<R>>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let mut out = Vec::new();
     let one = R::one();
@@ -1089,7 +1089,7 @@ fn phase_crossovers<R>(
     magnitude_db: &[R],
 ) -> Vec<PhaseCrossover<R>>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let mut out = Vec::new();
     let one_eighty = from_f64::<R>(180.0);
@@ -1140,7 +1140,7 @@ where
 
 fn interpolate_scalar<R>(x0: R, x1: R, y0: R, y1: R, target_x: R) -> R
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if approx_eq(x0, x1) {
         return y0;
@@ -1151,7 +1151,7 @@ where
 
 fn approx_eq<R>(lhs: R, rhs: R) -> bool
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let scale = lhs.abs().max(rhs.abs()).max(R::one());
     (lhs - rhs).abs() <= scalar_tol(scale)
@@ -1159,14 +1159,14 @@ where
 
 fn scalar_tol<R>(scale: R) -> R
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     scale * from_f64::<R>(128.0) * eps::<R>().sqrt()
 }
 
 fn push_unique_frequency<R>(out: &mut Vec<GainCrossover<R>>, value: GainCrossover<R>)
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if out
         .iter()
@@ -1179,7 +1179,7 @@ where
 
 fn push_unique_phase_crossover<R>(out: &mut Vec<PhaseCrossover<R>>, value: PhaseCrossover<R>)
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if out
         .iter()

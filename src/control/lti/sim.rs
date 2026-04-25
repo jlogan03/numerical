@@ -158,7 +158,7 @@ pub struct DeltaSosFilterState<R> {
 
 impl<R> SosFilterState<R>
 where
-    R: Float + Copy,
+    R: Float,
 {
     /// Creates a zero-initialized state for a given number of sections.
     #[must_use]
@@ -171,7 +171,7 @@ where
 
 impl<R> DeltaSosFilterState<R>
 where
-    R: Float + Copy,
+    R: Float,
 {
     /// Creates a zero-initialized state for a given number of sections.
     #[must_use]
@@ -184,7 +184,7 @@ where
 
 impl<R> DiscreteSos<R>
 where
-    R: Float + Copy + RealField + CompensatedField,
+    R: Float + RealField + CompensatedField,
 {
     /// Filters one input slice causally with zero initial section state.
     ///
@@ -268,7 +268,7 @@ where
 
 impl<R> DeltaSos<R>
 where
-    R: Float + Copy + RealField + CompensatedField,
+    R: Float + RealField + CompensatedField,
 {
     /// Filters one input slice causally with zero initial delta-section state.
     ///
@@ -349,7 +349,7 @@ where
 
 impl<R> SosFilterState<R>
 where
-    R: Float + Copy + RealField + CompensatedField,
+    R: Float + RealField + CompensatedField,
 {
     /// Creates a zero-initialized state sized for a particular filter.
     ///
@@ -363,7 +363,7 @@ where
 
 impl<R> DeltaSosFilterState<R>
 where
-    R: Float + Copy + RealField + CompensatedField,
+    R: Float + RealField + CompensatedField,
 {
     /// Creates a zero-initialized state sized for a particular delta-SOS
     /// filter.
@@ -375,7 +375,7 @@ where
 
 impl<R> DiscreteStateSpace<R>
 where
-    R: Float + Copy + RealField + CompensatedField,
+    R: Float + RealField + CompensatedField,
 {
     /// Filters one input slice causally with zero initial state.
     ///
@@ -492,7 +492,7 @@ fn validate_sos_state_len<R>(
     state: &SosFilterState<R>,
 ) -> Result<(), LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if state.section_state.len() == system.sections().len() {
         Ok(())
@@ -514,7 +514,7 @@ fn validate_delta_sos_state_len<R>(
     state: &DeltaSosFilterState<R>,
 ) -> Result<(), LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if state.section_state.len() == system.sections().len() {
         Ok(())
@@ -554,7 +554,7 @@ pub(crate) fn clamp_pad_len(input_len: usize, mode: FiltFiltPadMode, requested: 
 
 pub(crate) fn padded_sample<R>(input: &[R], mode: FiltFiltPadMode, pad_len: usize, idx: usize) -> R
 where
-    R: Float + Copy,
+    R: Float,
 {
     debug_assert!(idx < input.len() + 2 * pad_len);
     if idx < pad_len {
@@ -585,7 +585,7 @@ where
 
 fn run_state_space_filter<R>(system: &DiscreteStateSpace<R>, state: &mut [R], input: &[R]) -> Vec<R>
 where
-    R: Float + Copy + RealField + CompensatedField,
+    R: Float + RealField + CompensatedField,
 {
     run_state_space_filter_with_generator(system, state, input.len(), |idx| input[idx])
 }
@@ -597,7 +597,7 @@ fn run_state_space_filter_with_generator<R, F>(
     mut sample_at: F,
 ) -> Vec<R>
 where
-    R: Float + Copy + RealField + CompensatedField,
+    R: Float + RealField + CompensatedField,
     F: FnMut(usize) -> R,
 {
     // The generator-based form lets the `filtfilt` path feed logically padded
@@ -618,7 +618,7 @@ fn state_space_step<R>(
     input: R,
 ) -> R
 where
-    R: Float + Copy + RealField + CompensatedField,
+    R: Float + RealField + CompensatedField,
 {
     // Keep the state-space runtime aligned with the general discrete
     // simulation semantics: output is evaluated from the current state before
@@ -646,7 +646,7 @@ where
 
 fn sos_step<R>(system: &DiscreteSos<R>, section_state: &mut [[R; 2]], input: R) -> R
 where
-    R: Float + Copy + RealField + CompensatedField,
+    R: Float + RealField + CompensatedField,
 {
     let mut sample = input * system.gain();
     for (section, state) in system.sections().iter().zip(section_state.iter_mut()) {
@@ -675,7 +675,7 @@ where
 /// section-by-section through the forward-delta state update.
 fn delta_sos_step<R>(system: &DeltaSos<R>, section_state: &mut [[R; 2]], input: R) -> R
 where
-    R: Float + Copy + RealField + CompensatedField,
+    R: Float + RealField + CompensatedField,
 {
     let dt = system.sample_time();
     let mut sample = input * system.gain();
@@ -728,7 +728,7 @@ where
 
 fn section_df2t_coeffs<R>(numerator: [R; 3], denominator: [R; 3]) -> ([R; 3], [R; 3])
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let den_start = denominator
         .iter()

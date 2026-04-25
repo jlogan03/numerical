@@ -23,7 +23,7 @@ use num_traits::{Float, Zero};
 pub(super) fn predict_covariance<R>(f: MatRef<'_, R>, p: MatRef<'_, R>, q: MatRef<'_, R>) -> Mat<R>
 where
     R: CompensatedField + RealField,
-    R::Real: Float + Copy,
+    R::Real: Float,
 {
     let mut covariance = dense_mul_adjoint_rhs(dense_mul(f, p).as_ref(), f) + q;
     hermitian_project_in_place(&mut covariance);
@@ -33,7 +33,7 @@ where
 pub(super) fn weighted_mean<R>(points: MatRef<'_, R>, weights: &[R]) -> Mat<R>
 where
     R: CompensatedField + RealField,
-    R::Real: Float + Copy,
+    R::Real: Float,
 {
     Mat::from_fn(points.nrows(), 1, |row, _| {
         let mut acc = CompensatedSum::<R>::default();
@@ -51,7 +51,7 @@ pub(super) fn weighted_covariance<R>(
 ) -> Mat<R>
 where
     R: CompensatedField + RealField,
-    R::Real: Float + Copy,
+    R::Real: Float,
 {
     Mat::from_fn(points.nrows(), points.nrows(), |row, col| {
         let mut acc = CompensatedSum::<R>::default();
@@ -73,7 +73,7 @@ pub(super) fn weighted_cross_covariance<R>(
 ) -> Mat<R>
 where
     R: CompensatedField + RealField,
-    R::Real: Float + Copy,
+    R::Real: Float,
 {
     Mat::from_fn(lhs_points.nrows(), rhs_points.nrows(), |row, col| {
         let mut acc = CompensatedSum::<R>::default();
@@ -96,7 +96,7 @@ pub(super) fn updated_covariance<R>(
 ) -> Mat<R>
 where
     R: CompensatedField + RealField,
-    R::Real: Float + Copy,
+    R::Real: Float,
 {
     match covariance_update {
         CovarianceUpdate::Simple => {
@@ -129,7 +129,7 @@ pub(super) fn updated_covariance_ukf<R>(
 ) -> Result<Mat<R>, EmbeddedError>
 where
     R: CompensatedField + RealField,
-    R::Real: Float + Copy,
+    R::Real: Float,
 {
     match covariance_update {
         CovarianceUpdate::Simple => Ok(predicted_covariance
@@ -159,7 +159,7 @@ pub(super) fn normalized_innovation_norm<R>(
 ) -> Result<R::Real, EmbeddedError>
 where
     R: CompensatedField + RealField,
-    R::Real: Float + Copy,
+    R::Real: Float,
 {
     let whitened = llt_solve(
         &innovation_covariance.to_owned(),

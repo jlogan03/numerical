@@ -237,7 +237,7 @@ where
 impl<T> ContinuousStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + NumCast,
+    T::Real: Float,
 {
     /// Casts the dense continuous-time state-space matrices to another scalar
     /// dtype.
@@ -247,7 +247,7 @@ where
     pub fn try_cast<U>(&self) -> Result<ContinuousStateSpace<U>, StateSpaceError>
     where
         U: CompensatedField,
-        U::Real: Float + Copy + NumCast,
+        U::Real: Float,
     {
         ContinuousStateSpace::new(
             cast_mat(self.a(), "state_space.a")?,
@@ -357,7 +357,7 @@ where
 impl<T> ContinuousStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + faer_traits::RealField,
+    T::Real: Float + faer_traits::RealField,
 {
     /// Computes the dense continuous-time controllability Gramian of the model.
     ///
@@ -402,7 +402,7 @@ where
 impl<T> DiscreteStateSpace<T>
 where
     T: ComplexField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Creates a discrete-time state-space system after validating dimensions
     /// and sample interval.
@@ -465,7 +465,7 @@ where
 impl<T> DiscreteStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + NumCast,
+    T::Real: Float,
 {
     /// Casts the dense discrete-time state-space matrices and sample interval
     /// to another scalar dtype.
@@ -475,7 +475,7 @@ where
     pub fn try_cast<U>(&self) -> Result<DiscreteStateSpace<U>, StateSpaceError>
     where
         U: CompensatedField,
-        U::Real: Float + Copy + NumCast,
+        U::Real: Float,
     {
         DiscreteStateSpace::new(
             cast_mat(self.a(), "state_space.a")?,
@@ -492,7 +492,7 @@ where
 impl<T> DiscreteStateSpace<T>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Creates the exact `samples`-step pure delay with the requested channel
     /// count.
@@ -660,7 +660,7 @@ where
 impl<T> DiscreteStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + faer_traits::RealField,
+    T::Real: Float + faer_traits::RealField,
 {
     /// Computes the dense discrete-time controllability Gramian of the model.
     ///
@@ -756,7 +756,7 @@ fn validate_blocks(
     Ok(())
 }
 
-fn ensure_sample_time_match<R: Float + Copy>(lhs: R, rhs: R) -> Result<(), StateSpaceError> {
+fn ensure_sample_time_match<R: Float>(lhs: R, rhs: R) -> Result<(), StateSpaceError> {
     // Sample times are stored as floating scalars, so a tiny tolerance avoids
     // turning harmless roundoff from conversions into composition failures.
     let scale = R::one().max(lhs.abs()).max(rhs.abs());
@@ -1022,8 +1022,8 @@ fn cast_mat<T, U>(matrix: MatRef<'_, T>, which: &'static str) -> Result<Mat<U>, 
 where
     T: CompensatedField,
     U: CompensatedField,
-    T::Real: Float + Copy + NumCast,
-    U::Real: Float + Copy + NumCast,
+    T::Real: Float,
+    U::Real: Float,
 {
     // Validate first so the second pass can use infallible casts while keeping
     // the matrix construction itself allocation-only.

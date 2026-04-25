@@ -76,7 +76,7 @@ pub struct RootLocusData<R> {
 
 impl<R> ContinuousTransferFunction<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Samples the unity negative-feedback root locus of the open-loop
     /// transfer on the supplied gain grid.
@@ -87,7 +87,7 @@ where
 
 impl<R> DiscreteTransferFunction<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Samples the unity negative-feedback root locus of the open-loop
     /// transfer on the supplied gain grid.
@@ -98,7 +98,7 @@ where
 
 impl<R> ContinuousZpk<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Samples the unity negative-feedback root locus on the supplied gain
     /// grid.
@@ -109,7 +109,7 @@ where
 
 impl<R> DiscreteZpk<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Samples the unity negative-feedback root locus on the supplied gain
     /// grid.
@@ -120,7 +120,7 @@ where
 
 impl<R> ContinuousSos<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Samples the unity negative-feedback root locus on the supplied gain
     /// grid.
@@ -131,7 +131,7 @@ where
 
 impl<R> DiscreteSos<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Samples the unity negative-feedback root locus on the supplied gain
     /// grid.
@@ -142,7 +142,7 @@ where
 
 impl<R> ContinuousStateSpace<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Samples the unity negative-feedback root locus of the represented SISO
     /// loop transfer.
@@ -153,7 +153,7 @@ where
 
 impl<R> DiscreteStateSpace<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Samples the unity negative-feedback root locus of the represented SISO
     /// loop transfer.
@@ -168,7 +168,7 @@ fn root_locus_from_transfer<R>(
     gains: &[R],
 ) -> Result<RootLocusData<R>, LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     validate_gain_grid(gains)?;
     let mut poles = Vec::with_capacity(gains.len());
@@ -200,7 +200,7 @@ where
 
 fn validate_gain_grid<R>(gains: &[R]) -> Result<(), LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if gains
         .iter()
@@ -220,14 +220,14 @@ where
 
 fn scale_poly<R>(coeffs: &[R], gain: R) -> Vec<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     coeffs.iter().map(|&value| value * gain).collect()
 }
 
 fn sort_roots<R>(mut roots: Vec<Complex<R>>) -> Vec<Complex<R>>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     // Keep the per-gain spectrum deterministic before the branch tracker does
     // its nearest-neighbor assignment.
@@ -251,7 +251,7 @@ where
 
 fn assign_roots_to_branches<R>(branches: &mut [RootLocusBranch<R>], roots: &[Complex<R>])
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if branches.is_empty() {
         return;

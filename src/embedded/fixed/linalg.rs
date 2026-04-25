@@ -13,7 +13,7 @@ pub type Vector<T, const N: usize> = [T; N];
 /// Returns the all-zero fixed-size matrix.
 pub(crate) fn zero_matrix<T, const R: usize, const C: usize>() -> Matrix<T, R, C>
 where
-    T: Float + Copy,
+    T: Float,
 {
     [[T::zero(); C]; R]
 }
@@ -21,7 +21,7 @@ where
 /// Returns the all-zero fixed-size vector.
 pub(crate) fn zero_vector<T, const N: usize>() -> Vector<T, N>
 where
-    T: Float + Copy,
+    T: Float,
 {
     [T::zero(); N]
 }
@@ -29,7 +29,7 @@ where
 /// Returns the identity matrix of order `N`.
 pub(crate) fn identity_matrix<T, const N: usize>() -> Matrix<T, N, N>
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut out = zero_matrix::<T, N, N>();
     for i in 0..N {
@@ -44,7 +44,7 @@ pub(crate) fn mat_vec_mul<T, const R: usize, const C: usize>(
     x: &Vector<T, C>,
 ) -> Vector<T, R>
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut out = zero_vector::<T, R>();
     for i in 0..R {
@@ -63,7 +63,7 @@ pub(crate) fn mat_mul<T, const R: usize, const K: usize, const C: usize>(
     b: &Matrix<T, K, C>,
 ) -> Matrix<T, R, C>
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut out = zero_matrix::<T, R, C>();
     for i in 0..R {
@@ -81,7 +81,7 @@ where
 /// Transposes one fixed-size matrix.
 pub(crate) fn transpose<T, const R: usize, const C: usize>(a: &Matrix<T, R, C>) -> Matrix<T, C, R>
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut out = zero_matrix::<T, C, R>();
     for i in 0..R {
@@ -98,7 +98,7 @@ pub(crate) fn mat_add<T, const R: usize, const C: usize>(
     b: &Matrix<T, R, C>,
 ) -> Matrix<T, R, C>
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut out = zero_matrix::<T, R, C>();
     for i in 0..R {
@@ -115,7 +115,7 @@ pub(crate) fn mat_sub<T, const R: usize, const C: usize>(
     b: &Matrix<T, R, C>,
 ) -> Matrix<T, R, C>
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut out = zero_matrix::<T, R, C>();
     for i in 0..R {
@@ -129,7 +129,7 @@ where
 /// Adds two fixed-size vectors elementwise.
 pub(crate) fn vec_add<T, const N: usize>(a: &Vector<T, N>, b: &Vector<T, N>) -> Vector<T, N>
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut out = zero_vector::<T, N>();
     for i in 0..N {
@@ -141,7 +141,7 @@ where
 /// Subtracts two fixed-size vectors elementwise.
 pub(crate) fn vec_sub<T, const N: usize>(a: &Vector<T, N>, b: &Vector<T, N>) -> Vector<T, N>
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut out = zero_vector::<T, N>();
     for i in 0..N {
@@ -153,7 +153,7 @@ where
 /// Computes the Euclidean norm of one fixed-size vector.
 pub(crate) fn vec_norm<T, const N: usize>(x: &Vector<T, N>) -> T
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut sum = T::zero();
     for i in 0..N {
@@ -197,7 +197,7 @@ pub(crate) fn solve_linear_system<T, const N: usize, const M: usize>(
     which: &'static str,
 ) -> Result<Matrix<T, N, M>, EmbeddedError>
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut a = *a;
     let mut b = *b;

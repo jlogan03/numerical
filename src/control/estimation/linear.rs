@@ -82,7 +82,7 @@ use num_traits::{Float, Zero};
 #[derive(Clone, Debug)]
 pub struct LqeSolve<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Observer gain.
     pub gain: Mat<T>,
@@ -108,7 +108,7 @@ where
 #[derive(Clone, Debug)]
 pub struct KalmanPrediction<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Predicted state estimate before incorporating the new measurement.
     pub state: Mat<T>,
@@ -140,7 +140,7 @@ where
 #[derive(Clone, Debug)]
 pub struct KalmanUpdate<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Measurement innovation `y - (C x^- + D u)`.
     pub innovation: Mat<T>,
@@ -184,7 +184,7 @@ pub enum CovarianceUpdate {
 #[derive(Clone, Debug)]
 pub struct SteadyStateKalmanPrediction<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Predicted state estimate before measurement correction.
     pub state: Mat<T>,
@@ -208,7 +208,7 @@ where
 #[derive(Clone, Debug)]
 pub struct SteadyStateKalmanUpdate<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Measurement innovation `y - (C x^- + D u)`.
     pub innovation: Mat<T>,
@@ -231,7 +231,7 @@ where
 #[derive(Clone, Debug)]
 pub struct ContinuousObserverDerivative<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Estimated output `C x_hat + D u`.
     pub output: Mat<T>,
@@ -296,7 +296,7 @@ impl From<RiccatiError> for EstimatorError {
 #[derive(Clone, Debug)]
 pub struct DiscreteKalmanFilter<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// State transition matrix.
     pub a: Mat<T>,
@@ -326,7 +326,7 @@ where
 #[derive(Clone, Debug)]
 pub struct SteadyStateKalmanFilter<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// State transition matrix.
     pub a: Mat<T>,
@@ -352,7 +352,7 @@ where
 #[derive(Clone, Debug)]
 pub struct ContinuousObserver<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// State matrix.
     pub a: Mat<T>,
@@ -394,7 +394,7 @@ pub fn lqe_dense<T>(
 ) -> Result<LqeSolve<T>, EstimatorError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     validate_lqe_dims(a, c, w, v)?;
     // Continuous-time LQE is the dual CARE problem with
@@ -440,7 +440,7 @@ pub fn dlqe_dense<T>(
 ) -> Result<LqeSolve<T>, EstimatorError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     validate_lqe_dims(a, c, w, v)?;
     // Discrete-time DLQE is the DARE dual of DLQR on `(A^H, C^H, W, V)`.
@@ -463,7 +463,7 @@ where
 impl<T> ContinuousStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Designs the dense steady-state continuous-time LQE observer.
     ///
@@ -483,7 +483,7 @@ where
 impl<T> DiscreteStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Designs the dense steady-state discrete-time DLQE observer.
     ///
@@ -520,7 +520,7 @@ where
 impl<T> ContinuousStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Builds a fixed-gain continuous observer from `LQE`.
     ///
@@ -546,7 +546,7 @@ where
 impl<T> DiscreteKalmanFilter<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Builds a discrete Kalman filter from explicit model and covariance
     /// matrices.
@@ -981,7 +981,7 @@ where
 impl<T> SteadyStateKalmanFilter<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Builds a fixed-gain steady-state discrete observer from explicit
     /// matrices.
@@ -1266,7 +1266,7 @@ where
 impl<T> ContinuousObserver<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Builds a fixed-gain continuous observer from explicit matrices.
     ///
@@ -1590,7 +1590,7 @@ fn validate_column_vector<T>(
 fn estimator_matrix<T>(a: MatRef<'_, T>, l: MatRef<'_, T>, c: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // Both continuous and discrete steady-state observer design report the
     // estimator dynamics in the same algebraic form `A - L C`.
@@ -1629,7 +1629,7 @@ pub fn steady_state_filter_gain_dense<T>(
 ) -> Result<(Mat<T>, Mat<T>), EstimatorError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // The discrete-time Riccati solve already returns the steady-state
     // a-priori covariance `P^-`. The fixed-gain filter-form observer therefore
@@ -1658,7 +1658,7 @@ fn updated_covariance<T>(
 ) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     match covariance_update {
         CovarianceUpdate::Simple => {
@@ -1691,7 +1691,7 @@ fn normalized_innovation_norm<T>(
 ) -> Result<T::Real, EstimatorError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // Whitening the innovation by `S^-1` gives the standard normalized
     // innovation energy used for runtime consistency checks.
@@ -1719,7 +1719,7 @@ mod test {
     fn assert_close<T>(lhs: &Mat<T>, rhs: &Mat<T>, tol: T::Real)
     where
         T: crate::sparse::compensated::CompensatedField,
-        T::Real: num_traits::Float + Copy,
+        T::Real: num_traits::Float,
     {
         assert_eq!(lhs.nrows(), rhs.nrows());
         assert_eq!(lhs.ncols(), rhs.ncols());

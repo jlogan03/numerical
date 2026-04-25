@@ -62,7 +62,7 @@ where
 #[inline]
 pub(crate) fn complex_mul_add<R>(lhs: Complex<R>, rhs: Complex<R>, addend: Complex<R>) -> Complex<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let real = neg_mul_add(lhs.im, rhs.im, mul_add(lhs.re, rhs.re, addend.re));
     let imag = mul_add(lhs.im, rhs.re, mul_add(lhs.re, rhs.im, addend.im));
@@ -73,7 +73,7 @@ where
 #[inline]
 pub(crate) fn real_complex_mul_add<R>(real: R, rhs: Complex<R>, addend: Complex<R>) -> Complex<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     Complex::new(
         mul_add(real, rhs.re, addend.re),
@@ -86,7 +86,7 @@ where
 #[inline]
 pub(crate) fn complex_horner_step_real<R>(acc: Complex<R>, point: Complex<R>, coef: R) -> Complex<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     complex_mul_add(acc, point, Complex::new(coef, R::zero()))
 }

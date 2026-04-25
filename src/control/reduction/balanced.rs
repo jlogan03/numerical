@@ -131,7 +131,7 @@ pub use super::hsvd::HsvdInternals as BalancedInternals;
 #[derive(Clone, Debug)]
 pub struct BalancedTruncationResult<T: CompensatedField, Domain>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Reduced state-space model.
     pub reduced: crate::control::lti::state_space::StateSpace<T, Domain>,
@@ -222,7 +222,7 @@ pub fn balanced_truncation_continuous_dense<T>(
 ) -> Result<BalancedTruncationResult<T, ContinuousTime>, BalancedError<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // Once HSVD has produced `S_r` and `T_r`, balanced truncation only has to
     // assemble the reduced state-space blocks with those projections.
@@ -263,7 +263,7 @@ pub fn balanced_truncation_discrete_dense<T>(
 ) -> Result<BalancedTruncationResult<T, DiscreteTime<T::Real>>, BalancedError<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // Discrete balanced truncation uses the same projection algebra as the
     // continuous case; only the Gramian source differs.
@@ -311,7 +311,7 @@ pub fn balanced_realization_continuous_dense<T>(
 ) -> Result<BalancedRealizationResult<T, ContinuousTime>, BalancedError<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let params = full_rank_balanced_params(system.nstates());
     balanced_truncation_continuous_dense(system, &params)
@@ -338,7 +338,7 @@ pub fn balanced_realization_discrete_dense<T>(
 ) -> Result<BalancedRealizationResult<T, DiscreteTime<T::Real>>, BalancedError<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let params = full_rank_balanced_params(system.nstates());
     balanced_truncation_discrete_dense(system, &params)
@@ -365,7 +365,7 @@ pub fn balanced_truncation_continuous_low_rank<I, T, ViewT>(
 where
     I: Index,
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     ViewT: Conjugate<Canonical = T>,
 {
     validate_sparse_system_dims(a.nrows().unbound(), b, c, d)?;
@@ -416,7 +416,7 @@ pub fn balanced_truncation_discrete_low_rank<I, T, ViewT>(
 where
     I: Index,
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     ViewT: Conjugate<Canonical = T>,
 {
     validate_sparse_system_dims(a.nrows().unbound(), b, c, d)?;
@@ -455,7 +455,7 @@ where
 impl<T> ContinuousStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Computes dense continuous-time balanced truncation for this model.
     ///
@@ -486,7 +486,7 @@ where
 impl<T> DiscreteStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Computes dense discrete-time balanced truncation for this model.
     ///
@@ -534,7 +534,7 @@ fn build_dense_reduced_system<T>(
 ) -> Result<ContinuousStateSpace<T>, BalancedError<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // The reduced dense model is assembled by the usual Petrov-Galerkin
     // formulas: `A_r = S_r^H A T_r`, `B_r = S_r^H B`, `C_r = C T_r`.
@@ -556,7 +556,7 @@ fn build_dense_reduced_discrete_system<T>(
 ) -> Result<DiscreteStateSpace<T>, BalancedError<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // The discrete assembly is identical to the continuous case apart from
     // preserving the sample time in the returned model metadata.
@@ -578,7 +578,7 @@ fn build_sparse_reduced_system<I, T>(
 where
     I: Index,
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // The reduced sparse paths still return ordinary dense reduced models. The
     // expensive sparse object is only used while applying `A` to the retained
@@ -605,7 +605,7 @@ fn build_sparse_reduced_discrete_system<I, T>(
 where
     I: Index,
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // The sparse discrete path mirrors the sparse continuous one, but the
     // sample time must be preserved in the returned reduced model.
@@ -627,7 +627,7 @@ fn validate_sparse_system_dims<T>(
 ) -> Result<(), BalancedError<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // Sparse balanced truncation still assembles an ordinary dense reduced
     // state-space system, so the same `A/B/C/D` compatibility rules apply at
@@ -672,7 +672,7 @@ fn sparse_matmul_dense<I, T>(lhs: SparseColMatRef<'_, I, T>, rhs: MatRef<'_, T>)
 where
     I: Index,
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let lhs = lhs.canonical();
     let nrows = lhs.nrows().unbound();

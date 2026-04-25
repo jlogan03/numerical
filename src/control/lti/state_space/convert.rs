@@ -69,7 +69,7 @@ pub(super) fn discretize<T>(
 ) -> Result<DiscreteStateSpace<T>, StateSpaceError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     validate_sample_time(sample_time)?;
     match method {
@@ -86,7 +86,7 @@ pub(super) fn continuousize<T>(
 ) -> Result<ContinuousStateSpace<T>, StateSpaceError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     match method {
         ContinuousizationMethod::ZeroOrderHold => Err(StateSpaceError::UnsupportedConversion(
@@ -107,7 +107,7 @@ fn discretize_zoh<T>(
 ) -> Result<DiscreteStateSpace<T>, StateSpaceError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let n = system.nstates();
     let nu = system.ninputs();
@@ -151,7 +151,7 @@ fn discretize_bilinear<T>(
 ) -> Result<DiscreteStateSpace<T>, StateSpaceError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let alpha = bilinear_alpha(sample_time, prewarp_frequency)?;
     let gamma = (alpha + alpha).sqrt();
@@ -193,7 +193,7 @@ fn continuousize_bilinear<T>(
 ) -> Result<ContinuousStateSpace<T>, StateSpaceError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let sample_time = system.sample_time();
     let alpha = bilinear_alpha(sample_time, prewarp_frequency)?;
@@ -279,7 +279,7 @@ fn bilinear_alpha<R: Float>(
 pub(crate) fn matrix_exponential<T>(matrix: MatRef<'_, T>) -> Result<Mat<T>, StateSpaceError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     if matrix.nrows() != matrix.ncols() {
         return Err(StateSpaceError::DimensionMismatch {
@@ -385,7 +385,7 @@ fn pade13_coeffs<R: Float>() -> [R; 14] {
 fn inverse_checked<T>(matrix: MatRef<'_, T>, which: &'static str) -> Result<Mat<T>, StateSpaceError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // Route inversion through a checked solve against the identity so singular
     // or nearly singular conversion formulas fail explicitly instead of
@@ -411,7 +411,7 @@ fn solve_left_checked<T>(
 ) -> Result<Mat<T>, StateSpaceError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let sol = lhs.full_piv_lu().solve(rhs);
     if !sol.as_ref().is_all_finite() {
@@ -471,7 +471,7 @@ where
 fn matrix_one_norm<T>(matrix: MatRef<'_, T>) -> T::Real
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut max_norm = <T::Real as num_traits::Zero>::zero();
     for col in 0..matrix.ncols() {
@@ -505,7 +505,7 @@ where
 fn frobenius_norm<T>(matrix: MatRef<'_, T>) -> T::Real
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut acc: Option<TwoSum<T::Real>> = None;
     for col in 0..matrix.ncols() {

@@ -120,7 +120,7 @@ pub struct DiscreteSimulation<T> {
 impl<T> ContinuousStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Evaluates the regular part of the impulse response at the supplied
     /// nonnegative sample times.
@@ -251,7 +251,7 @@ where
 impl<T> SparseContinuousStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Evaluates the sparse frequency response on the imaginary axis.
     ///
@@ -278,7 +278,7 @@ where
 impl<T> DiscreteStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Returns the first `n_steps` samples of the impulse response sequence.
     ///
@@ -388,7 +388,7 @@ where
 impl<T> SparseDiscreteStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Returns the first `n_steps` samples of the sparse discrete-time impulse
     /// response sequence.
@@ -520,7 +520,7 @@ fn column_from_slice<T: Copy>(values: &[T]) -> Mat<T> {
 fn dense_discrete_markov_blocks<T>(system: &DiscreteStateSpace<T>, n_steps: usize) -> Vec<Mat<T>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     if n_steps == 0 {
         return Vec::new();
@@ -550,7 +550,7 @@ where
 fn dense_discrete_step_blocks<T>(system: &DiscreteStateSpace<T>, n_steps: usize) -> Vec<Mat<T>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut blocks = Vec::with_capacity(n_steps);
     let mut state = Mat::<T>::zeros(system.nstates(), system.ninputs());
@@ -573,7 +573,7 @@ fn sparse_discrete_markov_blocks<T>(
 ) -> Vec<Mat<T>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     if n_steps == 0 {
         return Vec::new();
@@ -603,7 +603,7 @@ fn sparse_discrete_step_blocks<T>(
 ) -> Vec<Mat<T>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut blocks = Vec::with_capacity(n_steps);
     let mut state = Mat::<T>::zeros(system.nstates(), system.ninputs());
@@ -627,7 +627,7 @@ fn dense_continuous_step_blocks<T>(
 ) -> Result<Vec<Mat<T>>, LtiError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     let mut blocks = Vec::with_capacity(sample_times.len());
     for &time in sample_times {
@@ -649,7 +649,7 @@ where
 fn sparse_apply_columns<T>(a: impl SparseMatVec<T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     assert_eq!(a.ncols(), rhs.nrows());
     let mut out = Mat::<T>::zeros(a.nrows(), rhs.ncols());
@@ -686,7 +686,7 @@ fn validate_state_vector<T>(nstates: usize, x0: &[T], which: &'static str) -> Re
 ///
 /// Negative time samples are not meaningful for the causal LTI response APIs
 /// exposed here, so they are rejected at the wrapper boundary.
-fn validate_nonnegative_grid<R: Float + Copy>(
+fn validate_nonnegative_grid<R: Float>(
     sample_points: &[R],
     which: &'static str,
 ) -> Result<(), LtiError> {
@@ -703,7 +703,7 @@ fn validate_nonnegative_grid<R: Float + Copy>(
 ///
 /// Zero-width intervals are allowed so callers can sample the same instant more
 /// than once, but backward time steps are rejected.
-fn validate_continuous_grid<R: Float + Copy>(
+fn validate_continuous_grid<R: Float>(
     sample_points: &[R],
     which: &'static str,
 ) -> Result<(), LtiError> {
@@ -723,7 +723,7 @@ fn validate_continuous_grid<R: Float + Copy>(
 ///
 /// Negative frequencies are allowed because callers may want symmetric grids,
 /// but `NaN` or infinite values would produce meaningless transfer evaluations.
-fn validate_finite_grid<R: Float + Copy>(
+fn validate_finite_grid<R: Float>(
     sample_points: &[R],
     which: &'static str,
 ) -> Result<(), LtiError> {
@@ -746,7 +746,7 @@ fn continuous_interval_maps<T>(
 ) -> Result<(Mat<T>, Mat<T>), LtiError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     let n = system.nstates();
     let m = system.ninputs();

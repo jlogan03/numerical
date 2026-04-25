@@ -21,7 +21,7 @@ use num_traits::{Float, One, Zero};
 pub(crate) fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
@@ -36,7 +36,7 @@ where
 pub(crate) fn dense_mul_adjoint_rhs<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     Mat::from_fn(lhs.nrows(), rhs.nrows(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
@@ -51,7 +51,7 @@ where
 pub(crate) fn dense_mul_adjoint_lhs<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     Mat::from_fn(lhs.ncols(), rhs.ncols(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
@@ -80,7 +80,7 @@ where
 pub(crate) fn inner_product_real<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> T::Real
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut acc = CompensatedSum::<T>::default();
     for row in 0..lhs.nrows() {
@@ -93,7 +93,7 @@ where
 pub(crate) fn column_vector_norm<T>(vector: MatRef<'_, T>) -> T::Real
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut acc = <T::Real as Zero>::zero();
     for row in 0..vector.nrows() {
@@ -106,7 +106,7 @@ where
 pub(crate) fn hermitian_project_in_place<T>(matrix: &mut Mat<T>)
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let one = <T::Real as One>::one();
     let half = one / (one + one);
@@ -123,7 +123,7 @@ where
 pub(crate) fn frobenius_norm_plain<T>(matrix: MatRef<'_, T>) -> T::Real
 where
     T: faer_traits::ComplexField + Copy,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut acc = <T::Real as Zero>::zero();
     for col in 0..matrix.ncols() {

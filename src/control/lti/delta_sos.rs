@@ -82,7 +82,7 @@ pub struct DeltaSos<R> {
 
 impl<R> DeltaSos<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates a discrete-time delta-operator cascade.
     ///
@@ -153,7 +153,7 @@ where
     /// pipeline.
     pub fn try_cast<S>(&self) -> Result<DeltaSos<S>, LtiError>
     where
-        S: Float + Copy + RealField + NumCast,
+        S: Float + RealField + NumCast,
     {
         DeltaSos::new(
             self.sections
@@ -168,7 +168,7 @@ where
 
 impl<R> DeltaSection<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Casts one delta section to another real scalar dtype.
     ///
@@ -176,7 +176,7 @@ where
     /// parameters are converted.
     pub fn try_cast<S>(&self) -> Result<DeltaSection<S>, LtiError>
     where
-        S: Float + Copy + RealField + NumCast,
+        S: Float + RealField + NumCast,
     {
         match *self {
             DeltaSection::Direct { d } => Ok(DeltaSection::Direct {
@@ -206,7 +206,7 @@ where
 
 impl<R> DiscreteSos<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Converts an ordinary discrete SOS cascade into delta-operator section
     /// form for improved low-cutoff runtime conditioning.
@@ -233,7 +233,7 @@ where
 /// corresponding to `z = 1`.
 fn delta_section_dc_gain<R>(section: DeltaSection<R>) -> R
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     match section {
         DeltaSection::Direct { d } => d,
@@ -253,7 +253,7 @@ fn delta_section_from_sos<R>(
     sample_time: R,
 ) -> Result<DeltaSection<R>, LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     // First collapse padded first-order sections and normalize the denominator
     // so the basis change works from the actual section polynomial rather than
@@ -338,7 +338,7 @@ fn reduced_section_polynomials<R>(
     denominator: [R; 3],
 ) -> Result<(Vec<R>, Vec<R>), LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let mut numerator = trim_leading_zeros(&numerator);
     let mut denominator = trim_leading_zeros(&denominator);

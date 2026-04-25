@@ -77,7 +77,7 @@ struct UkfScratch<T> {
 
 impl<T> UkfScratch<T>
 where
-    T: Float + Copy,
+    T: Float,
 {
     fn new(state_dim: usize, output_dim: usize) -> Self {
         let npoints = 2 * state_dim + 1;
@@ -131,7 +131,7 @@ pub struct UnscentedKalmanFilter<T, M> {
 impl<T, M> UnscentedKalmanFilter<T, M>
 where
     T: CompensatedField + RealField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     M: DiscreteNonlinearModel<T>,
 {
     /// Creates a validated SPD-only UKF runtime.
@@ -522,7 +522,7 @@ struct SigmaWeights<T> {
 /// Computes the standard scaled unscented weights.
 fn sigma_weights<T>(n: usize, alpha: T, beta: T, kappa: T) -> Result<SigmaWeights<T>, EmbeddedError>
 where
-    T: Float + Copy,
+    T: Float,
 {
     let n_t = T::from(n).ok_or(EmbeddedError::InvalidParameter {
         which: "embedded.alloc.ukf.state_dim",
@@ -555,7 +555,7 @@ fn sigma_points<T>(
     kappa: T,
 ) -> Result<Vec<Vector<T>>, EmbeddedError>
 where
-    T: Float + Copy,
+    T: Float,
 {
     let n = state.nrows();
     let mut points_matrix = zero_matrix(n, 2 * n + 1);
@@ -577,7 +577,7 @@ fn fill_sigma_points_matrix<T>(
     kappa: T,
 ) -> Result<(), EmbeddedError>
 where
-    T: Float + Copy,
+    T: Float,
 {
     let n = state.nrows();
     let n_t = T::from(n).ok_or(EmbeddedError::InvalidParameter {

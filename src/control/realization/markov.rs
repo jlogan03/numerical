@@ -205,7 +205,7 @@ impl<T> MarkovSequence<T> {
 impl<T> DiscreteStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Returns the first `n_blocks` discrete-time Markov blocks.
     ///
@@ -229,7 +229,7 @@ where
 impl<T> SparseDiscreteStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Returns the first `n_blocks` sparse discrete-time Markov blocks.
     ///

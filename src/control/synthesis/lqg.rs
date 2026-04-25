@@ -66,7 +66,7 @@ use num_traits::Float;
 pub struct LqgSolve<T, Domain>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Regulator-side LQR or DLQR result.
     pub regulator: LqrSolve<T>,
@@ -81,7 +81,7 @@ where
 impl<T, Domain> LqgSolve<T, Domain>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Regulator gain `K` for the convention `u = r - K x_hat`.
     #[must_use]
@@ -154,7 +154,7 @@ pub fn lqg_dense<T>(
 ) -> Result<LqgSolve<T, ContinuousTime>, LqgError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     // Construct the validated plant model once, then reuse the existing
     // observer/controller interconnection algebra instead of re-deriving the
@@ -200,7 +200,7 @@ pub fn dlqg_dense<T>(
 ) -> Result<LqgSolve<T, DiscreteTime<T::Real>>, LqgError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     // The discrete controller and closed-loop models must preserve the sample
     // interval, so the transient validated `StateSpace` object is part of the
@@ -230,7 +230,7 @@ where
 impl<T> ContinuousStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Designs the dense steady-state continuous-time LQG controller for the
     /// current plant.
@@ -250,7 +250,7 @@ where
 impl<T> DiscreteStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Designs the dense steady-state discrete-time LQG controller for the
     /// current plant.

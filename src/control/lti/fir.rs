@@ -66,7 +66,7 @@ pub struct FirFilterState<R> {
 
 impl<R> FirFilterState<R>
 where
-    R: Float + Copy,
+    R: Float,
 {
     /// Creates a zero-initialized delay line of the requested length.
     #[must_use]
@@ -98,7 +98,7 @@ pub struct SavGolSpec<R> {
 
 impl<R> SavGolSpec<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates and validates a Savitzky-Golay design specification.
     pub fn new(
@@ -125,7 +125,7 @@ where
 
 impl<R> Fir<R>
 where
-    R: Float + Copy + RealField + CompensatedField,
+    R: Float + RealField + CompensatedField,
 {
     /// Creates a validated digital FIR filter.
     pub fn new(taps: impl Into<Vec<R>>, sample_time: R) -> Result<Self, LtiError> {
@@ -340,7 +340,7 @@ where
 /// estimation.
 pub fn design_savgol<R>(spec: &SavGolSpec<R>) -> Result<Fir<R>, LtiError>
 where
-    R: Float + Copy + RealField + CompensatedField,
+    R: Float + RealField + CompensatedField,
 {
     validate_savgol_spec(
         spec.window_len,
@@ -420,7 +420,7 @@ fn validate_fir_state_len<R>(filter: &Fir<R>, state: &FirFilterState<R>) -> Resu
 /// recurrence is just `h[0] * x[k] + h[1] * x[k-1] + ...`.
 fn fir_step<R>(taps: &[R], delay_line: &mut [R], input: R) -> R
 where
-    R: Float + Copy + RealField + CompensatedField,
+    R: Float + RealField + CompensatedField,
 {
     let mut acc = CompensatedSum::<R>::default();
     acc.add(taps[0] * input);
@@ -446,7 +446,7 @@ fn validate_savgol_spec<R>(
     sample_spacing: R,
 ) -> Result<(), LtiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if window_len == 0 || window_len.is_multiple_of(2) {
         return Err(LtiError::InvalidSavGolSpec {
@@ -478,7 +478,7 @@ where
 /// the window center.
 fn factorial_as_real<R>(n: usize) -> R
 where
-    R: Float + Copy,
+    R: Float,
 {
     (1..=n).fold(R::one(), |acc, value| acc * R::from(value).unwrap())
 }

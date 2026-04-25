@@ -170,7 +170,7 @@ where
 impl<T> SparseContinuousStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Computes a sparse low-rank controllability Gramian factor.
     ///
@@ -216,7 +216,7 @@ where
 impl<T> SparseDiscreteStateSpace<T>
 where
     T: ComplexField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Creates a sparse discrete-time state-space system with CSC `A`.
     ///
@@ -275,7 +275,7 @@ where
 impl<T> SparseDiscreteStateSpace<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Computes a sparse low-rank discrete controllability Gramian factor.
     pub fn controllability_gramian(

@@ -114,7 +114,7 @@ impl<R: Float> Default for LuRefinementParams<R> {
 #[derive(Clone, Debug)]
 pub struct RefinedLuSolve<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Final solution estimate after the initial LU solve and any refinement steps.
     pub solution: Col<T>,
@@ -508,7 +508,7 @@ impl<I: Index, T: ComplexField> SparseLu<I, T> {
     where
         A: SparseMatVec<T>,
         T: CompensatedField,
-        T::Real: Float + Copy,
+        T::Real: Float,
     {
         if a.nrows() != self.nrows() {
             return Err(SparseLuError::DimensionMismatch {
@@ -703,7 +703,7 @@ fn recompute_residual<A, T>(a: A, x: &[T], b: &[T], residual: &mut Col<T>, matve
 where
     A: SparseMatVec<T>,
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // This is the numerically sensitive part of iterative refinement: compute
     // `A x` with compensated accumulation, then form `b - A x` with
@@ -736,7 +736,7 @@ mod test {
     fn apply_to_col<T, A>(a: A, x: &[T]) -> Col<T>
     where
         T: CompensatedField,
-        T::Real: Float + Copy,
+        T::Real: Float,
         A: SparseMatVec<T>,
     {
         let mut out = zero_col::<T>(a.nrows());
@@ -747,7 +747,7 @@ mod test {
     fn residual_norm<T, A>(a: A, x: &[T], b: &[T]) -> T::Real
     where
         T: CompensatedField,
-        T::Real: Float + Copy,
+        T::Real: Float,
         A: SparseMatVec<T>,
     {
         let ax = apply_to_col(a, x);

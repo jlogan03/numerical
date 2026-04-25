@@ -44,7 +44,7 @@ pub struct SecondOrderSection<R> {
 
 impl<R> SecondOrderSection<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates a normalized second-order section.
     ///
@@ -88,7 +88,7 @@ where
     /// The numerator/denominator storage layout is preserved exactly.
     pub fn try_cast<S>(&self) -> Result<SecondOrderSection<S>, LtiError>
     where
-        S: Float + Copy + RealField + NumCast,
+        S: Float + RealField + NumCast,
     {
         SecondOrderSection::new(
             [
@@ -155,7 +155,7 @@ pub type DiscreteSos<R> = Sos<R, DiscreteTime<R>>;
 
 impl<R, Domain> Sos<R, Domain>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
     Domain: Clone,
 {
     /// Creates a second-order-section cascade with explicit overall gain.
@@ -262,7 +262,7 @@ where
 
 impl<R, Domain> Sos<R, Domain>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
     Domain: CompositionDomain<R>,
 {
     /// Forms the parallel composition `self + rhs`.
@@ -332,7 +332,7 @@ where
 
 impl<R> ContinuousSos<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates a continuous-time second-order-section cascade.
     pub fn continuous(
@@ -370,7 +370,7 @@ where
     /// re-synthesizing sections in the target dtype.
     pub fn try_cast<S>(&self) -> Result<ContinuousSos<S>, LtiError>
     where
-        S: Float + Copy + RealField + NumCast,
+        S: Float + RealField + NumCast,
     {
         ContinuousSos::continuous(
             self.sections()
@@ -384,7 +384,7 @@ where
 
 impl<R> DiscreteSos<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates a discrete-time second-order-section cascade.
     pub fn discrete(
@@ -440,7 +440,7 @@ where
     /// makes it suitable for direct runtime comparisons between dtypes.
     pub fn try_cast<S>(&self) -> Result<DiscreteSos<S>, LtiError>
     where
-        S: Float + Copy + RealField + NumCast,
+        S: Float + RealField + NumCast,
     {
         DiscreteSos::discrete(
             self.sections()

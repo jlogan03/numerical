@@ -26,7 +26,7 @@ pub trait CompositionDomain<R>: Clone {
 
 impl<R> CompositionDomain<R> for ContinuousTime
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     fn composed(lhs: &Self, _rhs: &Self) -> Result<Self, LtiError> {
         Ok(*lhs)
@@ -35,7 +35,7 @@ where
 
 impl<R> CompositionDomain<R> for DiscreteTime<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     fn composed(lhs: &Self, rhs: &Self) -> Result<Self, LtiError> {
         if sample_times_match(lhs.sample_time(), rhs.sample_time()) {
@@ -71,7 +71,7 @@ where
 /// This is shared by the phase-unwrapped frequency-domain helpers and any
 /// time-domain API that interprets the supplied points as absolute times from
 /// a causal origin.
-pub(crate) fn validate_nonnegative_monotone_grid<R: Float + Copy + RealField>(
+pub(crate) fn validate_nonnegative_monotone_grid<R: Float + RealField>(
     sample_points: &[R],
     which: &'static str,
 ) -> Result<(), LtiError> {
@@ -90,7 +90,7 @@ pub(crate) fn validate_nonnegative_monotone_grid<R: Float + Copy + RealField>(
 ///
 /// The polynomial utilities normalize coefficients to descending-power form
 /// without redundant leading zeros so degree calculations stay well-defined.
-pub(crate) fn trim_leading_zeros<R: Float + Copy + RealField>(coeffs: &[R]) -> Vec<R> {
+pub(crate) fn trim_leading_zeros<R: Float + RealField>(coeffs: &[R]) -> Vec<R> {
     let first_nz = coeffs.iter().position(|&value| value != R::zero());
     match first_nz {
         Some(idx) => coeffs[idx..].to_vec(),
@@ -102,7 +102,7 @@ pub(crate) fn trim_leading_zeros<R: Float + Copy + RealField>(coeffs: &[R]) -> V
 ///
 /// This gives transfer-function coefficient form a stable canonicalization
 /// rule, which simplifies equality checks and conversion round trips.
-pub(crate) fn normalize_ratio<R: Float + Copy + RealField>(
+pub(crate) fn normalize_ratio<R: Float + RealField>(
     numerator: &[R],
     denominator: &[R],
 ) -> Result<(Vec<R>, Vec<R>), LtiError> {
@@ -138,10 +138,7 @@ pub(crate) fn normalize_ratio<R: Float + Copy + RealField>(
 
 /// Evaluates a real-coefficient polynomial at a complex point via Horner's
 /// method.
-pub(crate) fn poly_eval<R: Float + Copy + RealField>(
-    coeffs: &[R],
-    point: Complex<R>,
-) -> Complex<R> {
+pub(crate) fn poly_eval<R: Float + RealField>(coeffs: &[R], point: Complex<R>) -> Complex<R> {
     coeffs
         .iter()
         .fold(Complex::new(R::zero(), R::zero()), |acc, &coef| {
@@ -150,7 +147,7 @@ pub(crate) fn poly_eval<R: Float + Copy + RealField>(
 }
 
 /// Multiplies two real-coefficient polynomials in descending-power form.
-pub(crate) fn poly_mul<R: Float + Copy + RealField>(lhs: &[R], rhs: &[R]) -> Vec<R> {
+pub(crate) fn poly_mul<R: Float + RealField>(lhs: &[R], rhs: &[R]) -> Vec<R> {
     let mut out = vec![R::zero(); lhs.len() + rhs.len() - 1];
     for (i, &lhs_value) in lhs.iter().enumerate() {
         for (j, &rhs_value) in rhs.iter().enumerate() {
@@ -161,17 +158,17 @@ pub(crate) fn poly_mul<R: Float + Copy + RealField>(lhs: &[R], rhs: &[R]) -> Vec
 }
 
 /// Adds two descending-power polynomials after aligning them by degree.
-pub(crate) fn poly_add_aligned<R: Float + Copy + RealField>(lhs: &[R], rhs: &[R]) -> Vec<R> {
+pub(crate) fn poly_add_aligned<R: Float + RealField>(lhs: &[R], rhs: &[R]) -> Vec<R> {
     poly_addsub_aligned(lhs, rhs, false)
 }
 
 /// Subtracts two descending-power polynomials after aligning them by degree.
-pub(crate) fn poly_sub_aligned<R: Float + Copy + RealField>(lhs: &[R], rhs: &[R]) -> Vec<R> {
+pub(crate) fn poly_sub_aligned<R: Float + RealField>(lhs: &[R], rhs: &[R]) -> Vec<R> {
     poly_addsub_aligned(lhs, rhs, true)
 }
 
 /// Returns whether a polynomial is identically zero.
-pub(crate) fn is_zero_polynomial<R: Float + Copy + RealField>(coeffs: &[R]) -> bool {
+pub(crate) fn is_zero_polynomial<R: Float + RealField>(coeffs: &[R]) -> bool {
     coeffs.iter().all(|&value| value == R::zero())
 }
 
@@ -182,7 +179,7 @@ pub(crate) fn is_zero_polynomial<R: Float + Copy + RealField>(coeffs: &[R]) -> b
 /// compositions fail after round-trips through conversions or arithmetic. The
 /// tolerance here is intentionally small: it treats clearly different sample
 /// times as incompatible while still allowing numerically harmless drift.
-pub(crate) fn sample_times_match<R: Float + Copy + RealField>(lhs: R, rhs: R) -> bool {
+pub(crate) fn sample_times_match<R: Float + RealField>(lhs: R, rhs: R) -> bool {
     let scale = R::one().max(lhs.abs()).max(rhs.abs());
     let tol = from_f64::<R>(128.0) * eps::<R>() * scale;
     (lhs - rhs).abs() <= tol
@@ -197,7 +194,7 @@ pub(crate) fn sample_times_match<R: Float + Copy + RealField>(lhs: R, rhs: R) ->
 /// supplied grid.
 pub(crate) fn unwrap_phase_deg<R>(wrapped: &[R]) -> Vec<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if wrapped.is_empty() {
         return Vec::new();
@@ -227,9 +224,7 @@ where
 /// This is the dense reference implementation used by the first TF/ZPK/SOS
 /// conversion layer. It is appropriate for modest SISO polynomials and keeps
 /// the implementation on top of already-available dense eigenvalue routines.
-pub(crate) fn poly_roots<R: Float + Copy + RealField>(
-    coeffs: &[R],
-) -> Result<Vec<Complex<R>>, LtiError> {
+pub(crate) fn poly_roots<R: Float + RealField>(coeffs: &[R]) -> Result<Vec<Complex<R>>, LtiError> {
     let coeffs = trim_leading_zeros(coeffs);
     if coeffs.is_empty() {
         return Err(LtiError::EmptyPolynomial {
@@ -268,7 +263,7 @@ pub(crate) fn poly_roots<R: Float + Copy + RealField>(
 /// The result is only accepted when the coefficients are numerically real,
 /// which in practice means the supplied roots are closed under complex
 /// conjugation to within tolerance.
-pub(crate) fn real_poly_from_roots<R: Float + Copy + RealField>(
+pub(crate) fn real_poly_from_roots<R: Float + RealField>(
     roots: &[Complex<R>],
     which: &'static str,
 ) -> Result<Vec<R>, LtiError> {
@@ -296,7 +291,7 @@ pub(crate) fn real_poly_from_roots<R: Float + Copy + RealField>(
 /// `s - r` or `z - r`  ->  `[0, 1, -r]`
 ///
 /// rather than `[1, -r, 0]`, which would represent `s^2 - r s`.
-pub(crate) fn root_sections<R: Float + Copy + RealField>(
+pub(crate) fn root_sections<R: Float + RealField>(
     roots: &[Complex<R>],
     which: &'static str,
 ) -> Result<Vec<[R; 3]>, LtiError> {
@@ -361,7 +356,7 @@ pub(crate) fn root_sections<R: Float + Copy + RealField>(
 ///
 /// In descending-power section storage, the identity is `[0, 0, 1]`, not
 /// `[1, 0, 0]`.
-pub(crate) fn identity_section<R: Float + Copy + RealField>() -> [R; 3] {
+pub(crate) fn identity_section<R: Float + RealField>() -> [R; 3] {
     [R::zero(), R::zero(), R::one()]
 }
 
@@ -369,7 +364,7 @@ pub(crate) fn identity_section<R: Float + Copy + RealField>() -> [R; 3] {
 ///
 /// A small tolerance is allowed so roundoff from root reconstruction does not
 /// falsely reject an otherwise valid conjugate-closed polynomial.
-fn complex_coeffs_to_real<R: Float + Copy + RealField>(
+fn complex_coeffs_to_real<R: Float + RealField>(
     coeffs: &[Complex<R>],
     which: &'static str,
 ) -> Result<Vec<R>, LtiError> {
@@ -385,7 +380,7 @@ fn complex_coeffs_to_real<R: Float + Copy + RealField>(
 }
 
 /// Heuristic matching tolerance for pairing complex-conjugate roots.
-fn root_tol<R: Float + Copy + RealField>(roots: &[Complex<R>]) -> R {
+fn root_tol<R: Float + RealField>(roots: &[Complex<R>]) -> R {
     let scale = roots
         .iter()
         .fold(R::one(), |acc: R, root: &Complex<R>| acc.max(root.abs()));
@@ -394,7 +389,7 @@ fn root_tol<R: Float + Copy + RealField>(roots: &[Complex<R>]) -> R {
 
 /// Heuristic tolerance for deciding whether reconstructed coefficients are
 /// numerically real.
-fn coeff_tol<R: Float + Copy + RealField>(coeffs: &[Complex<R>]) -> R {
+fn coeff_tol<R: Float + RealField>(coeffs: &[Complex<R>]) -> R {
     let scale = coeffs
         .iter()
         .fold(R::one(), |acc: R, coeff: &Complex<R>| acc.max(coeff.abs()));
@@ -407,10 +402,7 @@ fn coeff_tol<R: Float + Copy + RealField>(coeffs: &[Complex<R>]) -> R {
 /// This keeps conversions and tests deterministic without imposing a stronger
 /// mathematical meaning on root ordering than the underlying eigenvalue solve
 /// actually provides.
-fn compare_roots<R: Float + Copy + RealField>(
-    lhs: &Complex<R>,
-    rhs: &Complex<R>,
-) -> core::cmp::Ordering {
+fn compare_roots<R: Float + RealField>(lhs: &Complex<R>, rhs: &Complex<R>) -> core::cmp::Ordering {
     rhs.abs()
         .partial_cmp(&lhs.abs())
         .unwrap_or(core::cmp::Ordering::Equal)
@@ -427,11 +419,7 @@ fn compare_roots<R: Float + Copy + RealField>(
 }
 
 /// Shared implementation for aligned polynomial addition and subtraction.
-fn poly_addsub_aligned<R: Float + Copy + RealField>(
-    lhs: &[R],
-    rhs: &[R],
-    subtract_rhs: bool,
-) -> Vec<R> {
+fn poly_addsub_aligned<R: Float + RealField>(lhs: &[R], rhs: &[R], subtract_rhs: bool) -> Vec<R> {
     // The coefficient vectors are stored in descending-power order, so aligning
     // by degree means right-aligning the shorter vector before combining.
     let len = lhs.len().max(rhs.len());

@@ -108,7 +108,7 @@ pub fn design_analog_filter_zpk<R>(
     spec: &AnalogFilterSpec<R>,
 ) -> Result<ContinuousZpk<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let prototype = analog_lowpass_prototype_zpk(spec.order, spec.family)?;
     analog_shape_transform(&prototype, spec.shape)
@@ -124,7 +124,7 @@ pub fn design_analog_filter_sos<R>(
     spec: &AnalogFilterSpec<R>,
 ) -> Result<ContinuousSos<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     Ok(design_analog_filter_zpk(spec)?.to_sos()?)
 }
@@ -137,7 +137,7 @@ pub fn design_analog_filter_tf<R>(
     spec: &AnalogFilterSpec<R>,
 ) -> Result<ContinuousTransferFunction<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     Ok(design_analog_filter_zpk(spec)?.to_transfer_function()?)
 }
@@ -151,7 +151,7 @@ pub fn design_digital_filter_zpk<R>(
     spec: &DigitalFilterSpec<R>,
 ) -> Result<DiscreteZpk<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let analog_family = match spec.family {
         DigitalFilterFamily::Butterworth => AnalogFilterFamily::Butterworth,
@@ -179,7 +179,7 @@ pub fn design_digital_filter_sos<R>(
     spec: &DigitalFilterSpec<R>,
 ) -> Result<DiscreteSos<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     Ok(design_digital_filter_zpk(spec)?.to_sos()?)
 }
@@ -192,7 +192,7 @@ pub fn design_digital_filter_tf<R>(
     spec: &DigitalFilterSpec<R>,
 ) -> Result<DiscreteTransferFunction<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     Ok(design_digital_filter_zpk(spec)?.to_transfer_function()?)
 }

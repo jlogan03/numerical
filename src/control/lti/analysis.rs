@@ -21,7 +21,7 @@ use num_traits::{Float, One, Zero};
 impl<T, Domain> StateSpace<T, Domain>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Returns the poles of the dense state-space model.
     ///
@@ -174,7 +174,7 @@ where
 impl<T, Domain> SparseStateSpace<T, Domain>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Evaluates the sparse transfer matrix at the supplied complex point.
     ///
@@ -195,7 +195,7 @@ where
 impl<T> ContinuousStateSpace<T>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Returns whether all poles lie strictly in the open left half-plane.
     ///
@@ -222,7 +222,7 @@ where
 impl<T> DiscreteStateSpace<T>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Returns whether all poles lie strictly inside the unit disk.
     pub fn is_asymptotically_stable(&self) -> Result<bool, LtiError> {
@@ -249,7 +249,7 @@ where
 impl<T> SparseContinuousStateSpace<T>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Returns the DC gain `G(0)` for the sparse continuous-time model.
     pub fn dc_gain(&self) -> Result<Mat<Complex<T::Real>>, LtiError> {
@@ -263,7 +263,7 @@ where
 impl<T> SparseDiscreteStateSpace<T>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     /// Returns the DC gain `G(1)` for the sparse discrete-time model.
     pub fn dc_gain(&self) -> Result<Mat<Complex<T::Real>>, LtiError> {
@@ -274,7 +274,7 @@ where
     }
 }
 
-fn compare_poles<R: Float + Copy>(lhs: Complex<R>, rhs: Complex<R>) -> core::cmp::Ordering {
+fn compare_poles<R: Float>(lhs: Complex<R>, rhs: Complex<R>) -> core::cmp::Ordering {
     let rhs_abs2 = rhs.re * rhs.re + rhs.im * rhs.im;
     let lhs_abs2 = lhs.re * lhs.re + lhs.im * lhs.im;
     rhs_abs2
@@ -308,7 +308,7 @@ fn copy_block<T: Copy>(
 fn numerical_rank<T>(matrix: MatRef<'_, T>) -> Result<usize, LtiError>
 where
     T: ComplexField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     let sv = matrix.singular_values()?;
     Ok(rank_from_singular_values(
@@ -322,7 +322,7 @@ where
 fn numerical_rank_with_tol<T>(matrix: MatRef<'_, T>, tol: T::Real) -> Result<usize, LtiError>
 where
     T: ComplexField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     let sv = matrix.singular_values()?;
     Ok(rank_from_singular_values(
@@ -333,7 +333,7 @@ where
     ))
 }
 
-fn rank_from_singular_values<R: Float + Copy + RealField>(
+fn rank_from_singular_values<R: Float + RealField>(
     singular_values: &[R],
     nrows: usize,
     ncols: usize,
@@ -355,7 +355,7 @@ fn rank_from_singular_values<R: Float + Copy + RealField>(
 fn to_complex_mat<T>(matrix: MatRef<'_, T>) -> Mat<Complex<T::Real>>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
         let value = matrix[(row, col)];
@@ -363,7 +363,7 @@ where
     })
 }
 
-fn all_finite_complex<R: Float + Copy + RealField>(matrix: MatRef<'_, Complex<R>>) -> bool {
+fn all_finite_complex<R: Float + RealField>(matrix: MatRef<'_, Complex<R>>) -> bool {
     for col in 0..matrix.ncols() {
         for row in 0..matrix.nrows() {
             let value = matrix[(row, col)];
@@ -389,7 +389,7 @@ struct ShiftedComplexCscMatrix<R> {
 
 impl<R> ShiftedComplexCscMatrix<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Converts a sparse real-or-complex state matrix into complex CSC storage
     /// with an explicit diagonal.
@@ -449,7 +449,7 @@ where
 
 fn diagonal_positions<R>(matrix: SparseColMatRef<'_, usize, Complex<R>>) -> Vec<usize>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let mut positions = Vec::with_capacity(matrix.ncols());
     for col in 0..matrix.ncols() {
@@ -476,7 +476,7 @@ pub(crate) fn sparse_transfer_at_points<T>(
 ) -> Result<Vec<Mat<Complex<T::Real>>>, LtiError>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     let mut shifted = ShiftedComplexCscMatrix::from_matrix(a)?;
     let mut lu = SparseLu::<usize, Complex<T::Real>>::analyze(

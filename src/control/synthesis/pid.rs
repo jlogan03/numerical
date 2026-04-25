@@ -89,7 +89,7 @@ pub struct PidState<R> {
 
 impl<R> Default for PidState<R>
 where
-    R: Float + Copy,
+    R: Float,
 {
     fn default() -> Self {
         Self {
@@ -101,7 +101,7 @@ where
 
 impl<R> PidState<R>
 where
-    R: Float + Copy,
+    R: Float,
 {
     /// Resets the runtime state to zero.
     pub fn reset(&mut self) {
@@ -195,7 +195,7 @@ pub struct Pid<R> {
 
 impl<R> Pid<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     /// Creates a validated PID / PIDF controller.
     ///
@@ -536,7 +536,7 @@ where
 /// Validates a runtime sample period.
 fn validate_dt<R>(dt: R) -> Result<(), PidError>
 where
-    R: Float + Copy,
+    R: Float,
 {
     if dt.is_finite() && dt > R::zero() {
         Ok(())
@@ -548,7 +548,7 @@ where
 /// Validates the derivative-filter configuration implied by `kd`.
 fn validate_derivative_filter<R>(kd: R, derivative_filter: Option<R>) -> Result<(), PidError>
 where
-    R: Float + Copy,
+    R: Float,
 {
     if kd == R::zero() {
         return Ok(());
@@ -562,7 +562,7 @@ where
 /// Validates anti-windup configuration parameters.
 fn validate_anti_windup<R>(anti_windup: AntiWindup<R>) -> Result<(), PidError>
 where
-    R: Float + Copy,
+    R: Float,
 {
     match anti_windup {
         AntiWindup::None => Ok(()),
@@ -589,7 +589,7 @@ where
 /// of whether a filter value was provided.
 fn effective_derivative_filter<R>(kd: R, derivative_filter: Option<R>) -> Option<R>
 where
-    R: Float + Copy,
+    R: Float,
 {
     if kd == R::zero() {
         None
@@ -601,7 +601,7 @@ where
 /// Applies optional hard limits to the stored integral contribution.
 fn apply_integrator_limits<R>(value: R, limits: Option<(R, R)>) -> R
 where
-    R: Float + Copy,
+    R: Float,
 {
     match limits {
         Some((low, high)) => clamp_value(value, low, high),
@@ -612,7 +612,7 @@ where
 /// Scalar clamp helper shared by output and integrator limiting.
 fn clamp_value<R>(value: R, low: R, high: R) -> R
 where
-    R: Float + Copy,
+    R: Float,
 {
     if value < low {
         low

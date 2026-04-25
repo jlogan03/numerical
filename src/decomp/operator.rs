@@ -37,7 +37,7 @@ use num_traits::Float;
 /// operator application while keeping the same external operator shape.
 pub trait CompensatedApply<T: CompensatedField>: LinOp<T>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Computes the extra scratch required by compensated application.
     fn compensated_apply_scratch(&self, rhs_ncols: usize, par: Par) -> StackReq;
@@ -72,7 +72,7 @@ where
 /// adjoint application, as required by matrix-free SVD.
 pub trait CompensatedBiApply<T: CompensatedField>: CompensatedApply<T> + BiLinOp<T>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Computes the extra scratch required by compensated transpose / adjoint application.
     fn compensated_transpose_apply_scratch(&self, rhs_ncols: usize, par: Par) -> StackReq;
@@ -123,7 +123,7 @@ impl<A> CompensatedLinOp<A> {
 impl<T, A> LinOp<T> for CompensatedLinOp<A>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: CompensatedApply<T> + Sync + core::fmt::Debug,
 {
     fn apply_scratch(&self, rhs_ncols: usize, par: Par) -> StackReq {
@@ -174,7 +174,7 @@ impl<A> CompensatedBiLinOp<A> {
 impl<T, A> LinOp<T> for CompensatedBiLinOp<A>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: CompensatedBiApply<T> + Sync + core::fmt::Debug,
 {
     fn apply_scratch(&self, rhs_ncols: usize, par: Par) -> StackReq {
@@ -201,7 +201,7 @@ where
 impl<T, A> BiLinOp<T> for CompensatedBiLinOp<A>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     A: CompensatedBiApply<T> + Sync + core::fmt::Debug,
 {
     fn transpose_apply_scratch(&self, rhs_ncols: usize, par: Par) -> StackReq {
@@ -248,7 +248,7 @@ fn col_mut_slice<T>(col: faer::ColMut<'_, T>) -> &mut [T] {
 #[inline]
 fn scratch_acc_len<T: CompensatedField>(req_rows: usize) -> StackReq
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     StackReq::new::<CompensatedSum<T>>(req_rows)
 }
@@ -259,7 +259,7 @@ fn init_accum_slice<T: CompensatedField>(
     stack: &mut MemStack,
 ) -> (DynArray<'_, CompensatedSum<T>>, &mut MemStack)
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     stack.collect(core::iter::repeat_n(CompensatedSum::<T>::default(), len))
 }
@@ -267,7 +267,7 @@ where
 impl<T, I, ViewT> CompensatedApply<T> for SparseRowMatRef<'_, I, ViewT>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     I: Index,
     ViewT: Conjugate<Canonical = T>,
 {
@@ -346,7 +346,7 @@ where
 impl<T, I, ViewT> CompensatedBiApply<T> for SparseRowMatRef<'_, I, ViewT>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     I: Index,
     ViewT: Conjugate<Canonical = T>,
 {
@@ -446,7 +446,7 @@ where
 impl<T, I, ViewT> CompensatedApply<T> for SparseColMatRef<'_, I, ViewT>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     I: Index,
     ViewT: Conjugate<Canonical = T>,
 {
@@ -544,7 +544,7 @@ where
 impl<T, I, ViewT> CompensatedBiApply<T> for SparseColMatRef<'_, I, ViewT>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
     I: Index,
     ViewT: Conjugate<Canonical = T>,
 {

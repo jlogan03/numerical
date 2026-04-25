@@ -183,7 +183,7 @@ impl<T: ComplexField> Equilibration<T> {
     ) -> Result<Self, EquilibrationError>
     where
         T: Copy,
-        T::Real: Float + Copy,
+        T::Real: Float,
         I: Index,
         ViewT: Conjugate<Canonical = T>,
     {
@@ -288,7 +288,7 @@ impl<T: ComplexField> Equilibration<T> {
     ) -> Result<Self, EquilibrationError>
     where
         T: Copy,
-        T::Real: Float + Copy,
+        T::Real: Float,
         I: Index,
         ViewT: Conjugate<Canonical = T>,
     {
@@ -551,7 +551,7 @@ impl<T: ComplexField> Equilibration<T> {
     pub fn scale_initial_guess_in_place(&self, x: &mut [T])
     where
         T: Copy,
-        T::Real: Float + Copy,
+        T::Real: Float,
     {
         assert_eq!(x.len(), self.ncols());
         for (value, &scale) in x.iter_mut().zip(self.col_scale.iter()) {
@@ -581,9 +581,7 @@ impl<T: ComplexField> Equilibration<T> {
     }
 }
 
-fn validate_params<R: Float + Copy>(
-    params: EquilibrationParams<R>,
-) -> Result<(), EquilibrationError> {
+fn validate_params<R: Float>(params: EquilibrationParams<R>) -> Result<(), EquilibrationError> {
     if params.max_iters == 0 {
         return Err(EquilibrationError::InvalidParams {
             reason: "max_iters must be at least 1",
@@ -607,7 +605,7 @@ fn validate_params<R: Float + Copy>(
     Ok(())
 }
 
-fn validate_nonzero_norms<R: Float + Copy>(
+fn validate_nonzero_norms<R: Float>(
     row_norm: &[R],
     col_norm: &[R],
 ) -> Result<(), EquilibrationError> {
@@ -626,7 +624,7 @@ fn validate_nonzero_norms<R: Float + Copy>(
     Ok(())
 }
 
-fn max_deviation<R: Float + Copy>(row_norm: &[R], col_norm: &[R]) -> R {
+fn max_deviation<R: Float>(row_norm: &[R], col_norm: &[R]) -> R {
     let one = R::one();
     row_norm
         .iter()
@@ -635,7 +633,7 @@ fn max_deviation<R: Float + Copy>(row_norm: &[R], col_norm: &[R]) -> R {
         .fold(R::zero(), |max_dev, dev| max_dev.max(dev))
 }
 
-fn compute_updates<R: Float + Copy>(
+fn compute_updates<R: Float>(
     norms: &[R],
     updates: &mut [R],
     scales: &mut [R],

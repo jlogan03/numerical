@@ -119,7 +119,7 @@ impl<R> EraParams<R> {
 #[derive(Clone, Debug)]
 pub struct EraInternals<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Unshifted block-Hankel matrix `H0`, when requested.
     pub h0: Option<crate::control::realization::BlockHankel<T>>,
@@ -141,7 +141,7 @@ where
 #[derive(Clone, Debug)]
 pub struct EraResult<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Realized discrete-time state-space model.
     pub realized: DiscreteStateSpace<T>,
@@ -230,7 +230,7 @@ pub fn era_from_markov<T>(
 ) -> Result<EraResult<T>, EraError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let pair = sequence.shifted_hankel_pair(row_blocks, col_blocks)?;
     let direct = sequence.block(0);
@@ -249,7 +249,7 @@ pub fn era_from_shifted_hankel<T>(
 ) -> Result<EraResult<T>, EraError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     validate_direct_feedthrough(pair, direct_feedthrough)?;
 
@@ -345,7 +345,7 @@ fn validate_direct_feedthrough<T>(
 ) -> Result<(), EraError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     if direct_feedthrough.nrows() != pair.h0().noutputs()
         || direct_feedthrough.ncols() != pair.h0().ninputs()
@@ -362,7 +362,7 @@ where
 
 fn retained_order<R>(singular_values: &Col<R>, params: &EraParams<R>) -> Result<usize, EraError>
 where
-    R: Float + Copy,
+    R: Float,
 {
     let mut max_sigma = R::zero();
     for i in 0..singular_values.nrows() {
@@ -407,7 +407,7 @@ fn zero_order_realization<T>(
 ) -> Result<DiscreteStateSpace<T>, StateSpaceError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     DiscreteStateSpace::new(
         Mat::zeros(0, 0),
@@ -421,7 +421,7 @@ where
 fn real_singular_values<T>(values: ColRef<'_, T>) -> Col<T::Real>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     Col::from_fn(values.nrows(), |i| values[i].abs())
 }
@@ -443,7 +443,7 @@ enum RealScale {
 fn diagonal_from_real<T>(values: &Col<T::Real>, scale: RealScale) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut out = Mat::zeros(values.nrows(), values.nrows());
     for i in 0..values.nrows() {
@@ -467,7 +467,7 @@ fn first_columns<T: Copy>(matrix: MatRef<'_, T>, ncols: usize) -> Mat<T> {
 fn check_finite<T>(matrix: MatRef<'_, T>, which: &'static str) -> Result<(), EraError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     for col in 0..matrix.ncols() {
         for row in 0..matrix.nrows() {

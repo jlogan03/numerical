@@ -86,7 +86,7 @@ use num_traits::{Float, One, Zero};
 #[derive(Clone, Debug)]
 pub struct RiccatiSolve<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Hermitian Riccati solution matrix.
     pub solution: Mat<T>,
@@ -210,7 +210,7 @@ pub fn solve_care_dense<T>(
 ) -> Result<RiccatiSolve<T>, RiccatiError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     validate_riccati_dims(a, b, q, r)?;
     let tol = default_tolerance::<T>();
@@ -290,7 +290,7 @@ pub fn solve_dare_dense<T>(
 ) -> Result<RiccatiSolve<T>, RiccatiError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     validate_riccati_dims(a, b, q, r)?;
     let tol = default_tolerance::<T>();
@@ -352,7 +352,7 @@ pub fn care_gain_from_solution<T>(
 ) -> Result<Mat<T>, RiccatiError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     validate_square("r", r.nrows(), r.ncols())?;
     validate_dims("b.nrows", b.nrows(), b.ncols(), x.nrows(), b.ncols())?;
@@ -377,7 +377,7 @@ pub fn dare_gain_from_solution<T>(
 ) -> Result<Mat<T>, RiccatiError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     validate_riccati_dims(a, b, x, r)?;
     let b_h_x = dense_mul_adjoint_lhs(b, x);
@@ -441,7 +441,7 @@ fn validate_dims(
 fn default_tolerance<T>() -> T::Real
 where
     T: ComplexField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     eps::<T::Real>().sqrt()
 }
@@ -463,7 +463,7 @@ fn build_care_hamiltonian<R>(
     q: MatRef<'_, Complex<R>>,
 ) -> Mat<Complex<R>>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let n = a.nrows();
     Mat::from_fn(2 * n, 2 * n, |row, col| match (row < n, col < n) {
@@ -501,7 +501,7 @@ fn build_dare_pencil<R>(
     q: MatRef<'_, Complex<R>>,
 ) -> (Mat<Complex<R>>, Mat<Complex<R>>)
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let n = a.nrows();
     let h = Mat::from_fn(2 * n, 2 * n, |row, col| match (row < n, col < n) {
@@ -533,7 +533,7 @@ where
 
 fn stable_columns_from_eigen<R>(values: &[Complex<R>], tol: R) -> Vec<usize>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     // CARE wants the Hamiltonian subspace in the open left half-plane. A small
     // tolerance keeps numerically marginal eigenvalues from being accepted as
@@ -551,7 +551,7 @@ fn stable_columns_from_generalized_eigen<R>(
     tol: R,
 ) -> Vec<usize>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     // DARE uses generalized eigenvalues of the symplectic pencil. The
     // stabilizing subspace is the one strictly inside the unit disk.
@@ -575,7 +575,7 @@ fn partition_subspace<R>(
     cols: &[usize],
 ) -> Result<(Mat<Complex<R>>, Mat<Complex<R>>), RiccatiError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if cols.len() != n {
         return Err(RiccatiError::NoStabilizingSolution);
@@ -603,7 +603,7 @@ fn solve_left_checked<T>(
 ) -> Result<Mat<T>, RiccatiError>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let solution = lhs.full_piv_lu().solve(rhs);
     if !solution.as_ref().is_all_finite() {
@@ -635,7 +635,7 @@ fn solve_right_checked<T>(
 ) -> Result<Mat<T>, RiccatiError>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let solved_t = solve_left_checked(lhs.transpose(), rhs.transpose(), tol, err)?;
     Ok(solved_t.transpose().to_owned())
@@ -644,7 +644,7 @@ where
 fn dense_solve_scale<T>(lhs: MatRef<'_, T>, solution: MatRef<'_, T>, rhs: MatRef<'_, T>) -> T::Real
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     frobenius_norm_plain(lhs) * frobenius_norm_plain(solution) + frobenius_norm_plain(rhs)
 }
@@ -658,7 +658,7 @@ fn care_residual<T>(
 ) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let a_h_x = dense_mul_adjoint_lhs(a, x);
     let x_a = dense_mul(x, a);
@@ -678,7 +678,7 @@ fn dare_residual<T>(
 ) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let a_h_x = dense_mul_adjoint_lhs(a, x);
     let a_h_x_a = dense_mul(a_h_x.as_ref(), a);
@@ -697,7 +697,7 @@ fn care_is_stabilizing<T>(
 ) -> Result<bool, RiccatiError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     let bk = dense_mul(b, k);
     let closed_loop = a - &bk;
@@ -718,7 +718,7 @@ fn dare_is_stabilizing<T>(
 ) -> Result<bool, RiccatiError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     let bk = dense_mul(b, k);
     let closed_loop = a - &bk;
@@ -736,7 +736,7 @@ where
 fn to_complex_mat<T>(matrix: MatRef<'_, T>) -> Mat<Complex<T::Real>>
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     Mat::from_fn(matrix.nrows(), matrix.ncols(), |row, col| {
         let value = matrix[(row, col)];
@@ -751,7 +751,7 @@ fn from_complex_mat<T>(
 ) -> Result<Mat<T>, RiccatiError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy + RealField,
+    T::Real: Float + RealField,
 {
     // The invariant-subspace formulas are evaluated in complex arithmetic even
     // for real problems. For real data, the true stabilizing solution should
@@ -789,7 +789,7 @@ where
 fn hermitianize_in_place<T>(matrix: &mut Mat<T>)
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // Riccati solutions are Hermitian in exact arithmetic. Symmetrizing the
     // dense result removes the small antisymmetric component introduced by
@@ -807,7 +807,7 @@ where
 fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
@@ -821,7 +821,7 @@ where
 fn dense_mul_adjoint_lhs<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     Mat::from_fn(lhs.ncols(), rhs.ncols(), |row, col| {
         let mut acc = CompensatedSum::<T>::default();
@@ -835,7 +835,7 @@ where
 fn frobenius_norm<T>(matrix: MatRef<'_, T>) -> T::Real
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut acc: Option<TwoSum<T::Real>> = None;
     for col in 0..matrix.ncols() {
@@ -873,7 +873,7 @@ where
 fn frobenius_norm_plain<T>(matrix: MatRef<'_, T>) -> T::Real
 where
     T: ComplexField + Copy,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let mut acc = <T::Real as Zero>::zero();
     for col in 0..matrix.ncols() {
@@ -896,7 +896,7 @@ mod test {
     fn assert_close<T>(lhs: &Mat<T>, rhs: &Mat<T>, tol: T::Real)
     where
         T: super::CompensatedField,
-        T::Real: num_traits::Float + Copy,
+        T::Real: num_traits::Float,
     {
         assert_eq!(lhs.nrows(), rhs.nrows());
         assert_eq!(lhs.ncols(), rhs.ncols());

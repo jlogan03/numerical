@@ -58,7 +58,7 @@ pub fn buttord_analog<R>(
     spec: &AnalogOrderSelectionSpec<R>,
 ) -> Result<ButterworthOrderResult<R, AnalogFilterSpec<R>>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let (order, critical_shape) = butterworth_order_and_shape(
         spec.passband,
@@ -81,7 +81,7 @@ pub fn buttord_digital<R>(
     spec: &DigitalOrderSelectionSpec<R>,
 ) -> Result<ButterworthOrderResult<R, DigitalFilterSpec<R>>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let analog_passband = maybe_prewarp_shape(spec.passband, spec.sample_rate, spec.prewarp);
     let analog_stopband = maybe_prewarp_shape(spec.stopband, spec.sample_rate, spec.prewarp);
@@ -113,7 +113,7 @@ pub fn cheb1ord_analog<R>(
     spec: &AnalogOrderSelectionSpec<R>,
 ) -> Result<Chebyshev1OrderResult<R, AnalogFilterSpec<R>>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let order = chebyshev1_order(
         spec.passband,
@@ -141,7 +141,7 @@ pub fn cheb1ord_digital<R>(
     spec: &DigitalOrderSelectionSpec<R>,
 ) -> Result<Chebyshev1OrderResult<R, DigitalFilterSpec<R>>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let analog_passband = maybe_prewarp_shape(spec.passband, spec.sample_rate, spec.prewarp);
     let analog_stopband = maybe_prewarp_shape(spec.stopband, spec.sample_rate, spec.prewarp);
@@ -174,7 +174,7 @@ fn butterworth_order_and_shape<R>(
     stopband_attenuation_db: R,
 ) -> Result<(usize, FilterShape<R>), FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     // Order selection is done in normalized prototype space first, then the
     // chosen critical frequencies are mapped back into the caller's requested
@@ -194,7 +194,7 @@ fn chebyshev1_order<R>(
     stopband_attenuation_db: R,
 ) -> Result<usize, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let omega_s = normalized_stopband_ratio(passband, stopband)?;
     let epsilon_p = ripple_epsilon(passband_ripple_db)?;
@@ -207,7 +207,7 @@ fn normalized_stopband_ratio<R>(
     stopband: FilterShape<R>,
 ) -> Result<R, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let ratio = match (passband, stopband) {
         (FilterShape::Lowpass { cutoff: wp }, FilterShape::Lowpass { cutoff: ws }) => {
@@ -276,7 +276,7 @@ where
 
 fn ripple_epsilon<R>(attenuation_db: R) -> Result<R, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     // Both Butterworth and Chebyshev-I order formulas are written in terms of
     // the prototype ripple parameter `epsilon`.
@@ -296,7 +296,7 @@ fn minimum_butterworth_order<R>(
     omega_s: R,
 ) -> Result<usize, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if epsilon_s <= epsilon_p || omega_s <= R::one() {
         return Err(FilterDesignError::InfeasibleOrderSelectionSpec);
@@ -314,7 +314,7 @@ fn minimum_chebyshev1_order<R>(
     omega_s: R,
 ) -> Result<usize, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     if epsilon_s <= epsilon_p || omega_s <= R::one() {
         return Err(FilterDesignError::InfeasibleOrderSelectionSpec);
@@ -333,7 +333,7 @@ fn butterworth_critical_shape<R>(
     epsilon_p: R,
 ) -> FilterShape<R>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let order_r = R::from(order).unwrap();
     // Butterworth order selection yields the prototype cutoff `Omega_c`, which
@@ -375,7 +375,7 @@ where
 
 fn acosh_real<R>(value: R) -> R
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     (value + (value * value - R::one()).sqrt()).ln()
 }

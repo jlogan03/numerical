@@ -141,7 +141,7 @@ impl<R> HsvdParams<R> {
 #[derive(Clone, Debug)]
 pub struct HsvdInternals<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Controllability Gramian factor used in the balancing core.
     pub controllability_factor: Mat<T>,
@@ -174,7 +174,7 @@ where
 #[derive(Clone, Debug)]
 pub struct HsvdResult<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     /// Hankel singular values in descending order.
     pub hankel_singular_values: Col<T::Real>,
@@ -248,7 +248,7 @@ impl<R> From<DecompError> for HsvdError<R> {
 #[derive(Clone, Debug)]
 struct DenseFactorData<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     factor: Mat<T>,
     dense_gramian: Mat<T>,
@@ -258,7 +258,7 @@ where
 #[derive(Clone, Debug)]
 struct BalanceCore<T: CompensatedField>
 where
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     hankel_singular_values: Col<T::Real>,
     reduced_order: usize,
@@ -288,7 +288,7 @@ pub fn hsvd_from_dense_gramians<T>(
 ) -> Result<HsvdResult<T>, HsvdError<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     validate_dense_gramians(controllability_gramian, observability_gramian)?;
     let wc_factor = dense_psd_factor("controllability", controllability_gramian)?;
@@ -320,7 +320,7 @@ pub fn hsvd_from_factors<T>(
 ) -> Result<HsvdResult<T>, HsvdError<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     validate_factor_rows(controllability_factor, observability_factor)?;
     let core = build_balance_core(controllability_factor, observability_factor, params)?;
@@ -346,7 +346,7 @@ fn validate_dense_gramians<T>(
 ) -> Result<(), HsvdError<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // The dense path expects square Gramians for the same underlying state
     // dimension. A mismatch here means the caller is not actually supplying a
@@ -370,7 +370,7 @@ fn validate_factor_rows<T>(
 ) -> Result<(), HsvdError<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // Factor widths may differ because controllability and observability ranks
     // are not required to match. Only the shared state dimension matters here.
@@ -392,7 +392,7 @@ fn dense_internals<T>(
 ) -> Option<HsvdInternals<T>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     if !level.keep_factors() {
         return None;
@@ -422,7 +422,7 @@ fn factor_internals<T>(
 ) -> Option<HsvdInternals<T>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     if !level.keep_factors() {
         return None;
@@ -450,7 +450,7 @@ fn dense_psd_factor<T>(
 ) -> Result<DenseFactorData<T>, HsvdError<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // HSVD only needs a Gramian square root. Using a self-adjoint
     // eigendecomposition is more robust than assuming a Cholesky factor exists.
@@ -501,7 +501,7 @@ fn build_balance_core<T>(
 ) -> Result<BalanceCore<T>, HsvdError<T::Real>>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     // The balancing core remains dense and small even for sparse systems,
     // because it is formed from Gramian factors rather than full Gramians.
@@ -600,7 +600,7 @@ fn build_projection<T>(
 ) -> Mat<T>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let scaled_basis = Mat::from_fn(basis.nrows(), order, |row, col| {
         let sigma_inv_sqrt = hankel_singular_values[col].sqrt().recip();
@@ -613,7 +613,7 @@ where
 
 fn tail_sum<R>(values: faer::ColRef<'_, R>, from: usize) -> R
 where
-    R: Float + Copy,
+    R: Float,
 {
     let mut sum = <R as Zero>::zero();
     for i in from..values.nrows() {

@@ -25,7 +25,7 @@ pub(super) fn analog_shape_transform<R>(
     shape: FilterShape<R>,
 ) -> Result<ContinuousZpk<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     match shape {
         FilterShape::Lowpass { cutoff } => lowpass_zpk(prototype, cutoff),
@@ -46,7 +46,7 @@ pub(super) fn bilinear_transform_zpk<R>(
     sample_rate: R,
 ) -> Result<DiscreteZpk<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     // The bilinear transform maps the stable left half-plane to the unit disk.
     // Degree-balancing zeros land at z = -1 when the analog numerator has
@@ -98,7 +98,7 @@ fn lowpass_zpk<R>(
     cutoff: R,
 ) -> Result<ContinuousZpk<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let cutoff_c = Complex::new(cutoff, R::zero());
     let zeros = prototype
@@ -124,7 +124,7 @@ fn highpass_zpk<R>(
     cutoff: R,
 ) -> Result<ContinuousZpk<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let wc = Complex::new(cutoff, R::zero());
     let degree = prototype
@@ -160,7 +160,7 @@ fn bandpass_zpk<R>(
     high_cutoff: R,
 ) -> Result<ContinuousZpk<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let bw = high_cutoff - low_cutoff;
     let w0 = (low_cutoff * high_cutoff).sqrt();
@@ -202,7 +202,7 @@ fn bandstop_zpk<R>(
     high_cutoff: R,
 ) -> Result<ContinuousZpk<R>, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let bw = high_cutoff - low_cutoff;
     let w0 = (low_cutoff * high_cutoff).sqrt();
@@ -250,7 +250,7 @@ where
 
 fn real_scalar<R>(value: Complex<R>) -> Result<R, FilterDesignError>
 where
-    R: Float + Copy + RealField,
+    R: Float + RealField,
 {
     let scale = R::one().max(value.re.abs()).max(value.im.abs());
     let tol = R::from(128.0).unwrap() * R::epsilon() * scale;

@@ -169,7 +169,7 @@ pub fn okid<T>(
 ) -> Result<OkidResult<T>, OkidError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     validate_okid_inputs(outputs, inputs, params)?;
     let observer =
@@ -197,7 +197,7 @@ fn validate_okid_inputs<T>(
 ) -> Result<(), OkidError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     if params.n_markov == 0 {
         return Err(OkidError::InvalidMarkovCount);
@@ -231,7 +231,7 @@ fn observer_markov_regression<T>(
 ) -> Result<Mat<T>, OkidError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let noutputs = outputs.nrows();
     let ninputs = inputs.nrows();
@@ -270,7 +270,7 @@ fn recover_markov_sequence<T>(
 ) -> Result<MarkovSequence<T>, OkidError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let noutputs = direct_feedthrough.nrows();
     let ninputs = direct_feedthrough.ncols();
@@ -317,7 +317,7 @@ fn pseudo_inverse<T>(
 ) -> Result<Mat<T>, OkidError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let (svd, retained, _tol) = checked_svd_rank(matrix, rank_policy)?;
     build_pseudo_inverse(svd, retained)
@@ -329,7 +329,7 @@ fn checked_svd_rank<T>(
 ) -> Result<(PartialSvd<T>, usize, T::Real), OkidError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let svd = dense_svd(matrix, &DenseDecompParams::<T>::new())?;
     let singular_values = Col::from_fn(svd.s.nrows(), |i| svd.s[i].abs());
@@ -362,7 +362,7 @@ where
 fn build_pseudo_inverse<T>(svd: PartialSvd<T>, retained: usize) -> Result<Mat<T>, OkidError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     let v_r = Mat::from_fn(svd.v.nrows(), retained, |row, col| svd.v[(row, col)]);
     let u_r_h = Mat::from_fn(retained, svd.u.nrows(), |row, col| svd.u[(col, row)].conj());
@@ -392,7 +392,7 @@ fn trailing_columns<T: Copy>(matrix: MatRef<'_, T>, ncols: usize) -> Mat<T> {
 fn check_finite<T>(matrix: MatRef<'_, T>, which: &'static str) -> Result<(), OkidError>
 where
     T: CompensatedField,
-    T::Real: Float + Copy,
+    T::Real: Float,
 {
     for col in 0..matrix.ncols() {
         for row in 0..matrix.nrows() {

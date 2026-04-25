@@ -107,7 +107,7 @@ pub struct SteadyStateKalmanFilter<T, const NX: usize, const NU: usize, const NY
 
 impl<T, const NX: usize, const NU: usize, const NY: usize> DiscreteKalmanFilter<T, NX, NU, NY>
 where
-    T: Float + Copy,
+    T: Float,
 {
     /// Creates a fixed-size discrete Kalman filter.
     ///
@@ -297,7 +297,7 @@ where
 
 impl<T, const NX: usize, const NU: usize, const NY: usize> SteadyStateKalmanFilter<T, NX, NU, NY>
 where
-    T: Float + Copy,
+    T: Float,
 {
     /// Creates a fixed-gain steady-state observer from an explicit filter-form
     /// correction gain.
@@ -386,7 +386,7 @@ where
 /// Packs one fixed-size vector into a single-column right-hand side block.
 fn column_matrix<T, const N: usize>(vector: &Vector<T, N>) -> Matrix<T, N, 1>
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut out = [[T::zero(); 1]; N];
     for idx in 0..N {
@@ -405,7 +405,7 @@ fn updated_covariance<T, const NX: usize, const NY: usize>(
     innovation_covariance: &Matrix<T, NY, NY>,
 ) -> Matrix<T, NX, NX>
 where
-    T: Float + Copy,
+    T: Float,
 {
     match covariance_update {
         CovarianceUpdate::Simple => mat_sub(
@@ -432,7 +432,7 @@ fn normalized_innovation_norm<T, const NY: usize>(
     whitened_innovation: &Matrix<T, NY, 1>,
 ) -> T
 where
-    T: Float + Copy,
+    T: Float,
 {
     let mut acc = T::zero();
     for idx in 0..NY {
@@ -444,7 +444,7 @@ where
 #[cfg(feature = "alloc")]
 impl<T, const NX: usize, const NU: usize, const NY: usize> DiscreteKalmanFilter<T, NX, NU, NY>
 where
-    T: Float + Copy + faer_traits::RealField,
+    T: Float + faer_traits::RealField,
 {
     /// Builds a fixed-size embedded Kalman filter from the dynamic control-side
     /// state-space model and covariance data.
