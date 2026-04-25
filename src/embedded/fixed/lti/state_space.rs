@@ -138,10 +138,9 @@ where
     }
 }
 
-#[cfg(feature = "alloc")]
 impl<T, const NX: usize, const NU: usize, const NY: usize> DiscreteStateSpace<T, NX, NU, NY>
 where
-    T: Float + Copy + faer_traits::RealField,
+    T: Float + Copy,
 {
     /// Returns the steady-state gain `G(1) = C (I - A)^-1 B + D`.
     ///
