@@ -9,7 +9,6 @@
 //!   contribution.
 
 use crate::embedded::error::EmbeddedError;
-use crate::embedded::math::clamp_value;
 use num_traits::Float;
 
 /// Anti-windup policy used by [`Pid`].
@@ -219,9 +218,7 @@ where
 
             let (saturated, windup_error) = match (self.anti_windup, tracking) {
                 (AntiWindup::None, _) => (unsaturated, T::zero()),
-                (AntiWindup::Clamp { low, high }, _) => {
-                    (clamp_value(unsaturated, low, high), T::zero())
-                }
+                (AntiWindup::Clamp { low, high }, _) => (unsaturated.max(low).min(high), T::zero()),
                 (AntiWindup::BackCalculation { .. }, Some(applied)) => {
                     (applied[lane], applied[lane] - unsaturated)
                 }
@@ -295,11 +292,9 @@ where
 
         match self.anti_windup {
             AntiWindup::Clamp { low, high } => {
-                let limited = clamp_value(
-                    candidate,
-                    low - proportional - derivative,
-                    high - proportional - derivative,
-                );
+                let limited = candidate
+                    .max(low - proportional - derivative)
+                    .min(high - proportional - derivative);
                 self.apply_integrator_limits(limited)
             }
             _ => candidate,
@@ -309,7 +304,7 @@ where
     /// Applies any configured direct integrator bounds.
     fn apply_integrator_limits(&self, value: T) -> T {
         match self.integrator_limits {
-            Some((low, high)) => clamp_value(value, low, high),
+            Some((low, high)) => value.max(low).min(high),
             None => value,
         }
     }

@@ -13,6 +13,8 @@
 //! - **Frobenius norm:** Square-root of the sum of squared entry magnitudes.
 
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
+use crate::twosum::TwoSum;
+use faer::prelude::Solve;
 use faer::{Mat, MatRef};
 use faer_traits::ext::ComplexFieldExt;
 use num_traits::{Float, One, Zero};
@@ -132,4 +134,85 @@ where
         }
     }
     acc.sqrt()
+}
+
+/// Returns the Frobenius norm of a dense matrix with compensated accumulation.
+pub(crate) fn frobenius_norm<T>(matrix: MatRef<'_, T>) -> T::Real
+where
+    T: faer_traits::ComplexField + Copy,
+    T::Real: Float,
+{
+    let mut acc: Option<TwoSum<T::Real>> = None;
+    for col in 0..matrix.ncols() {
+        for row in 0..matrix.nrows() {
+            let value = matrix[(row, col)].abs2();
+            match acc.as_mut() {
+                Some(acc) => acc.add(value),
+                None => acc = Some(TwoSum::new(value)),
+            }
+        }
+    }
+
+    match acc {
+        Some(acc) => {
+            let (sum, residual) = acc.finish();
+            (sum + residual).sqrt()
+        }
+        None => <T::Real as Zero>::zero(),
+    }
+}
+
+/// Returns the default tolerance used by dense residual-checked solves.
+pub(crate) fn default_solve_tolerance<T>() -> T::Real
+where
+    T: CompensatedField,
+    T::Real: Float,
+{
+    T::Real::epsilon().sqrt()
+}
+
+/// Solves `lhs * X = rhs` and rejects nonfinite or high-residual results.
+pub(crate) fn solve_left_checked<T, E, F>(
+    lhs: MatRef<'_, T>,
+    rhs: MatRef<'_, T>,
+    tol: T::Real,
+    err: F,
+) -> Result<Mat<T>, E>
+where
+    T: faer_traits::ComplexField + Copy,
+    T::Real: Float,
+    F: Fn() -> E,
+{
+    let solution = lhs.full_piv_lu().solve(rhs);
+    if !solution.as_ref().is_all_finite() {
+        return Err(err());
+    }
+
+    let residual = dense_mul_plain(lhs, solution.as_ref()) - rhs;
+    let residual_norm = frobenius_norm_plain(residual.as_ref());
+    let scale = frobenius_norm_plain(lhs) * frobenius_norm_plain(solution.as_ref())
+        + frobenius_norm_plain(rhs);
+    let one = <T::Real as One>::one();
+    let threshold = scale.max(one) * tol * (one + one);
+    if !residual_norm.is_finite() || residual_norm > threshold {
+        return Err(err());
+    }
+
+    Ok(solution)
+}
+
+/// Solves `X * lhs = rhs` by transposing into [`solve_left_checked`].
+pub(crate) fn solve_right_checked<T, E, F>(
+    rhs_left: MatRef<'_, T>,
+    lhs_right: MatRef<'_, T>,
+    tol: T::Real,
+    err: F,
+) -> Result<Mat<T>, E>
+where
+    T: faer_traits::ComplexField + Copy,
+    T::Real: Float,
+    F: Fn() -> E + Copy,
+{
+    let solved_t = solve_left_checked(lhs_right.transpose(), rhs_left.transpose(), tol, err)?;
+    Ok(solved_t.transpose().to_owned())
 }

@@ -363,7 +363,7 @@ where
     let ctrb = controllability_matrix(a, b);
     let phi_a = evaluate_real_monic_polynomial_at_matrix(a, &coeffs)?;
     let solution = ctrb.full_piv_lu().solve(phi_a.as_ref());
-    if !all_finite(solution.as_ref()) {
+    if !solution.as_ref().is_all_finite() {
         return Err(PolePlacementError::Uncontrollable);
     }
 
@@ -465,7 +465,7 @@ where
         .full_piv_lu()
         .solve(g.as_ref().transpose().to_owned().as_ref());
     let gain = gain_t.transpose().to_owned();
-    if !all_finite(gain.as_ref()) {
+    if !gain.as_ref().is_all_finite() {
         return Err(PolePlacementError::Uncontrollable);
     }
 
@@ -710,7 +710,7 @@ where
             }
         });
     }
-    if all_finite(out.as_ref()) {
+    if out.as_ref().is_all_finite() {
         Ok(out)
     } else {
         Err(PolePlacementError::NonFiniteResult {
@@ -762,14 +762,6 @@ fn compare_poles<R: Float>(lhs: Complex<R>, rhs: Complex<R>) -> core::cmp::Order
                 .partial_cmp(&lhs.im)
                 .unwrap_or(core::cmp::Ordering::Equal)
         })
-}
-
-fn all_finite<T>(matrix: MatRef<'_, T>) -> bool
-where
-    T: CompensatedField + RealField,
-    T::Real: Float,
-{
-    (0..matrix.ncols()).all(|col| (0..matrix.nrows()).all(|row| matrix[(row, col)].is_finite()))
 }
 
 fn gram_matrix<T>(matrix: MatRef<'_, T>) -> Mat<T>

@@ -161,7 +161,7 @@ where
         let out = Mat::from_fn(gain.nrows(), gain.ncols(), |row, col| {
             gain[(row, col)] + d[(row, col)]
         });
-        if all_finite_complex(out.as_ref()) {
+        if out.as_ref().is_all_finite() {
             Ok(out)
         } else {
             Err(LtiError::NonFiniteResult {
@@ -363,18 +363,6 @@ where
     })
 }
 
-fn all_finite_complex<R: Float + RealField>(matrix: MatRef<'_, Complex<R>>) -> bool {
-    for col in 0..matrix.ncols() {
-        for row in 0..matrix.nrows() {
-            let value = matrix[(row, col)];
-            if !value.re.is_finite() || !value.im.is_finite() {
-                return false;
-            }
-        }
-    }
-    true
-}
-
 /// Sparse complex shift wrapper used by sparse transfer evaluation.
 ///
 /// The stored pattern contains an explicit diagonal even if the original `A`
@@ -503,7 +491,7 @@ where
         let out = Mat::from_fn(gain.nrows(), gain.ncols(), |row, col| {
             gain[(row, col)] + d_complex[(row, col)]
         });
-        if !all_finite_complex(out.as_ref()) {
+        if !out.as_ref().is_all_finite() {
             return Err(LtiError::NonFiniteResult {
                 which: "sparse_transfer_at",
             });

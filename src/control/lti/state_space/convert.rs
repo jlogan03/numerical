@@ -16,7 +16,7 @@
 use super::domain::{ContinuousTime, DiscreteTime};
 use super::error::StateSpaceError;
 use super::{ContinuousStateSpace, DiscreteStateSpace, StateSpace};
-use crate::control::dense_ops::dense_mul;
+use crate::control::dense_ops::{dense_mul, frobenius_norm};
 use crate::sparse::compensated::CompensatedField;
 use crate::twosum::TwoSum;
 use faer::linalg::solvers::Solve;
@@ -495,34 +495,4 @@ where
         }
     }
     max_norm
-}
-
-/// Returns the Frobenius norm `sqrt(sum_ij |a_ij|^2)`.
-///
-/// This is used only for solve validation, not as the primary matrix-function
-/// scaling norm. The compensated accumulation keeps the residual checks from
-/// becoming the least accurate part of the conversion path.
-fn frobenius_norm<T>(matrix: MatRef<'_, T>) -> T::Real
-where
-    T: CompensatedField,
-    T::Real: Float,
-{
-    let mut acc: Option<TwoSum<T::Real>> = None;
-    for col in 0..matrix.ncols() {
-        for row in 0..matrix.nrows() {
-            let value = matrix[(row, col)].abs2();
-            match acc.as_mut() {
-                Some(acc) => acc.add(value),
-                None => acc = Some(TwoSum::new(value)),
-            }
-        }
-    }
-
-    match acc {
-        Some(acc) => {
-            let (sum, residual) = acc.finish();
-            (sum + residual).sqrt()
-        }
-        None => <T::Real as num_traits::Zero>::zero(),
-    }
 }

@@ -49,7 +49,6 @@
 //! | Time-varying Kalman runtime | no | yes | yes |
 //! | Fixed-gain observer runtime | yes | yes | yes |
 
-mod dense;
 pub mod linear;
 pub use linear::{
     ContinuousObserver, ContinuousObserverDerivative, CovarianceUpdate, DiscreteKalmanFilter,

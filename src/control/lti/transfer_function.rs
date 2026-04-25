@@ -604,7 +604,7 @@ where
         .collect::<Result<Vec<_>, _>>()?;
     let rhs = Mat::from_fn(points.len(), 1, |row, _| rhs_values[row]);
     let solution = vandermonde.full_piv_lu().solve(rhs.as_ref());
-    if !all_finite_real(solution.as_ref()) {
+    if !solution.as_ref().is_all_finite() {
         return Err(LtiError::NonFiniteResult {
             which: "state_space_to_transfer_function.solve",
         });
@@ -699,18 +699,6 @@ where
             which: "state_space_to_transfer_function.transfer_at",
         })
     }
-}
-
-/// Checks whether every entry in a dense real matrix is finite.
-fn all_finite_real<R: Float + RealField>(matrix: MatRef<'_, R>) -> bool {
-    for col in 0..matrix.ncols() {
-        for row in 0..matrix.nrows() {
-            if !matrix[(row, col)].is_finite() {
-                return false;
-            }
-        }
-    }
-    true
 }
 
 /// Trims numerically insignificant leading coefficients after interpolation.

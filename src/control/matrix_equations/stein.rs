@@ -51,10 +51,13 @@
 
 use super::lyapunov::{LowRankLyapunovSolve, LyapunovParams, ShiftStrategy};
 use super::vec_index;
+use crate::control::dense_ops::{
+    dense_mul, dense_mul_adjoint_lhs, dense_mul_adjoint_rhs, frobenius_norm,
+    hermitian_project_in_place,
+};
 use crate::sparse::SparseLuError;
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use crate::sparse::lu::SparseLu;
-use crate::twosum::TwoSum;
 use alloc::vec::Vec;
 use core::fmt;
 use faer::Index;
@@ -274,7 +277,7 @@ where
     // Exact discrete Gramians are Hermitian. This projection removes the small
     // skew-Hermitian component introduced by the finite-precision dense solve
     // without changing the intended solution materially.
-    hermitianize_in_place(&mut solution);
+    hermitian_project_in_place(&mut solution);
 
     let residual = discrete_residual(a, solution.as_ref(), q);
     let residual_norm = frobenius_norm(residual.as_ref());
@@ -720,67 +723,6 @@ fn unvectorize_square<T: ComplexField + Copy>(values: MatRef<'_, T>, n: usize) -
     Mat::from_fn(n, n, |row, col| values[(vec_index(row, col, n), 0)])
 }
 
-fn hermitianize_in_place<T>(matrix: &mut Mat<T>)
-where
-    T: ComplexField + Copy,
-    T::Real: Float,
-{
-    let half = <T::Real as One>::one() / (<T::Real as One>::one() + <T::Real as One>::one());
-    for col in 0..matrix.ncols() {
-        for row in 0..=col.min(matrix.nrows().saturating_sub(1)) {
-            let avg = (matrix[(row, col)] + matrix[(col, row)].conj()).mul_real(half);
-            matrix[(row, col)] = avg;
-            matrix[(col, row)] = avg.conj();
-        }
-    }
-}
-
-fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float,
-{
-    // These dense helpers are not meant to outcompete faer's dense kernels.
-    // They exist so the residual and Gramian forcing terms can use the same
-    // compensated reduction style as the rest of this crate's numerically
-    // conservative control code.
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
-fn dense_mul_adjoint_rhs<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float,
-{
-    Mat::from_fn(lhs.nrows(), rhs.nrows(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * rhs[(col, k)].conj());
-        }
-        acc.finish()
-    })
-}
-
-fn dense_mul_adjoint_lhs<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float,
-{
-    Mat::from_fn(lhs.ncols(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.nrows() {
-            acc.add(lhs[(k, row)].conj() * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
 fn discrete_residual<T>(a: MatRef<'_, T>, x: MatRef<'_, T>, q: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
@@ -796,31 +738,6 @@ where
     })
 }
 
-fn frobenius_norm<T>(matrix: MatRef<'_, T>) -> T::Real
-where
-    T: CompensatedField,
-    T::Real: Float,
-{
-    let mut acc: Option<TwoSum<T::Real>> = None;
-    for col in 0..matrix.ncols() {
-        for row in 0..matrix.nrows() {
-            let value = matrix[(row, col)].abs2();
-            match acc.as_mut() {
-                Some(acc) => acc.add(value),
-                None => acc = Some(TwoSum::new(value)),
-            }
-        }
-    }
-
-    match acc {
-        Some(acc) => {
-            let (sum, residual) = acc.finish();
-            (sum + residual).sqrt()
-        }
-        None => <T::Real as Zero>::zero(),
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::{
@@ -830,6 +747,7 @@ mod test {
         solve_discrete_stein_dense,
     };
     use crate::control::LyapunovParams;
+    use crate::control::dense_ops::{dense_mul_adjoint_lhs, dense_mul_adjoint_rhs, frobenius_norm};
     use crate::control::matrix_equations::lyapunov::ShiftStrategy;
     use faer::sparse::{SparseColMat, Triplet};
     use faer::{Mat, c64};
@@ -909,7 +827,7 @@ mod test {
             _ => c64::new(1.5, -2.0),
         });
 
-        let q = super::dense_mul_adjoint_rhs(b.as_ref(), b.as_ref());
+        let q = dense_mul_adjoint_rhs(b.as_ref(), b.as_ref());
         let expected = diagonal_solution_from_q(&diag, &q);
         let solve = controllability_gramian_discrete_dense(a.as_ref(), b.as_ref()).unwrap();
 
@@ -944,7 +862,7 @@ mod test {
             _ => c64::new(0.25, -0.75),
         });
 
-        let q = super::dense_mul_adjoint_lhs(c.as_ref(), c.as_ref());
+        let q = dense_mul_adjoint_lhs(c.as_ref(), c.as_ref());
         let expected = diagonal_solution_from_q(&[diag[0].conj(), diag[1].conj()], &q);
         let solve = observability_gramian_discrete_dense(a.as_ref(), c.as_ref()).unwrap();
 
@@ -979,7 +897,7 @@ mod test {
 
         let solve = solve_discrete_stein_dense(a.as_ref(), q.as_ref()).unwrap();
         let residual = discrete_residual(a.as_ref(), solve.solution.as_ref(), q.as_ref());
-        let residual_norm = super::frobenius_norm(residual.as_ref());
+        let residual_norm = frobenius_norm(residual.as_ref());
         assert!(residual_norm <= 1.0e-11);
     }
 

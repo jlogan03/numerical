@@ -61,21 +61,22 @@
 //! - Residuals are recomputed in the original Riccati equation rather than
 //!   inferred from backend diagnostics.
 
+use crate::control::dense_ops::{
+    default_solve_tolerance, dense_mul, dense_mul_adjoint_lhs, frobenius_norm,
+    hermitian_project_in_place, solve_left_checked, solve_right_checked,
+};
 use crate::decomp::{
     DecompError, DenseDecompParams, dense_eigen, dense_eigenvalues, dense_generalized_eigen,
 };
 use crate::sparse::col::col_slice;
-use crate::sparse::compensated::{CompensatedField, CompensatedSum};
-use crate::twosum::TwoSum;
+use crate::sparse::compensated::CompensatedField;
 use alloc::vec::Vec;
 use core::fmt;
 use faer::complex::Complex;
 use faer::linalg::evd::EvdError;
 use faer::linalg::gevd::GevdError;
-use faer::prelude::Solve;
 use faer::{Mat, MatRef};
 use faer_traits::ext::ComplexFieldExt;
-use faer_traits::math_utils::eps;
 use faer_traits::{ComplexField, RealField};
 use num_traits::{Float, One, Zero};
 
@@ -213,17 +214,14 @@ where
     T::Real: Float + RealField,
 {
     validate_riccati_dims(a, b, q, r)?;
-    let tol = default_tolerance::<T>();
+    let tol = default_solve_tolerance::<T>();
 
     // `G = B R^-1 B^H` is the quadratic control-weight term that appears in
     // the Hamiltonian matrix. Forming it once keeps the subsequent invariant-
     // subspace step close to the textbook CARE derivation.
-    let r_inv_bh = solve_left_checked(
-        r,
-        b.adjoint().to_owned().as_ref(),
-        tol,
-        RiccatiError::SingularControlWeight { which: "r" },
-    )?;
+    let r_inv_bh = solve_left_checked(r, b.adjoint().to_owned().as_ref(), tol, || {
+        RiccatiError::SingularControlWeight { which: "r" }
+    })?;
     let g = dense_mul(b, r_inv_bh.as_ref());
 
     let hamiltonian = build_care_hamiltonian(
@@ -243,16 +241,13 @@ where
     let (u1, u2) = partition_subspace(eig.vectors.as_ref(), a.nrows(), &stable)?;
     // Writing the stable basis as `[U1; U2]` gives the Riccati solution
     // through the graph relation `X = U2 U1^-1`.
-    let mut solution_c = solve_right_checked(
-        u1.as_ref(),
-        u2.as_ref(),
-        tol,
-        RiccatiError::SingularInvariantSubspace,
-    )?;
+    let mut solution_c = solve_right_checked(u2.as_ref(), u1.as_ref(), tol, || {
+        RiccatiError::SingularInvariantSubspace
+    })?;
     // The exact stabilizing solution is Hermitian. The invariant-subspace solve
     // can introduce a small skew-Hermitian component, so project it away before
     // checking residuals or recovering the gain.
-    hermitianize_in_place(&mut solution_c);
+    hermitian_project_in_place(&mut solution_c);
 
     let solution = from_complex_mat(solution_c.as_ref(), tol, "care.solution")?;
     let gain = care_gain_from_solution(b, r, solution.as_ref())?;
@@ -293,16 +288,13 @@ where
     T::Real: Float + RealField,
 {
     validate_riccati_dims(a, b, q, r)?;
-    let tol = default_tolerance::<T>();
+    let tol = default_solve_tolerance::<T>();
 
     // As in the CARE path, factor the quadratic input term once so the DARE
     // pencil can be assembled directly from `A`, `Q`, and `G = B R^-1 B^H`.
-    let r_inv_bh = solve_left_checked(
-        r,
-        b.adjoint().to_owned().as_ref(),
-        tol,
-        RiccatiError::SingularControlWeight { which: "r" },
-    )?;
+    let r_inv_bh = solve_left_checked(r, b.adjoint().to_owned().as_ref(), tol, || {
+        RiccatiError::SingularControlWeight { which: "r" }
+    })?;
     let g = dense_mul(b, r_inv_bh.as_ref());
 
     let (h, j) = build_dare_pencil(
@@ -317,13 +309,10 @@ where
     let stable =
         stable_columns_from_generalized_eigen(col_slice(&gevd.alpha), col_slice(&gevd.beta), tol);
     let (u1, u2) = partition_subspace(gevd.vectors.as_ref(), a.nrows(), &stable)?;
-    let mut solution_c = solve_right_checked(
-        u1.as_ref(),
-        u2.as_ref(),
-        tol,
-        RiccatiError::SingularInvariantSubspace,
-    )?;
-    hermitianize_in_place(&mut solution_c);
+    let mut solution_c = solve_right_checked(u2.as_ref(), u1.as_ref(), tol, || {
+        RiccatiError::SingularInvariantSubspace
+    })?;
+    hermitian_project_in_place(&mut solution_c);
 
     let solution = from_complex_mat(solution_c.as_ref(), tol, "dare.solution")?;
     let gain = dare_gain_from_solution(a, b, r, solution.as_ref())?;
@@ -359,12 +348,9 @@ where
     validate_dims("x", x.nrows(), x.ncols(), x.nrows(), x.nrows())?;
 
     let rhs = dense_mul_adjoint_lhs(b, x);
-    solve_left_checked(
-        r,
-        rhs.as_ref(),
-        default_tolerance::<T>(),
-        RiccatiError::SingularControlWeight { which: "r" },
-    )
+    solve_left_checked(r, rhs.as_ref(), default_solve_tolerance::<T>(), || {
+        RiccatiError::SingularControlWeight { which: "r" }
+    })
 }
 
 /// Computes the discrete-time state-feedback gain
@@ -387,8 +373,8 @@ where
     solve_left_checked(
         s.as_ref(),
         rhs.as_ref(),
-        default_tolerance::<T>(),
-        RiccatiError::SingularControlWeight {
+        default_solve_tolerance::<T>(),
+        || RiccatiError::SingularControlWeight {
             which: "r_plus_bhx b",
         },
     )
@@ -436,14 +422,6 @@ fn validate_dims(
         });
     }
     Ok(())
-}
-
-fn default_tolerance<T>() -> T::Real
-where
-    T: ComplexField,
-    T::Real: Float + RealField,
-{
-    eps::<T::Real>().sqrt()
 }
 
 /// Builds the Hamiltonian matrix whose stable invariant subspace encodes the
@@ -589,66 +567,6 @@ where
     Ok((u1, u2))
 }
 
-/// Solves `lhs * X = rhs` and rejects numerically unusable results.
-///
-/// The Riccati implementation only needs small dense solves at this layer, but
-/// it still checks the residual explicitly so obviously singular `R`, `R +
-/// B^H X B`, or invariant-subspace partitions are surfaced as targeted Riccati
-/// errors instead of leaking NaNs into later steps.
-fn solve_left_checked<T>(
-    lhs: MatRef<'_, T>,
-    rhs: MatRef<'_, T>,
-    tol: T::Real,
-    err: RiccatiError,
-) -> Result<Mat<T>, RiccatiError>
-where
-    T: ComplexField + Copy,
-    T::Real: Float,
-{
-    let solution = lhs.full_piv_lu().solve(rhs);
-    if !solution.as_ref().is_all_finite() {
-        return Err(err);
-    }
-
-    let residual = dense_mul_plain(lhs, solution.as_ref()) - rhs;
-    let residual_norm = frobenius_norm_plain(residual.as_ref());
-    let scale = dense_solve_scale(lhs, solution.as_ref(), rhs);
-    let one = <T::Real as One>::one();
-    let threshold = scale.max(one) * tol * (one + one);
-    if !residual_norm.is_finite() || residual_norm > threshold {
-        return Err(err);
-    }
-
-    Ok(solution)
-}
-
-/// Solves `X * lhs = rhs` by transposing into the left-solve helper.
-///
-/// The Riccati recovery step naturally produces `X U1 = U2`, so the public
-/// helper stays in that form and this wrapper handles the dense transpose
-/// bookkeeping.
-fn solve_right_checked<T>(
-    lhs: MatRef<'_, T>,
-    rhs: MatRef<'_, T>,
-    tol: T::Real,
-    err: RiccatiError,
-) -> Result<Mat<T>, RiccatiError>
-where
-    T: ComplexField + Copy,
-    T::Real: Float,
-{
-    let solved_t = solve_left_checked(lhs.transpose(), rhs.transpose(), tol, err)?;
-    Ok(solved_t.transpose().to_owned())
-}
-
-fn dense_solve_scale<T>(lhs: MatRef<'_, T>, solution: MatRef<'_, T>, rhs: MatRef<'_, T>) -> T::Real
-where
-    T: ComplexField + Copy,
-    T::Real: Float,
-{
-    frobenius_norm_plain(lhs) * frobenius_norm_plain(solution) + frobenius_norm_plain(rhs)
-}
-
 fn care_residual<T>(
     a: MatRef<'_, T>,
     b: MatRef<'_, T>,
@@ -784,104 +702,6 @@ where
         return Err(RiccatiError::NonFiniteResult { which });
     }
     Ok(out)
-}
-
-fn hermitianize_in_place<T>(matrix: &mut Mat<T>)
-where
-    T: ComplexField + Copy,
-    T::Real: Float,
-{
-    // Riccati solutions are Hermitian in exact arithmetic. Symmetrizing the
-    // dense result removes the small antisymmetric component introduced by
-    // finite-precision eigenspace recovery.
-    let half = <T::Real as One>::one() / (<T::Real as One>::one() + <T::Real as One>::one());
-    for col in 0..matrix.ncols() {
-        for row in 0..=col.min(matrix.nrows().saturating_sub(1)) {
-            let avg = (matrix[(row, col)] + matrix[(col, row)].conj()).mul_real(half);
-            matrix[(row, col)] = avg;
-            matrix[(col, row)] = avg.conj();
-        }
-    }
-}
-
-fn dense_mul<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float,
-{
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
-fn dense_mul_adjoint_lhs<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float,
-{
-    Mat::from_fn(lhs.ncols(), rhs.ncols(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.nrows() {
-            acc.add(lhs[(k, row)].conj() * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
-fn frobenius_norm<T>(matrix: MatRef<'_, T>) -> T::Real
-where
-    T: CompensatedField,
-    T::Real: Float,
-{
-    let mut acc: Option<TwoSum<T::Real>> = None;
-    for col in 0..matrix.ncols() {
-        for row in 0..matrix.nrows() {
-            let value = matrix[(row, col)].abs2();
-            match acc.as_mut() {
-                Some(acc) => acc.add(value),
-                None => acc = Some(TwoSum::new(value)),
-            }
-        }
-    }
-
-    match acc {
-        Some(acc) => {
-            let (sum, residual) = acc.finish();
-            (sum + residual).sqrt()
-        }
-        None => <T::Real as Zero>::zero(),
-    }
-}
-
-fn dense_mul_plain<T>(lhs: MatRef<'_, T>, rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: ComplexField + Copy,
-{
-    Mat::from_fn(lhs.nrows(), rhs.ncols(), |row, col| {
-        let mut acc = T::zero();
-        for k in 0..lhs.ncols() {
-            acc += lhs[(row, k)] * rhs[(k, col)];
-        }
-        acc
-    })
-}
-
-fn frobenius_norm_plain<T>(matrix: MatRef<'_, T>) -> T::Real
-where
-    T: ComplexField + Copy,
-    T::Real: Float,
-{
-    let mut acc = <T::Real as Zero>::zero();
-    for col in 0..matrix.ncols() {
-        for row in 0..matrix.nrows() {
-            acc += matrix[(row, col)].abs2();
-        }
-    }
-    acc.sqrt()
 }
 
 #[cfg(test)]

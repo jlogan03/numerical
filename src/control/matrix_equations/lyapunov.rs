@@ -62,9 +62,11 @@
 //!   Gramian helper entry points.
 
 use super::vec_index;
+use crate::control::dense_ops::{
+    dense_mul_adjoint_lhs, dense_mul_adjoint_rhs, frobenius_norm, hermitian_project_in_place,
+};
 use crate::sparse::compensated::{CompensatedField, CompensatedSum};
 use crate::sparse::{SparseLu, SparseLuError};
-use crate::twosum::TwoSum;
 use alloc::vec::Vec;
 use core::fmt;
 use faer::linalg::lu::partial_pivoting::factor::PartialPivLuParams;
@@ -165,7 +167,7 @@ where
     /// control problems should generally keep the factor form.
     #[must_use]
     pub fn to_dense(&self) -> Mat<T> {
-        low_rank_gramian(self.z.as_ref())
+        dense_mul_adjoint_rhs(self.z.as_ref(), self.z.as_ref())
     }
 }
 
@@ -361,7 +363,7 @@ where
     }
 
     let mut solution = unvectorize_square(vectorized.as_ref(), n);
-    hermitianize_in_place(&mut solution);
+    hermitian_project_in_place(&mut solution);
 
     let residual = continuous_residual(a, solution.as_ref(), q);
     let residual_norm = frobenius_norm(residual.as_ref());
@@ -418,7 +420,7 @@ where
     validate_square("a", a.nrows(), a.ncols())?;
     validate_dims("b", b.nrows(), b.ncols(), a.nrows(), b.ncols())?;
 
-    let q = dense_mul_with_adjoint_rhs(b);
+    let q = dense_mul_adjoint_rhs(b, b);
     solve_continuous_lyapunov_dense(a, q.as_ref())
 }
 
@@ -469,7 +471,7 @@ where
     validate_square("a", a.nrows(), a.ncols())?;
     validate_dims("c", c.nrows(), c.ncols(), c.nrows(), a.ncols())?;
 
-    let q = dense_mul_adjoint_lhs(c);
+    let q = dense_mul_adjoint_lhs(c, c);
     let a_adjoint = a.adjoint().to_owned();
     solve_continuous_lyapunov_dense(a_adjoint.as_ref(), q.as_ref())
 }
@@ -647,67 +649,6 @@ fn unvectorize_square<T: ComplexField + Copy>(values: MatRef<'_, T>, n: usize) -
     Mat::from_fn(n, n, |row, col| values[(vec_index(row, col, n), 0)])
 }
 
-fn hermitianize_in_place<T>(matrix: &mut Mat<T>)
-where
-    T: ComplexField + Copy,
-    T::Real: Float,
-{
-    let half = T::Real::one() / (T::Real::one() + T::Real::one());
-    for col in 0..matrix.ncols() {
-        for row in 0..=col.min(matrix.nrows().saturating_sub(1)) {
-            let avg = (matrix[(row, col)] + matrix[(col, row)].conj()).mul_real(half);
-            matrix[(row, col)] = avg;
-            matrix[(col, row)] = avg.conj();
-        }
-    }
-}
-
-fn dense_mul_with_adjoint_rhs<T>(lhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float,
-{
-    let nrows = lhs.nrows();
-    let ncols = lhs.nrows();
-    Mat::from_fn(nrows, ncols, |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..lhs.ncols() {
-            acc.add(lhs[(row, k)] * lhs[(col, k)].conj());
-        }
-        acc.finish()
-    })
-}
-
-fn dense_mul_adjoint_lhs<T>(rhs: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float,
-{
-    let nrows = rhs.ncols();
-    let ncols = rhs.ncols();
-    Mat::from_fn(nrows, ncols, |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..rhs.nrows() {
-            acc.add(rhs[(k, row)].conj() * rhs[(k, col)]);
-        }
-        acc.finish()
-    })
-}
-
-fn low_rank_gramian<T>(z: MatRef<'_, T>) -> Mat<T>
-where
-    T: CompensatedField,
-    T::Real: Float,
-{
-    Mat::from_fn(z.nrows(), z.nrows(), |row, col| {
-        let mut acc = CompensatedSum::<T>::default();
-        for k in 0..z.ncols() {
-            acc.add(z[(row, k)] * z[(col, k)].conj());
-        }
-        acc.finish()
-    })
-}
-
 fn continuous_residual<T>(a: MatRef<'_, T>, x: MatRef<'_, T>, q: MatRef<'_, T>) -> Mat<T>
 where
     T: CompensatedField,
@@ -736,39 +677,15 @@ where
     w_norm * w_norm
 }
 
-fn frobenius_norm<T>(matrix: MatRef<'_, T>) -> T::Real
-where
-    T: CompensatedField,
-    T::Real: Float,
-{
-    let mut acc: Option<TwoSum<T::Real>> = None;
-    for col in 0..matrix.ncols() {
-        for row in 0..matrix.nrows() {
-            let value = matrix[(row, col)].abs2();
-            match acc.as_mut() {
-                Some(acc) => acc.add(value),
-                None => acc = Some(TwoSum::new(value)),
-            }
-        }
-    }
-
-    match acc {
-        Some(acc) => {
-            let (sum, residual) = acc.finish();
-            (sum + residual).sqrt()
-        }
-        None => T::Real::zero(),
-    }
-}
-
 #[cfg(test)]
 mod test {
     use super::{
         LowRankFactor, LyapunovError, LyapunovParams, ShiftStrategy, continuous_residual,
-        controllability_gramian_dense, controllability_gramian_low_rank, dense_mul_adjoint_lhs,
-        dense_mul_with_adjoint_rhs, frobenius_norm, observability_gramian_dense,
-        observability_gramian_low_rank, solve_continuous_lyapunov_dense,
+        controllability_gramian_dense, controllability_gramian_low_rank,
+        observability_gramian_dense, observability_gramian_low_rank,
+        solve_continuous_lyapunov_dense,
     };
+    use crate::control::dense_ops::{dense_mul_adjoint_lhs, dense_mul_adjoint_rhs, frobenius_norm};
     use faer::sparse::{SparseColMat, Triplet};
     use faer::{Mat, c64};
     use faer_traits::ext::ComplexFieldExt;
@@ -844,7 +761,7 @@ mod test {
             _ => c64::new(1.5, -2.0),
         });
 
-        let q = dense_mul_with_adjoint_rhs(b.as_ref());
+        let q = dense_mul_adjoint_rhs(b.as_ref(), b.as_ref());
         let expected = diagonal_solution_from_q(&diag, &q);
         let solve = controllability_gramian_dense(a.as_ref(), b.as_ref()).unwrap();
 
@@ -879,7 +796,7 @@ mod test {
             _ => c64::new(0.25, -0.75),
         });
 
-        let q = dense_mul_adjoint_lhs(c.as_ref());
+        let q = dense_mul_adjoint_lhs(c.as_ref(), c.as_ref());
         let expected = diagonal_solution_from_q(&[diag[0].conj(), diag[1].conj()], &q);
         let solve = observability_gramian_dense(a.as_ref(), c.as_ref()).unwrap();
 

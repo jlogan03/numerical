@@ -333,9 +333,7 @@ where
 
         let (saturated, windup_error) = match (self.anti_windup, tracking) {
             (AntiWindup::None, _) => (unsaturated, R::zero()),
-            (AntiWindup::Clamp { low, high }, _) => {
-                (clamp_value(unsaturated, low, high), R::zero())
-            }
+            (AntiWindup::Clamp { low, high }, _) => (unsaturated.max(low).min(high), R::zero()),
             (AntiWindup::BackCalculation { .. }, Some(u_applied)) => {
                 (u_applied, u_applied - unsaturated)
             }
@@ -428,11 +426,9 @@ where
 
         match self.anti_windup {
             AntiWindup::Clamp { low, high } => {
-                let limited = clamp_value(
-                    candidate,
-                    low - proportional - derivative,
-                    high - proportional - derivative,
-                );
+                let limited = candidate
+                    .max(low - proportional - derivative)
+                    .min(high - proportional - derivative);
                 apply_integrator_limits(limited, self.integrator_limits)
             }
             _ => candidate,
@@ -604,22 +600,8 @@ where
     R: Float,
 {
     match limits {
-        Some((low, high)) => clamp_value(value, low, high),
+        Some((low, high)) => value.max(low).min(high),
         None => value,
-    }
-}
-
-/// Scalar clamp helper shared by output and integrator limiting.
-fn clamp_value<R>(value: R, low: R, high: R) -> R
-where
-    R: Float,
-{
-    if value < low {
-        low
-    } else if value > high {
-        high
-    } else {
-        value
     }
 }
 

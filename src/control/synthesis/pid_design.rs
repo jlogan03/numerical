@@ -688,19 +688,20 @@ where
     validate_positive(model.time_constant, "time_constant")?;
     validate_nonnegative(model.delay, "delay")?;
 
+    let two = R::from(2.0).unwrap();
+    let four = R::from(4.0).unwrap();
     let kp = model.time_constant / (model.gain * (params.lambda + model.delay));
     let (ki, kd, derivative_filter) = match params.controller {
         PidControllerKind::Pi => {
-            let ti = min_value(
-                model.time_constant,
-                four::<R>() * (params.lambda + model.delay),
-            );
+            let ti = model
+                .time_constant
+                .min(four * (params.lambda + model.delay));
             (kp / ti, R::zero(), None)
         }
         PidControllerKind::Pid => {
-            let ti = model.time_constant + model.delay / two::<R>();
-            let td = (model.time_constant * model.delay)
-                / (two::<R>() * model.time_constant + model.delay);
+            let ti = model.time_constant + model.delay / two;
+            let td =
+                (model.time_constant * model.delay) / (two * model.time_constant + model.delay);
             let derivative_filter = if td > R::zero() {
                 Some(params.derivative_filter_ratio / td)
             } else {
@@ -732,10 +733,11 @@ where
     validate_nonnegative(model.delay, "delay")?;
 
     let lag_sum = model.time_constant_1 + model.time_constant_2;
+    let four = R::from(4.0).unwrap();
     let kp = lag_sum / (model.gain * (params.lambda + model.delay));
     let (ki, kd, derivative_filter) = match params.controller {
         PidControllerKind::Pi => {
-            let ti = min_value(lag_sum, four::<R>() * (params.lambda + model.delay));
+            let ti = lag_sum.min(four * (params.lambda + model.delay));
             (kp / ti, R::zero(), None)
         }
         PidControllerKind::Pid => {
@@ -1905,30 +1907,6 @@ where
     } else {
         Err(PidDesignError::InvalidTuningParameter { which })
     }
-}
-
-/// Scalar minimum helper that keeps the generic tuning formulas readable.
-fn min_value<R>(lhs: R, rhs: R) -> R
-where
-    R: Float,
-{
-    if lhs < rhs { lhs } else { rhs }
-}
-
-/// Returns the scalar constant `2`.
-fn two<R>() -> R
-where
-    R: Float,
-{
-    R::from(2.0).unwrap()
-}
-
-/// Returns the scalar constant `4`.
-fn four<R>() -> R
-where
-    R: Float,
-{
-    R::from(4.0).unwrap()
 }
 
 #[cfg(test)]

@@ -51,11 +51,8 @@
 //!   directly from `LQE` / `DLQE` results.
 
 use crate::control::dense_ops::{
-    column_vector_norm, dense_mul, dense_mul_adjoint_rhs, hermitian_project_in_place,
-    inner_product_real,
-};
-use crate::control::estimation::dense::{
-    default_tolerance, solve_left_checked, solve_right_checked,
+    column_vector_norm, default_solve_tolerance, dense_mul, dense_mul_adjoint_rhs,
+    hermitian_project_in_place, inner_product_real, solve_left_checked, solve_right_checked,
 };
 use crate::control::lti::{ContinuousStateSpace, DiscreteStateSpace};
 use crate::control::matrix_equations::{RiccatiError, solve_care_dense, solve_dare_dense};
@@ -884,7 +881,7 @@ where
         let gain = solve_right_checked(
             cross.as_ref(),
             innovation_covariance.as_ref(),
-            default_tolerance::<T>(),
+            default_solve_tolerance::<T>(),
             || EstimatorError::SingularInnovationCovariance,
         )?;
         let correction = dense_mul(gain.as_ref(), innovation.as_ref());
@@ -1642,7 +1639,7 @@ where
     let gain = solve_right_checked(
         cross.as_ref(),
         innovation_covariance.as_ref(),
-        default_tolerance::<T>(),
+        default_solve_tolerance::<T>(),
         || EstimatorError::SingularInnovationCovariance,
     )?;
     Ok((gain, innovation_covariance))
@@ -1698,7 +1695,7 @@ where
     let whitened = solve_left_checked(
         innovation_covariance,
         innovation,
-        default_tolerance::<T>(),
+        default_solve_tolerance::<T>(),
         || EstimatorError::SingularInnovationCovariance,
     )?;
     Ok(inner_product_real(innovation, whitened.as_ref())

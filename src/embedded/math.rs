@@ -14,17 +14,3 @@ where
         Err(EmbeddedError::NonFiniteValue { which })
     }
 }
-
-/// Clamps one scalar into the inclusive range `[low, high]`.
-pub(crate) fn clamp_value<T>(value: T, low: T, high: T) -> T
-where
-    T: Float,
-{
-    if value < low {
-        low
-    } else if value > high {
-        high
-    } else {
-        value
-    }
-}
