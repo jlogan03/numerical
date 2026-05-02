@@ -11,20 +11,26 @@ env:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v3
-    - name: Format
-      run: cargo fmt --check --verbose
-    - name: Lint
-      run: cargo clippy --features=std
-    - name: Run tests
-      run: cargo test --features=std --verbose
-    - name: Run tests with mul_add
-      run: cargo test --features=std,fma --verbose
-    - name: Test no-std
-      run: |
-        rustup target add thumbv7em-none-eabihf
-        cargo build --target thumbv7em-none-eabihf
+      - uses: actions/checkout@v4
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - name: Format
+        run: cargo fmt --check --verbose
+      - name: Run tests with no default features
+        run: cargo test --no-default-features --verbose
+      - name: Check alloc
+        run: cargo check --no-default-features --features alloc --verbose
+      - name: Lint default feature set
+        run: cargo clippy --all-targets --verbose
+      - name: Run tests default feature set
+        run: cargo test --verbose
+      - name: Check wasm target
+        run: cargo check --target wasm32-unknown-unknown --verbose
+      - name: Run tests with fma
+        run: cargo test --features fma --verbose

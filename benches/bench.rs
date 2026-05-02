@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use numerical::sum::{pairwise, twosum};
+use numerical::twosum;
 use std::hint::black_box;
 
 const INPUT_SIZES: [usize; 7] = [1, 10, 100, 500, 1_000, 10_000, 100_000];
@@ -27,16 +27,6 @@ fn throughput_benchmark(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("twosum", size), &input, |b, input| {
             b.iter(|| black_box(twosum::sum::<_, f32>(black_box(input).iter())))
-        });
-
-        let mut scratch = vec![0.0f32; size];
-        group.bench_with_input(BenchmarkId::new("pairwise", size), &input, |b, input| {
-            b.iter(|| {
-                black_box(pairwise::sum(
-                    black_box(input),
-                    black_box(scratch.as_mut_slice()),
-                ))
-            })
         });
     }
 
